@@ -64,21 +64,25 @@ export default function Header() {
             </Link>
 
             {/* Account with tier badge */}
-            <div className="relative">
-              <Link to={currentUser ? '/account' : '/login'}
-              className="flex items-center justify-center w-9 h-9 rounded-full hover:bg-muted transition-colors">
+            <Link to={currentUser ? '/account' : '/login'}
+              className="flex items-center gap-1.5 rounded-full hover:bg-muted transition-colors px-1.5 h-9">
+              <span className="flex items-center justify-center w-7 h-7 rounded-full">
                 <User className="w-4 h-4 text-muted-foreground" />
-              </Link>
-              {currentUser && customer?.current_tier &&
-              <span className={`absolute -top-1 -right-1 text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center text-white ${
-              customer.current_tier === 'Gold' ? 'bg-yellow-600' :
-              customer.current_tier === 'Silver' ? 'bg-slate-600' :
-              'bg-orange-600'}`
-              }>
-                  {customer.current_tier === 'Gold' ? '⭐' : '•'}
-                </span>
-              }
-            </div>
+              </span>
+              {currentUser && (customer?.current_tier || customer?.membership_tier) && (() => {
+                const tier = customer.current_tier || customer.membership_tier;
+                return (
+                  <span className={`hidden sm:inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                    tier === 'Gold' ? 'bg-yellow-100 text-yellow-800' :
+                    tier === 'Silver' ? 'bg-slate-200 text-slate-800' :
+                    tier === 'VIP' ? 'bg-purple-100 text-purple-800' :
+                    'bg-orange-100 text-orange-800'
+                  }`}>
+                    {tier === 'Gold' ? '🥇' : tier === 'Silver' ? '🥈' : tier === 'VIP' ? '👑' : '🥉'} {tier}
+                  </span>
+                );
+              })()}
+            </Link>
 
             {/* Cart */}
             <button onClick={() => setIsOpen(true)}

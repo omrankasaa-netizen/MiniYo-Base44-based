@@ -34,7 +34,7 @@ export default function CustomersPage() {
     const q = search.toLowerCase();
     return customers.filter(c => {
       if (q && !c.name?.toLowerCase().includes(q) && !c.email?.toLowerCase().includes(q) && !c.phone?.includes(q)) return false;
-      if (filterTier && c.membership_tier !== filterTier) return false;
+      if (filterTier && (c.current_tier || c.membership_tier || 'Bronze') !== filterTier) return false;
       return true;
     });
   }, [customers, search, filterTier]);
@@ -42,10 +42,10 @@ export default function CustomersPage() {
   if (!canAccess('view_orders')) return <AdminLayout><AccessDenied /></AdminLayout>;
 
   const tierStats = {
-    Bronze: customers.filter(c => c.membership_tier === 'Bronze').length,
-    Silver: customers.filter(c => c.membership_tier === 'Silver').length,
-    Gold: customers.filter(c => c.membership_tier === 'Gold').length,
-    VIP: customers.filter(c => c.membership_tier === 'VIP').length,
+    Bronze: customers.filter(c => (c.current_tier || c.membership_tier || 'Bronze') === 'Bronze').length,
+    Silver: customers.filter(c => (c.current_tier || c.membership_tier || 'Bronze') === 'Silver').length,
+    Gold: customers.filter(c => (c.current_tier || c.membership_tier || 'Bronze') === 'Gold').length,
+    VIP: customers.filter(c => (c.current_tier || c.membership_tier || 'Bronze') === 'VIP').length,
   };
 
   return (
@@ -135,8 +135,8 @@ export default function CustomersPage() {
                     <td className="px-4 py-3 hidden sm:table-cell text-muted-foreground text-xs">{c.email}</td>
                     <td className="px-4 py-3 hidden md:table-cell text-muted-foreground text-xs">{c.phone || '—'}</td>
                     <td className="px-4 py-3">
-                      <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${TIER_COLORS[c.membership_tier] || TIER_COLORS.Bronze}`}>
-                        {TIER_ICONS[c.membership_tier]} {c.membership_tier}
+                      <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${TIER_COLORS[(c.current_tier || c.membership_tier || 'Bronze')] || TIER_COLORS.Bronze}`}>
+                        {TIER_ICONS[(c.current_tier || c.membership_tier || 'Bronze')]} {(c.current_tier || c.membership_tier || 'Bronze')}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-center hidden sm:table-cell text-foreground font-medium">
@@ -157,9 +157,8 @@ export default function CustomersPage() {
           <p className="font-medium text-foreground">Membership Tiers:</p>
           <ul className="space-y-1 ml-2">
             <li>🥉 <strong>Bronze:</strong> Default tier for all customers</li>
-            <li>🥈 <strong>Silver:</strong> Earned after 3+ orders or $100+ spent</li>
-            <li>🥇 <strong>Gold:</strong> Earned after 8+ orders or $300+ spent</li>
-            <li>👑 <strong>VIP:</strong> Earned after 15+ orders or $750+ spent</li>
+            <li>🥈 <strong>Silver:</strong> Earned at $100+ lifetime spend</li>
+            <li>🥇 <strong>Gold:</strong> Earned at $250+ lifetime spend</li>
           </ul>
         </div>
       </div>
