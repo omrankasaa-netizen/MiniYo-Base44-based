@@ -95,9 +95,9 @@ function seedSiteSettings() {
     payment_whish_enabled: 'false',
     payment_card_enabled: 'false',
     default_language: 'en',
-    whatsapp_number: '',
-    instagram_url: '',
-    facebook_url: '',
+    whatsapp_number: '+961 81 38 59 40',
+    instagram_url: 'https://instagram.com/miniyo.store.lb',
+    facebook_url: 'https://facebook.com/miniyo.store.lb',
   };
   for (const [k, v] of Object.entries(defaults)) {
     if (!have.has(k)) createRecord('SiteSetting', { setting_key: k, setting_value: v });
