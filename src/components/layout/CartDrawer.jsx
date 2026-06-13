@@ -98,19 +98,22 @@ export default function CartDrawer() {
 
   const handleAddRecommendation = (product) => {
     setJustAdded(product.id);
-    addItem({
-      product: {
+    addItem(
+      {
         id: product.id,
         name: product.name,
         name_ar: product.name_ar,
         price_usd: product.price_usd,
+        compare_at_price_usd: product.compare_at_price_usd,
+        image_url: product.image_url,
         sku: product.sku,
         primaryImage: getPrimaryImage(product.id),
+        category_id: product.category_id,
         has_variants: product.has_variants
       },
-      variant: null,
-      quantity: 1
-    });
+      null,
+      1
+    );
     setTimeout(() => setJustAdded(null), 1500);
   };
 
@@ -165,18 +168,22 @@ export default function CartDrawer() {
                    : 'bg-muted/40'
                }`}
              >
-               {item.product.primaryImage && (
-                 <img src={item.product.primaryImage} alt="" className="w-14 h-14 rounded-xl object-cover shrink-0" />
-               )}
+               <div className="w-14 h-14 rounded-xl overflow-hidden shrink-0 bg-muted flex items-center justify-center">
+                 {(item.product.primaryImage || item.product.image_url) ? (
+                   <img src={item.product.primaryImage || item.product.image_url} alt="" className="w-full h-full object-cover" />
+                 ) : (
+                   <ShoppingBag className="w-5 h-5 text-muted-foreground" />
+                 )}
+               </div>
                <div className="flex-1 min-w-0">
                  <p className="text-sm font-semibold text-foreground line-clamp-1">{lang === 'ar' ? (item.product.name_ar || item.product.name) : item.product.name}</p>
                  {item.variant && <p className="text-xs text-muted-foreground">{[item.variant.size, item.variant.color].filter(Boolean).join(' / ')}</p>}
-                 <p className="text-sm font-bold text-foreground">${((item.price || 0) * (item.qty || 0)).toFixed(2)}</p>
+                 <p className="text-sm font-bold text-foreground">${((parseFloat(item.price) || 0) * (item.quantity || 0)).toFixed(2)}</p>
                </div>
                <div className="flex flex-col items-center gap-1.5 shrink-0">
-                 <button onClick={() => updateQty(item.key, (item.qty || 1) + 1)} className="w-7 h-7 rounded-lg border border-border flex items-center justify-center hover:bg-muted"><Plus className="w-3 h-3" /></button>
-                 <span className="text-xs font-bold">{item.qty}</span>
-                 <button onClick={() => updateQty(item.key, Math.max(1, (item.qty || 1) - 1))} className="w-7 h-7 rounded-lg border border-border flex items-center justify-center hover:bg-muted"><Minus className="w-3 h-3" /></button>
+                 <button onClick={() => updateQty(item.key, (item.quantity || 1) + 1)} className="w-7 h-7 rounded-lg border border-border flex items-center justify-center hover:bg-muted"><Plus className="w-3 h-3" /></button>
+                 <span className="text-xs font-bold">{item.quantity}</span>
+                 <button onClick={() => updateQty(item.key, Math.max(1, (item.quantity || 1) - 1))} className="w-7 h-7 rounded-lg border border-border flex items-center justify-center hover:bg-muted"><Minus className="w-3 h-3" /></button>
                </div>
                <button onClick={() => removeItem(item.key)} className="p-1 text-muted-foreground hover:text-destructive ml-1"><X className="w-3.5 h-3.5" /></button>
              </div>
@@ -198,12 +205,14 @@ export default function CartDrawer() {
                        key={product.id}
                        className="flex-shrink-0 w-24 snap-start bg-muted/40 rounded-xl overflow-hidden border border-border hover:border-primary transition-colors"
                      >
-                       <div className="aspect-square bg-muted overflow-hidden">
-                         {img && <img src={img} alt={name} className="w-full h-full object-cover" />}
+                       <div className="aspect-square bg-muted overflow-hidden flex items-center justify-center">
+                         {(img || product.image_url)
+                           ? <img src={img || product.image_url} alt={name} className="w-full h-full object-cover" />
+                           : <ShoppingBag className="w-6 h-6 text-muted-foreground" />}
                        </div>
                        <div className="p-2">
                          <p className="text-xs font-semibold text-foreground line-clamp-2 h-8">{name}</p>
-                         <p className="text-xs font-bold text-primary mb-2">${product.price_usd.toFixed(2)}</p>
+                         <p className="text-xs font-bold text-primary mb-2">${(parseFloat(product.price_usd) || 0).toFixed(2)}</p>
                          <button
                            onClick={() => handleAddRecommendation(product)}
                            disabled={!inStock}
