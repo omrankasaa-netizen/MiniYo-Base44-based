@@ -14,21 +14,37 @@ try {
   fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
 } catch { /* dir may already exist */ }
 
-export const db = new Database(DB_PATH);
-
-// Journal mode: WAL is faster but requires mmap/shared-memory, which many
-// network-mounted volumes (e.g. Railway/Render persistent disks) do NOT support
-// — that causes a crash on first write. Default to the universally-compatible
-// DELETE journal on a mounted volume; allow override via MINIYO_JOURNAL_MODE.
 const onMountedVolume = !!process.env.MINIYO_DB_PATH;
 const journalMode = process.env.MINIYO_JOURNAL_MODE || (onMountedVolume ? 'DELETE' : 'WAL');
-try {
-  db.pragma(`journal_mode = ${journalMode}`);
-} catch (e) {
-  // Last-resort fallback if the chosen mode is rejected by the filesystem.
-  db.pragma('journal_mode = DELETE');
+
+// Open the database. If a previous crash (e.g. WAL on an unsupported volume)
+// left a corrupt or half-written file, opening / first integrity check throws.
+// In that case, delete the damaged DB + sidecar files and recreate fresh so the
+// app can boot and re-seed instead of crash-looping into a 502.
+function openDatabase() {
+  const candidate = new Database(DB_PATH);
+  candidate.pragma('foreign_keys = ON');
+  try {
+    candidate.pragma(`journal_mode = ${journalMode}`);
+  } catch {
+    candidate.pragma('journal_mode = DELETE');
+  }
+  // Touch the file with a trivial query to surface corruption early.
+  candidate.prepare('SELECT 1').get();
+  return candidate;
 }
-db.pragma('foreign_keys = ON');
+
+let _db;
+try {
+  _db = openDatabase();
+} catch (e) {
+  console.error(`[db] failed to open ${DB_PATH}: ${e?.message}. Recreating fresh.`);
+  for (const suffix of ['', '-wal', '-shm', '-journal']) {
+    try { fs.rmSync(DB_PATH + suffix, { force: true }); } catch { /* ignore */ }
+  }
+  _db = openDatabase();
+}
+export const db = _db;
 
 // All 28 entities the frontend talks to. Each is stored in a generic table:
 //   id TEXT PK, created_date, updated_date, doc JSON
