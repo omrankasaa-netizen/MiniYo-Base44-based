@@ -191,6 +191,42 @@ function ensureEntity(req, res, next) {
   next();
 }
 
+// Write authorization for the generic entity CRUD surface.
+//
+// Reads stay public (the storefront is a public catalog). Writes are admin-only
+// by default; without this gate ANY anonymous client could create/modify/delete
+// products, prices, discounts, orders, etc. directly against the API.
+//
+// The storefront legitimately performs a small set of writes as an
+// unauthenticated guest (checkout, account self-service). Those — and only
+// those — are allowed per (entity, operation) below. Everything else requires
+// an admin/super_admin session.
+const isAdmin = (user) => !!user && (user.role === 'admin' || user.role === 'super_admin');
+
+// Entity → operations that a non-admin (guest/customer) may perform.
+const PUBLIC_WRITES = {
+  Order: ['create'],
+  OrderItem: ['create'],
+  OrderStatusHistory: ['create'],
+  Customer: ['create', 'update'],
+  CustomerAddress: ['create', 'update', 'delete'],
+  Review: ['create'],
+  WishlistItem: ['create', 'delete'],
+  PromoCode: ['update'], // checkout increments times_used only
+  AuditLog: ['create'],
+};
+
+function authorizeWrite(op) {
+  return (req, res, next) => {
+    const user = getUserFromRequest(req);
+    if (isAdmin(user)) return next();
+    if (PUBLIC_WRITES[req.params.entity]?.includes(op)) return next();
+    return res.status(user ? 403 : 401).json({
+      error: user ? 'Forbidden: admin access required' : 'Authentication required',
+    });
+  };
+}
+
 // Never expose User credential-bearing fields through generic CRUD.
 function sanitize(entity, record) {
   if (entity === 'User' && record) {
@@ -217,21 +253,21 @@ app.get('/api/entities/:entity/:id', ensureEntity, (req, res) => {
   } catch (e) { handleError(res, e); }
 });
 
-app.post('/api/entities/:entity', ensureEntity, (req, res) => {
+app.post('/api/entities/:entity', ensureEntity, authorizeWrite('create'), (req, res) => {
   try {
     const record = createRecord(req.params.entity, req.body || {});
     res.json(sanitize(req.params.entity, record));
   } catch (e) { handleError(res, e); }
 });
 
-app.put('/api/entities/:entity/:id', ensureEntity, (req, res) => {
+app.put('/api/entities/:entity/:id', ensureEntity, authorizeWrite('update'), (req, res) => {
   try {
     const record = updateRecord(req.params.entity, req.params.id, req.body || {});
     res.json(sanitize(req.params.entity, record));
   } catch (e) { handleError(res, e); }
 });
 
-app.delete('/api/entities/:entity/:id', ensureEntity, (req, res) => {
+app.delete('/api/entities/:entity/:id', ensureEntity, authorizeWrite('delete'), (req, res) => {
   try {
     res.json(deleteRecord(req.params.entity, req.params.id));
   } catch (e) { handleError(res, e); }
