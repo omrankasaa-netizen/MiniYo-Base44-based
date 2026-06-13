@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
+import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -8,8 +9,25 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Persist next to the project root so data survives redeploys.
 const DB_PATH = process.env.MINIYO_DB_PATH || path.join(__dirname, '..', 'data.db');
 
+// Ensure the parent directory exists (e.g. a mounted volume at /data).
+try {
+  fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
+} catch { /* dir may already exist */ }
+
 export const db = new Database(DB_PATH);
-db.pragma('journal_mode = WAL');
+
+// Journal mode: WAL is faster but requires mmap/shared-memory, which many
+// network-mounted volumes (e.g. Railway/Render persistent disks) do NOT support
+// — that causes a crash on first write. Default to the universally-compatible
+// DELETE journal on a mounted volume; allow override via MINIYO_JOURNAL_MODE.
+const onMountedVolume = !!process.env.MINIYO_DB_PATH;
+const journalMode = process.env.MINIYO_JOURNAL_MODE || (onMountedVolume ? 'DELETE' : 'WAL');
+try {
+  db.pragma(`journal_mode = ${journalMode}`);
+} catch (e) {
+  // Last-resort fallback if the chosen mode is rejected by the filesystem.
+  db.pragma('journal_mode = DELETE');
+}
 db.pragma('foreign_keys = ON');
 
 // All 28 entities the frontend talks to. Each is stored in a generic table:
