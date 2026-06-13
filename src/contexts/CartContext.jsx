@@ -7,16 +7,18 @@ export function CartProvider({ children }) {
   const [isOpen, setIsOpen] = useState(false);
 
   function getKey(product, variant) {
-    return variant ? `${product.id}_${variant.id}` : product.id;
+    return variant ? `${product.id}_${variant.id}` : String(product.id);
   }
 
   function addItem(product, variant, qty = 1) {
     const key = getKey(product, variant);
     setItems(prev => {
       const existing = prev.find(i => i.key === key);
-      if (existing) return prev.map(i => i.key === key ? { ...i, qty: i.qty + qty } : i);
-      const price = variant?.price_usd || product.price_usd || 0;
-      return [...prev, { key, product, variant, qty, price }];
+      if (existing) {
+        return prev.map(i => i.key === key ? { ...i, quantity: i.quantity + qty } : i);
+      }
+      const price = parseFloat(variant?.price_usd || product.price_usd || 0);
+      return [...prev, { key, product, variant, quantity: qty, price }];
     });
   }
 
@@ -24,15 +26,15 @@ export function CartProvider({ children }) {
     setItems(prev => prev.filter(i => i.key !== key));
   }
 
-  function updateQty(key, qty) {
-    if (qty <= 0) { removeItem(key); return; }
-    setItems(prev => prev.map(i => i.key === key ? { ...i, qty } : i));
+  function updateQty(key, quantity) {
+    if (quantity <= 0) { removeItem(key); return; }
+    setItems(prev => prev.map(i => i.key === key ? { ...i, quantity } : i));
   }
 
   function clearCart() { setItems([]); }
 
-  const totalQty = items.reduce((s, i) => s + i.qty, 0);
-  const subtotal = items.reduce((s, i) => s + i.price * i.qty, 0);
+  const totalQty = items.reduce((s, i) => s + i.quantity, 0);
+  const subtotal = items.reduce((s, i) => s + (parseFloat(i.price) || 0) * i.quantity, 0);
 
   return (
     <CartContext.Provider value={{ items, addItem, removeItem, updateQty, clearCart, totalQty, subtotal, isOpen, setIsOpen }}>
