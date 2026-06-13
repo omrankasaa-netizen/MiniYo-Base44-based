@@ -1,6 +1,5 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
-import { appParams } from '@/lib/app-params';
 
 const AuthContext = createContext();
 
@@ -18,15 +17,9 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const checkAppState = async () => {
-    // Skip Base44 public-settings API — not available outside Base44 hosting
-    // Directly check if user has a token and is authenticated
-    if (appParams.token) {
-      await checkUserAuth();
-    } else {
-      setIsLoadingAuth(false);
-      setIsAuthenticated(false);
-      setAuthChecked(true);
-    }
+    // Self-host mode: the session lives in an httpOnly cookie, so always attempt
+    // to resolve the current user. me() rejects (401) for guests.
+    await checkUserAuth();
   };
 
   const checkUserAuth = async () => {
@@ -37,8 +30,9 @@ export const AuthProvider = ({ children }) => {
       setIsAuthenticated(true);
       setIsLoadingAuth(false);
       setAuthChecked(true);
-    } catch (error) {
-      console.error('User auth check failed:', error);
+    } catch {
+      // 401 for guests is expected — not an error worth logging.
+      setUser(null);
       setIsLoadingAuth(false);
       setIsAuthenticated(false);
       setAuthChecked(true);
