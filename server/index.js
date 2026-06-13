@@ -251,6 +251,9 @@ if (fs.existsSync(DIST)) {
   });
 }
 
-app.listen(PORT, () => {
-  console.log(`MiniYo server listening on http://localhost:${PORT}`);
+// Bind to 0.0.0.0 so the platform router (Railway/Render/etc.) can reach the app.
+// Binding to the default (localhost) causes the proxy to 502 even though the
+// server logs that it is "listening".
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`MiniYo server listening on 0.0.0.0:${PORT}`);
 });
