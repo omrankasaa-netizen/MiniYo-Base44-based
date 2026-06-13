@@ -50,16 +50,21 @@ export default function AccountLayout() {
                 <div className="flex items-center gap-2 mb-0.5">
                   <p className="font-heading font-semibold text-foreground text-sm truncate">{currentUser.full_name}</p>
                 </div>
-                {customer?.membership_tier && (
+                {(customer?.current_tier || customer?.membership_tier) && (
                   <div className="flex items-center gap-2 mb-1">
-                    <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${
-                      customer.membership_tier === 'VIP' ? 'bg-purple-50 text-purple-700' :
-                      customer.membership_tier === 'Gold' ? 'bg-yellow-50 text-yellow-700' :
-                      customer.membership_tier === 'Silver' ? 'bg-slate-50 text-slate-700' :
-                      'bg-amber-50 text-amber-700'
-                    }`}>
-                      {customer.membership_tier === 'VIP' ? '👑' : '⭐'} {customer.membership_tier}
-                    </span>
+                    {(() => {
+                      const tier = customer.current_tier || customer.membership_tier;
+                      return (
+                        <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${
+                          tier === 'VIP' ? 'bg-purple-50 text-purple-700' :
+                          tier === 'Gold' ? 'bg-yellow-50 text-yellow-700' :
+                          tier === 'Silver' ? 'bg-slate-50 text-slate-700' :
+                          'bg-amber-50 text-amber-700'
+                        }`}>
+                          {tier === 'VIP' ? '👑' : '⭐'} {tier}
+                        </span>
+                      );
+                    })()}
                   </div>
                 )}
                 <p className="text-xs text-muted-foreground truncate">{currentUser.email}</p>

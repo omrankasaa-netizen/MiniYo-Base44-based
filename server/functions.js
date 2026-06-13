@@ -286,6 +286,14 @@ async function sendOrderConfirmation(body) {
   const itemsHtml = items.map((it) =>
     `<tr><td>${it.product_name} ${[it.size, it.color].filter(Boolean).join(' / ')}</td><td>×${it.quantity}</td><td>$${Number(it.unit_price_usd || 0).toFixed(2)}</td><td>$${Number(it.line_total_usd || 0).toFixed(2)}</td></tr>`
   ).join('');
+  const giftHtml = order.is_gift
+    ? `<div style="margin-top:12px;padding:10px;border:1px dashed #d97706;border-radius:8px;background:#fffbeb">
+        <p style="margin:0;font-weight:bold;color:#92400e">🎁 This order is a gift</p>
+        ${order.gift_wrapping ? '<p style="margin:4px 0 0;color:#92400e">Gift wrapping requested.</p>' : ''}
+        ${order.gift_message ? `<p style="margin:4px 0 0;color:#92400e">Message: "${escapeHtml(order.gift_message)}"</p>` : ''}
+        ${order.hide_invoice_price ? '<p style="margin:4px 0 0;color:#92400e">Prices will be hidden on the packing slip.</p>' : ''}
+      </div>`
+    : '';
   const html = `<!DOCTYPE html><html><body><h2>Order Confirmation</h2>
     <p>Order #: <strong>${order.order_number}</strong></p>
     <table border="1" cellpadding="6"><tbody>${itemsHtml}</tbody></table>
@@ -293,13 +301,58 @@ async function sendOrderConfirmation(body) {
     Discount: $${Number(order.discount_usd || 0).toFixed(2)}<br/>
     Delivery: $${Number(order.delivery_fee_usd || 0).toFixed(2)}<br/>
     <strong>Total: $${Number(order.grand_total_usd || 0).toFixed(2)}</strong></p>
-    <p>Payment: ${order.payment_method}</p></body></html>`;
+    <p>Payment: ${order.payment_method}</p>
+    ${giftHtml}</body></html>`;
 
   const result = await sendEmail({
     to: order.customer_email, subject: 'Order Confirmation', html,
     email_type: 'order_confirmation', order_id, trigger_event: 'order_created',
   });
   return { status: result.status, log_id: result.log_id };
+}
+
+// Admin notification email with full order details (incl. gift flags).
+async function sendOrderNotification(body) {
+  const { order_id } = body;
+  if (!order_id) return { _status: 400, error: 'order_id required' };
+  const order = getRecord('Order', order_id);
+  if (!order) return { _status: 404, error: 'Order not found' };
+
+  const adminEmail = process.env.MINIYO_ADMIN_EMAIL || process.env.MINIYO_EMAIL_FROM || 'management@miniyo.store';
+  const already = queryRecords('EmailLog', {
+    query: { email_type: 'order_notification', order_id, status: 'sent' }, sort: 'sent_at', limit: 1,
+  });
+  if (already.length > 0) return { status: 'already_sent', message: 'Admin notification already sent for this order' };
+
+  const items = queryRecords('OrderItem', { query: { order_id } });
+  const itemsHtml = items.map((it) =>
+    `<tr><td>${it.product_name} ${[it.size, it.color].filter(Boolean).join(' / ')}</td><td>×${it.quantity}</td><td>$${Number(it.line_total_usd || 0).toFixed(2)}</td></tr>`
+  ).join('');
+  const giftHtml = order.is_gift
+    ? `<p><strong>🎁 GIFT ORDER</strong>${order.gift_wrapping ? ' · wrapping requested' : ''}${order.hide_invoice_price ? ' · hide prices on slip' : ''}</p>
+       ${order.gift_message ? `<p>Gift message: "${escapeHtml(order.gift_message)}"</p>` : ''}`
+    : '';
+  const html = `<!DOCTYPE html><html><body><h2>New Order: ${order.order_number}</h2>
+    ${giftHtml}
+    <p>Customer: ${escapeHtml(order.customer_name || '')} · ${escapeHtml(order.customer_phone || '')}<br/>
+    Email: ${escapeHtml(order.customer_email || '')}<br/>
+    Address: ${escapeHtml([order.building, order.street, order.district, order.city].filter(Boolean).join(', '))}</p>
+    <table border="1" cellpadding="6"><tbody>${itemsHtml}</tbody></table>
+    <p>Delivery: $${Number(order.delivery_fee_usd || 0).toFixed(2)}<br/>
+    <strong>Total: $${Number(order.grand_total_usd || 0).toFixed(2)}</strong><br/>
+    Payment: ${order.payment_method}</p></body></html>`;
+
+  const result = await sendEmail({
+    to: adminEmail, subject: `New Order ${order.order_number}`, html,
+    email_type: 'order_notification', order_id, trigger_event: 'order_created',
+  });
+  return { status: result.status, log_id: result.log_id };
+}
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 const STATUS_TEMPLATES = {
@@ -355,13 +408,56 @@ async function sendWelcomeEmailNew(body) {
   return { status: result.status, log_id: result.log_id };
 }
 
+// ─── Order delivered handler ────────────────────────────────────────────────
+// On delivery: ensure stock is committed, recompute the customer's lifetime
+// spend / tier, and notify the customer. Idempotent via order.delivered_processed.
+async function onOrderDelivered(body, user) {
+  const { order_id } = body;
+  if (!order_id) return { _status: 400, error: 'order_id required' };
+  const order = getRecord('Order', order_id);
+  if (!order) return { _status: 404, error: 'Order not found' };
+  if (order.delivered_processed) {
+    return { ok: true, message: 'Order already processed for delivery' };
+  }
+
+  // Commit stock if it was never committed (e.g. order jumped straight to Delivered).
+  let stock_result = { ok: true, message: 'Stock already committed' };
+  if (!order.stock_committed) {
+    stock_result = commitStock({ order_id }, user || { email: 'system' });
+  }
+
+  // Recompute membership tier from lifetime spend.
+  let tier_result = { upgraded: false };
+  if (order.customer_id) {
+    tier_result = membershipEngine({ action: 'check_tier_upgrade', customer_id: order.customer_id });
+  }
+
+  updateRecord('Order', order_id, {
+    order_status: 'Delivered',
+    delivered_processed: true,
+    delivered_at: nowIso(),
+  });
+
+  // Customer-facing delivered email (best effort).
+  let email_result = { status: 'skipped' };
+  try {
+    email_result = await sendOrderStatusUpdate({ order_id, new_status: 'Delivered' });
+  } catch (e) {
+    email_result = { status: 'failed', error: e?.message };
+  }
+
+  return { ok: true, stock: stock_result, tier: tier_result, email: email_result };
+}
+
 const REGISTRY = {
   inventoryEngine,
   membershipEngine,
   seedShippingZones,
   sendOrderConfirmation,
+  sendOrderNotification,
   sendOrderStatusUpdate,
   sendWelcomeEmailNew,
+  onOrderDelivered,
 };
 
 export async function invokeFunction(name, body, user) {
