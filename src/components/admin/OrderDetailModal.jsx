@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
-import { X, Printer, MessageCircle, ChevronRight } from 'lucide-react';
+import { X, Printer, MessageCircle, ChevronRight, Gift } from 'lucide-react';
 import { logAction } from '@/lib/auditLog';
 import { commitStock, releaseStock } from '@/lib/inventory';
 
@@ -44,11 +44,27 @@ export default function OrderDetailModal({ order, onClose, onUpdated, currentUse
         await releaseStock({ orderId: order.id, items });
       }
 
-      const updated = await base44.entities.Order.update(order.id, {
-        order_status: newStatus,
-        ...(newStatus === 'Confirmed' ? { stock_committed: true } : {}),
-        ...(newStatus === 'Cancelled' && order.stock_committed ? { stock_committed: false } : {}),
-      });
+      // Delivery triggers the consolidated backend handler (commit stock if
+      // needed + recompute membership tier + customer email). Other statuses
+      // update the order then notify the customer.
+      if (newStatus === 'Delivered') {
+        try {
+          await base44.functions.invoke('onOrderDelivered', { order_id: order.id });
+        } catch (e) {
+          console.error('onOrderDelivered failed:', e);
+        }
+      } else {
+        await base44.entities.Order.update(order.id, {
+          order_status: newStatus,
+          ...(newStatus === 'Confirmed' ? { stock_committed: true } : {}),
+          ...(newStatus === 'Cancelled' && order.stock_committed ? { stock_committed: false } : {}),
+        });
+        try {
+          await base44.functions.invoke('sendOrderStatusUpdate', { order_id: order.id, new_status: newStatus });
+        } catch (e) {
+          console.error('sendOrderStatusUpdate failed:', e);
+        }
+      }
 
       await base44.entities.OrderStatusHistory.create({
         order_id: order.id,
@@ -58,7 +74,7 @@ export default function OrderDetailModal({ order, onClose, onUpdated, currentUse
       });
 
       await logAction({ action: 'status_changed', entity: 'Order', entityId: order.id, details: `→ ${newStatus}`, userName: currentUser?.email });
-      onUpdated({ ...order, order_status: newStatus, stock_committed: newStatus === 'Confirmed' ? true : (newStatus === 'Cancelled' ? false : order.stock_committed) });
+      onUpdated({ ...order, order_status: newStatus, stock_committed: newStatus === 'Confirmed' || newStatus === 'Delivered' ? true : (newStatus === 'Cancelled' ? false : order.stock_committed) });
     } catch (e) {
       setErr(e.message);
     } finally {
@@ -193,6 +209,29 @@ export default function OrderDetailModal({ order, onClose, onUpdated, currentUse
             </div>
           </div>
 
+          {/* Gift options */}
+          {order.is_gift && (
+            <div>
+              <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 flex items-center gap-1.5">
+                <Gift className="w-3.5 h-3.5" /> Gift
+              </h4>
+              <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 space-y-1.5 text-sm">
+                <p className="font-semibold text-amber-800">🎁 This order is a gift</p>
+                <div className="flex flex-wrap gap-2">
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${order.gift_wrapping ? 'bg-amber-200 text-amber-900' : 'bg-muted text-muted-foreground'}`}>
+                    {order.gift_wrapping ? '✓ Gift wrapping' : 'No wrapping'}
+                  </span>
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${order.hide_invoice_price ? 'bg-amber-200 text-amber-900' : 'bg-muted text-muted-foreground'}`}>
+                    {order.hide_invoice_price ? '✓ Hide prices on slip' : 'Prices shown'}
+                  </span>
+                </div>
+                {order.gift_message && (
+                  <p className="text-amber-900 italic bg-white/60 rounded-lg px-3 py-2 mt-1">“{order.gift_message}”</p>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Notes */}
           {order.notes && (
             <div>
@@ -223,23 +262,36 @@ export default function OrderDetailModal({ order, onClose, onUpdated, currentUse
 }
 
 function buildPrintHTML(order, items) {
-  const itemsHTML = items.map(i =>
-    `<tr><td>${i.product_name}${i.size ? ` (${i.size}` : ''}${i.color ? `/${i.color})` : i.size ? ')' : ''}</td><td style="text-align:center">${i.quantity}</td><td style="text-align:right">$${(i.line_total_usd || i.unit_price_usd * i.quantity).toFixed(2)}</td></tr>`
-  ).join('');
+  // When a gift order requests price masking, omit all prices/totals (and the
+  // COD amount) from the printed packing slip so the recipient never sees them.
+  const hidePrice = !!(order.is_gift && order.hide_invoice_price);
+  const itemsHTML = items.map(i => {
+    const label = `${i.product_name}${i.size ? ` (${i.size}` : ''}${i.color ? `/${i.color})` : i.size ? ')' : ''}`;
+    const priceCell = hidePrice ? '' : `<td style="text-align:right">$${(i.line_total_usd || i.unit_price_usd * i.quantity).toFixed(2)}</td>`;
+    return `<tr><td>${label}</td><td style="text-align:center">${i.quantity}</td>${priceCell}</tr>`;
+  }).join('');
+  const priceHeader = hidePrice ? '' : '<th style="text-align:right">Total</th>';
+  const totalsRows = hidePrice ? '' :
+    `<tr class="total-row"><td colspan="2">Delivery</td><td style="text-align:right">$${(order.delivery_fee_usd || 0).toFixed(2)}</td></tr>
+     <tr class="total-row"><td colspan="2">GRAND TOTAL</td><td style="text-align:right">$${(order.grand_total_usd || 0).toFixed(2)}</td></tr>`;
+  const codBlock = (!hidePrice && order.payment_method === 'Cash on Delivery')
+    ? `<div class="cod">💵 COD Amount to Collect: $${(order.grand_total_usd || 0).toFixed(2)}</div>` : '';
+  const giftBlock = order.is_gift
+    ? `<div class="gift">🎁 Gift${order.gift_wrapping ? ' · please gift-wrap' : ''}${order.gift_message ? `<br/><em>"${order.gift_message}"</em>` : ''}</div>` : '';
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Order ${order.order_number}</title>
-  <style>body{font-family:Arial,sans-serif;font-size:13px;padding:20px;color:#222}h1{font-size:20px;margin-bottom:4px}.label{color:#888;font-size:11px}table{width:100%;border-collapse:collapse;margin:12px 0}th{background:#f0f0f0;padding:6px 8px;text-align:left;font-size:11px}td{padding:6px 8px;border-bottom:1px solid #eee}.total-row td{font-weight:bold;border-top:2px solid #222}.cod{background:#fffbe6;border:1px solid #f6c90e;padding:8px 12px;border-radius:6px;font-size:15px;font-weight:bold;margin-top:12px}</style>
+  <style>body{font-family:Arial,sans-serif;font-size:13px;padding:20px;color:#222}h1{font-size:20px;margin-bottom:4px}.label{color:#888;font-size:11px}table{width:100%;border-collapse:collapse;margin:12px 0}th{background:#f0f0f0;padding:6px 8px;text-align:left;font-size:11px}td{padding:6px 8px;border-bottom:1px solid #eee}.total-row td{font-weight:bold;border-top:2px solid #222}.cod{background:#fffbe6;border:1px solid #f6c90e;padding:8px 12px;border-radius:6px;font-size:15px;font-weight:bold;margin-top:12px}.gift{background:#fff7ed;border:1px dashed #d97706;padding:8px 12px;border-radius:6px;margin-top:12px}</style>
   </head><body>
-  <h1>MiniYo — Order Slip</h1>
+  <h1>MiniYo — ${hidePrice ? 'Packing Slip' : 'Order Slip'}</h1>
   <p class="label">Order #</p><p><strong>${order.order_number}</strong></p>
   <p class="label">Date</p><p>${order.order_date ? new Date(order.order_date).toLocaleDateString('en-GB') : ''}</p>
   <p class="label">Customer</p><p>${order.customer_name} · ${order.customer_phone}</p>
   <p class="label">Address</p><p>${[order.building, order.street, order.district, order.city].filter(Boolean).join(', ')}</p>
-  <p class="label">Zone</p><p>${order.delivery_zone}</p>
-  <table><thead><tr><th>Item</th><th style="text-align:center">Qty</th><th style="text-align:right">Total</th></tr></thead>
-  <tbody>${itemsHTML}<tr class="total-row"><td colspan="2">Delivery</td><td style="text-align:right">$${(order.delivery_fee_usd || 0).toFixed(2)}</td></tr>
-  <tr class="total-row"><td colspan="2">GRAND TOTAL</td><td style="text-align:right">$${(order.grand_total_usd || 0).toFixed(2)}</td></tr></tbody></table>
+  <p class="label">Zone</p><p>${order.delivery_zone || ''}</p>
+  <table><thead><tr><th>Item</th><th style="text-align:center">Qty</th>${priceHeader}</tr></thead>
+  <tbody>${itemsHTML}${totalsRows}</tbody></table>
   <p class="label">Payment</p><p>${order.payment_method}</p>
-  ${order.payment_method === 'Cash on Delivery' ? `<div class="cod">💵 COD Amount to Collect: $${(order.grand_total_usd || 0).toFixed(2)}</div>` : ''}
+  ${codBlock}
+  ${giftBlock}
   ${order.notes ? `<p class="label">Notes</p><p>${order.notes}</p>` : ''}
   </body></html>`;
 }
