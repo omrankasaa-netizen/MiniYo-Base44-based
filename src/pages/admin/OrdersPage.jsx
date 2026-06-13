@@ -36,6 +36,30 @@ export default function OrdersPage() {
     queryFn: () => base44.entities.Order.list('-created_date', 500),
   });
 
+  // Map customers by id and email so the order list can show a tier badge.
+  const { data: customers = [] } = useQuery({
+    queryKey: ['admin-orders-customers'],
+    queryFn: () => base44.entities.Customer.list('-created_date', 1000),
+  });
+  const tierByKey = useMemo(() => {
+    const m = {};
+    for (const c of customers) {
+      const tier = c.current_tier || c.membership_tier;
+      if (!tier) continue;
+      if (c.id) m[c.id] = tier;
+      if (c.email) m[c.email.toLowerCase()] = tier;
+    }
+    return m;
+  }, [customers]);
+  const tierBadge = (tier) => {
+    if (!tier) return null;
+    const cls = tier === 'Gold' ? 'bg-yellow-100 text-yellow-800' :
+      tier === 'Silver' ? 'bg-slate-200 text-slate-800' :
+      tier === 'VIP' ? 'bg-purple-100 text-purple-800' : 'bg-orange-100 text-orange-800';
+    const icon = tier === 'Gold' ? '🥇' : tier === 'Silver' ? '🥈' : tier === 'VIP' ? '👑' : '🥉';
+    return <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${cls}`}>{icon} {tier}</span>;
+  };
+
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
     return orders.filter(o => {
@@ -124,7 +148,11 @@ export default function OrdersPage() {
                   <tr key={o.id} className="hover:bg-muted/20 transition-colors cursor-pointer" onClick={() => setDetailOrder(o)}>
                     <td className="px-4 py-3 font-mono text-xs font-semibold text-foreground">{o.order_number || o.id.slice(0, 8)}</td>
                     <td className="px-4 py-3">
-                      <p className="font-medium text-foreground">{o.customer_name}</p>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="font-medium text-foreground">{o.customer_name}</p>
+                        {tierBadge(tierByKey[o.customer_id] || tierByKey[(o.customer_email || '').toLowerCase()])}
+                        {o.is_gift && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800">🎁 Gift</span>}
+                      </div>
                       <p className="text-xs text-muted-foreground">{o.customer_phone}</p>
                     </td>
                     <td className="px-4 py-3 hidden md:table-cell text-muted-foreground text-xs">{o.channel || 'Website'}</td>

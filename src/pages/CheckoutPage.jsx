@@ -91,6 +91,18 @@ export default function CheckoutPage() {
   const [emailError, setEmailError] = useState('');
   const [addressChanged, setAddressChanged] = useState(false);
 
+  // Gift options
+  const [gift, setGift] = useState({
+    is_gift: false,
+    gift_wrapping: false,
+    hide_invoice_price: false,
+    gift_message: '',
+  });
+  const GIFT_MSG_MAX = 150;
+  function setGiftField(k, v) {
+    setGift(g => ({ ...g, [k]: v }));
+  }
+
   // Auto-fill address from customer's first saved address (if exists and logged in)
   useEffect(() => {
     if (currentUser?.id && customer && !addressChanged) {
@@ -359,6 +371,10 @@ export default function CheckoutPage() {
         order_status: 'New',
         channel: 'Website',
         stock_committed: false,
+        is_gift: gift.is_gift,
+        gift_wrapping: gift.is_gift ? gift.gift_wrapping : false,
+        hide_invoice_price: gift.is_gift ? gift.hide_invoice_price : false,
+        gift_message: gift.is_gift ? gift.gift_message.slice(0, GIFT_MSG_MAX) : '',
       });
 
       // Handle free delivery credit consumption (if under $50 and member wants it)
@@ -417,6 +433,18 @@ export default function CheckoutPage() {
           line_total_usd: item.product.price_usd * item.quantity,
         })
       ));
+
+      // Fire confirmation (customer) + notification (admin) emails. Best effort.
+      try {
+        await base44.functions.invoke('sendOrderConfirmation', { order_id: order.id });
+      } catch (e) {
+        console.error('Order confirmation email failed:', e);
+      }
+      try {
+        await base44.functions.invoke('sendOrderNotification', { order_id: order.id });
+      } catch (e) {
+        console.error('Order notification email failed:', e);
+      }
 
       clearCart();
       setSuccess(order.order_number);
@@ -602,6 +630,62 @@ export default function CheckoutPage() {
                       {m.label}
                     </button>
                   ))}
+                </div>
+              )}
+            </div>
+
+            {/* Gift options */}
+            <div className="bg-card border border-border rounded-2xl p-5 space-y-3">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={gift.is_gift}
+                  onChange={e => setGiftField('is_gift', e.target.checked)}
+                  className="rounded"
+                />
+                <span className="font-semibold text-foreground text-sm flex items-center gap-1.5">
+                  <Gift className="w-4 h-4 text-primary" /> {t('This is a gift', 'هذا هدية')}
+                </span>
+              </label>
+
+              {gift.is_gift && (
+                <div className="space-y-3 pl-1 border-l-2 border-primary/20 ml-1">
+                  <div className="pl-3 space-y-3">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={gift.gift_wrapping}
+                        onChange={e => setGiftField('gift_wrapping', e.target.checked)}
+                        className="rounded"
+                      />
+                      <span className="text-sm text-foreground">{t('Add gift wrapping', 'أضف تغليف الهدية')}</span>
+                    </label>
+
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={gift.hide_invoice_price}
+                        onChange={e => setGiftField('hide_invoice_price', e.target.checked)}
+                        className="rounded"
+                      />
+                      <span className="text-sm text-foreground">{t('Hide prices on the packing slip / invoice', 'إخفاء الأسعار في إيصال الطلب')}</span>
+                    </label>
+
+                    <div>
+                      <label className="text-xs text-muted-foreground block mb-1">{t('Gift message (optional)', 'رسالة الهدية (اختياري)')}</label>
+                      <textarea
+                        value={gift.gift_message}
+                        maxLength={GIFT_MSG_MAX}
+                        onChange={e => setGiftField('gift_message', e.target.value.slice(0, GIFT_MSG_MAX))}
+                        rows={3}
+                        placeholder={t('Write a personal note to the recipient…', 'اكتب رسالة شخصية للمستلم…')}
+                        className="w-full px-3 py-2.5 rounded-xl border border-input bg-background text-sm resize-none"
+                      />
+                      <p className="text-xs text-muted-foreground mt-1 text-right">
+                        {gift.gift_message.length}/{GIFT_MSG_MAX}
+                      </p>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
