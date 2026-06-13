@@ -26,10 +26,11 @@ export default function CartPage() {
       <div className="max-w-2xl mx-auto px-4 py-8">
         <h1 className="text-2xl font-heading font-bold text-foreground mb-6">{t('Your Cart', 'سلتك')}</h1>
         <div className="space-y-3 mb-6">
-          {items.map((item, i) => {
+          {items.map((item) => {
             const name = lang === 'ar' ? (item.product.name_ar || item.product.name) : item.product.name;
+            const linePrice = (parseFloat(item.price) || 0) * item.quantity;
             return (
-              <div key={i} className="bg-card border border-border rounded-2xl p-4 flex items-center gap-4">
+              <div key={item.key} className="bg-card border border-border rounded-2xl p-4 flex items-center gap-4">
                 <div className="w-16 h-16 bg-muted rounded-xl overflow-hidden shrink-0">
                   {item.product.primaryImage ? (
                     <img src={item.product.primaryImage} alt={name} className="w-full h-full object-cover" />
@@ -40,17 +41,17 @@ export default function CartPage() {
                   {(item.variant?.size || item.variant?.color) && (
                     <p className="text-xs text-muted-foreground">{[item.variant.size, item.variant.color].filter(Boolean).join(' / ')}</p>
                   )}
-                  <p className="text-sm font-bold text-foreground mt-0.5">${(item.product.price_usd * item.quantity).toFixed(2)}</p>
+                  <p className="text-sm font-bold text-foreground mt-0.5">${linePrice.toFixed(2)}</p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                  <button onClick={() => updateQty(i, item.quantity - 1)} className="w-7 h-7 rounded-lg border border-border flex items-center justify-center hover:bg-muted">
+                  <button onClick={() => updateQty(item.key, item.quantity - 1)} className="w-7 h-7 rounded-lg border border-border flex items-center justify-center hover:bg-muted">
                     <Minus className="w-3 h-3" />
                   </button>
                   <span className="w-6 text-center text-sm font-semibold">{item.quantity}</span>
-                  <button onClick={() => updateQty(i, item.quantity + 1)} className="w-7 h-7 rounded-lg border border-border flex items-center justify-center hover:bg-muted">
+                  <button onClick={() => updateQty(item.key, item.quantity + 1)} className="w-7 h-7 rounded-lg border border-border flex items-center justify-center hover:bg-muted">
                     <Plus className="w-3 h-3" />
                   </button>
-                  <button onClick={() => removeItem(i)} className="ml-1 w-7 h-7 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 flex items-center justify-center">
+                  <button onClick={() => removeItem(item.key)} className="ml-1 w-7 h-7 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 flex items-center justify-center">
                     <Trash2 className="w-3 h-3" />
                   </button>
                 </div>
