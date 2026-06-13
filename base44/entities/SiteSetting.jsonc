@@ -1,0 +1,19 @@
+{
+  "name": "SiteSetting",
+  "type": "object",
+  "properties": {
+    "setting_key": {
+      "type": "string",
+      "description": "Unique config key"
+    },
+    "setting_value": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "setting_key"
+  ]
+}

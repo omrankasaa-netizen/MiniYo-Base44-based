@@ -1,0 +1,46 @@
+{
+  "name": "CustomerAddress",
+  "type": "object",
+  "properties": {
+    "customer_id": {
+      "type": "string",
+      "description": "Link to Customer entity"
+    },
+    "full_name": {
+      "type": "string"
+    },
+    "phone": {
+      "type": "string"
+    },
+    "city": {
+      "type": "string"
+    },
+    "district": {
+      "type": "string"
+    },
+    "street": {
+      "type": "string"
+    },
+    "building": {
+      "type": "string"
+    },
+    "floor": {
+      "type": "string"
+    },
+    "apartment": {
+      "type": "string"
+    },
+    "landmark": {
+      "type": "string"
+    },
+    "is_default": {
+      "type": "boolean",
+      "default": false
+    }
+  },
+  "required": [
+    "customer_id",
+    "full_name",
+    "city"
+  ]
+}

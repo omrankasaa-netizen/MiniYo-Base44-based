@@ -1,0 +1,39 @@
+{
+  "name": "MediaAsset",
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "enum": [
+        "logo",
+        "favicon",
+        "hero",
+        "banner",
+        "footer",
+        "category",
+        "product",
+        "other"
+      ]
+    },
+    "url": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "alt_en": {
+      "type": "string"
+    },
+    "alt_ar": {
+      "type": "string"
+    },
+    "is_active": {
+      "type": "boolean",
+      "default": true
+    }
+  },
+  "required": [
+    "url",
+    "type"
+  ]
+}

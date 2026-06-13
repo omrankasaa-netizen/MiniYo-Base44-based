@@ -1,0 +1,41 @@
+{
+  "name": "Category",
+  "type": "object",
+  "properties": {
+    "slug": {
+      "type": "string",
+      "description": "Unique URL-safe identifier"
+    },
+    "name": {
+      "type": "string"
+    },
+    "name_ar": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "description_ar": {
+      "type": "string"
+    },
+    "image_url": {
+      "type": "string"
+    },
+    "parent_id": {
+      "type": "string",
+      "description": "Parent category ID \u2014 set to make this a subcategory"
+    },
+    "sort_order": {
+      "type": "number",
+      "default": 0
+    },
+    "is_active": {
+      "type": "boolean",
+      "default": true
+    }
+  },
+  "required": [
+    "slug",
+    "name"
+  ]
+}

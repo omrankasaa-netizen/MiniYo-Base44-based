@@ -1,0 +1,58 @@
+{
+  "name": "Campaign",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "name_ar": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "hero_headline": {
+      "type": "string"
+    },
+    "hero_headline_ar": {
+      "type": "string"
+    },
+    "banner_image": {
+      "type": "string"
+    },
+    "banner_link": {
+      "type": "string"
+    },
+    "linked_discount_id": {
+      "type": "string",
+      "description": "Link to Discount entity"
+    },
+    "starts_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "ends_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "is_active": {
+      "type": "boolean",
+      "default": true
+    },
+    "placement": {
+      "type": "string",
+      "enum": [
+        "homepage_hero",
+        "announcement_bar",
+        "promo_strip",
+        "category_top"
+      ],
+      "default": "homepage_hero"
+    }
+  },
+  "required": [
+    "name",
+    "starts_at",
+    "ends_at"
+  ]
+}

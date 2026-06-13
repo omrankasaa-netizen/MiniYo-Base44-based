@@ -1,0 +1,122 @@
+{
+  "name": "Product",
+  "type": "object",
+  "properties": {
+    "slug": {
+      "type": "string",
+      "description": "Unique URL slug"
+    },
+    "sku": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "name_ar": {
+      "type": "string"
+    },
+    "short_description": {
+      "type": "string"
+    },
+    "short_description_ar": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string",
+      "description": "Long description (HTML/markdown)"
+    },
+    "description_ar": {
+      "type": "string"
+    },
+    "category_id": {
+      "type": "string",
+      "description": "Link to parent Category"
+    },
+    "subcategory_id": {
+      "type": "string",
+      "description": "Link to child Category (subcategory)"
+    },
+    "collection_ids": {
+      "type": "string",
+      "description": "Comma-separated Collection IDs"
+    },
+    "collection_id": {
+      "type": "string",
+      "description": "Primary Collection ID (legacy, kept for compatibility)"
+    },
+    "gender": {
+      "type": "string",
+      "enum": [
+        "Girls",
+        "Boys",
+        "Unisex"
+      ]
+    },
+    "age_group": {
+      "type": "string",
+      "enum": [
+        "Newborn",
+        "Baby",
+        "Toddler",
+        "Kids"
+      ]
+    },
+    "price_usd": {
+      "type": "number"
+    },
+    "compare_at_price_usd": {
+      "type": "number",
+      "description": "Optional original price for sale display"
+    },
+    "has_variants": {
+      "type": "boolean",
+      "default": false
+    },
+    "colors": {
+      "type": "string",
+      "description": "Pipe-separated color options e.g. White|Pink|Sage"
+    },
+    "sizes": {
+      "type": "string",
+      "description": "Pipe-separated size options e.g. NB|3M|6M|12M"
+    },
+    "stock_quantity": {
+      "type": "number",
+      "default": 0,
+      "description": "Used when has_variants=false"
+    },
+    "reorder_level": {
+      "type": "number",
+      "default": 3
+    },
+    "cost_usd": {
+      "type": "number",
+      "description": "Landed cost for profit reporting"
+    },
+    "is_new": {
+      "type": "boolean",
+      "default": false
+    },
+    "is_featured": {
+      "type": "boolean",
+      "default": false
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "Active",
+        "Hidden"
+      ],
+      "default": "Active"
+    },
+    "tags": {
+      "type": "string",
+      "description": "Comma-separated tags"
+    }
+  },
+  "required": [
+    "slug",
+    "name",
+    "price_usd"
+  ]
+}

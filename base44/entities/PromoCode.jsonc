@@ -1,0 +1,65 @@
+{
+  "name": "PromoCode",
+  "type": "object",
+  "properties": {
+    "code": {
+      "type": "string",
+      "description": "Unique promo code string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "percentage",
+        "fixed_amount",
+        "free_shipping"
+      ]
+    },
+    "value": {
+      "type": "number"
+    },
+    "min_order_usd": {
+      "type": "number",
+      "default": 0
+    },
+    "scope": {
+      "type": "string",
+      "enum": [
+        "entire_order",
+        "category",
+        "product"
+      ]
+    },
+    "valid_from": {
+      "type": "string",
+      "format": "date"
+    },
+    "valid_until": {
+      "type": "string",
+      "format": "date"
+    },
+    "usage_limit": {
+      "type": "number"
+    },
+    "times_used": {
+      "type": "number",
+      "default": 0
+    },
+    "is_active": {
+      "type": "boolean",
+      "default": true
+    },
+    "stackable_with_membership": {
+      "type": "boolean",
+      "default": false,
+      "description": "If true, promo can stack on top of member tier discount; if false, best discount wins"
+    }
+  },
+  "required": [
+    "code",
+    "type",
+    "value"
+  ]
+}

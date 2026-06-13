@@ -1,0 +1,55 @@
+{
+  "name": "EmailLog",
+  "type": "object",
+  "properties": {
+    "email_type": {
+      "type": "string",
+      "enum": [
+        "order_confirmation",
+        "welcome",
+        "order_status_update"
+      ],
+      "description": "Type of email sent"
+    },
+    "recipient_email": {
+      "type": "string",
+      "format": "email"
+    },
+    "subject": {
+      "type": "string"
+    },
+    "order_id": {
+      "type": "string",
+      "description": "Link to Order (if applicable)"
+    },
+    "customer_id": {
+      "type": "string",
+      "description": "Link to Customer (if applicable)"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "sent",
+        "failed",
+        "pending"
+      ],
+      "default": "pending"
+    },
+    "error_message": {
+      "type": "string",
+      "description": "Error details if failed"
+    },
+    "sent_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "trigger_event": {
+      "type": "string",
+      "description": "What triggered this email (e.g., order_created, status_changed_to_delivered)"
+    }
+  },
+  "required": [
+    "email_type",
+    "recipient_email"
+  ]
+}

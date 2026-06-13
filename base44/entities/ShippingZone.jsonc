@@ -1,0 +1,37 @@
+{
+  "name": "ShippingZone",
+  "type": "object",
+  "properties": {
+    "area_name": {
+      "type": "string",
+      "description": "Area name in English"
+    },
+    "area_name_ar": {
+      "type": "string",
+      "description": "Area name in Arabic"
+    },
+    "fee_usd": {
+      "type": "number",
+      "description": "Shipping fee in USD for this zone"
+    },
+    "is_active": {
+      "type": "boolean",
+      "default": true,
+      "description": "Whether this zone is available for selection at checkout"
+    },
+    "is_catchall": {
+      "type": "boolean",
+      "default": false,
+      "description": "True for the default/fallback zone (charges if no other match)"
+    },
+    "sort_order": {
+      "type": "number",
+      "default": 0,
+      "description": "Display order in checkout dropdown"
+    }
+  },
+  "required": [
+    "area_name",
+    "fee_usd"
+  ]
+}

@@ -1,0 +1,117 @@
+{
+  "name": "Order",
+  "type": "object",
+  "properties": {
+    "order_number": {
+      "type": "string",
+      "description": "Auto-generated, format MNY-00001"
+    },
+    "order_date": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "customer_id": {
+      "type": "string"
+    },
+    "customer_name": {
+      "type": "string"
+    },
+    "customer_phone": {
+      "type": "string"
+    },
+    "customer_email": {
+      "type": "string",
+      "format": "email",
+      "description": "Email address for order confirmation"
+    },
+    "city": {
+      "type": "string"
+    },
+    "district": {
+      "type": "string"
+    },
+    "street": {
+      "type": "string"
+    },
+    "building": {
+      "type": "string"
+    },
+    "floor": {
+      "type": "string"
+    },
+    "apartment": {
+      "type": "string"
+    },
+    "landmark": {
+      "type": "string"
+    },
+    "shipping_zone_id": {
+      "type": "string",
+      "description": "Link to ShippingZone entity"
+    },
+    "channel": {
+      "type": "string",
+      "enum": [
+        "Website",
+        "Instagram",
+        "Facebook",
+        "WhatsApp",
+        "Other"
+      ],
+      "default": "Website"
+    },
+    "subtotal_usd": {
+      "type": "number",
+      "default": 0
+    },
+    "discount_usd": {
+      "type": "number",
+      "default": 0
+    },
+    "delivery_fee_usd": {
+      "type": "number",
+      "default": 0
+    },
+    "grand_total_usd": {
+      "type": "number",
+      "default": 0
+    },
+    "payment_method": {
+      "type": "string",
+      "enum": [
+        "Cash on Delivery",
+        "Whish"
+      ],
+      "default": "Cash on Delivery"
+    },
+    "order_status": {
+      "type": "string",
+      "enum": [
+        "New",
+        "Confirmed",
+        "Packed",
+        "Out for Delivery",
+        "Delivered",
+        "Cancelled"
+      ],
+      "default": "New"
+    },
+    "stock_committed": {
+      "type": "boolean",
+      "default": false,
+      "description": "True when stock has been deducted for this order. Prevents double-deduction."
+    },
+    "promo_code": {
+      "type": "string"
+    },
+    "notes": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "customer_name",
+    "customer_phone",
+    "customer_email",
+    "grand_total_usd"
+  ]
+}

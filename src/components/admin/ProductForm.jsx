@@ -1,0 +1,552 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { base44 } from '@/api/base44Client';
+import { useQuery } from '@tanstack/react-query';
+import { logAction } from '@/lib/auditLog';
+import { useAuthUser } from '@/contexts/AuthUserContext';
+import { X, Plus, Upload, GripVertical, Star, Trash2, ImageIcon } from 'lucide-react';
+
+const SIZES = ['NB', '0-3M', '3-6M', '6-12M', '12-18M', '18-24M', '2Y', '3Y', '4Y', '5Y', '6Y'];
+const COLORS_DEFAULT = ['White', 'Black', 'Pink', 'Blue', 'Sage', 'Cream', 'Blush', 'Yellow', 'Red'];
+
+function ChipInput({ label, chips, setChips, suggestions }) {
+  const [input, setInput] = useState('');
+  function add(val) {
+    const v = val.trim();
+    if (v && !chips.includes(v)) setChips([...chips, v]);
+    setInput('');
+  }
+  return (
+    <div>
+      <label className="text-xs font-medium text-muted-foreground block mb-1.5">{label}</label>
+      <div className="min-h-[42px] border border-input bg-background rounded-xl px-3 py-2 flex flex-wrap gap-1.5">
+        {chips.map(c => (
+          <span key={c} className="inline-flex items-center gap-1 bg-primary/10 text-primary text-xs px-2.5 py-1 rounded-full">
+            {c}
+            <button type="button" onClick={() => setChips(chips.filter(x => x !== c))} className="hover:text-destructive">
+              <X className="w-3 h-3" />
+            </button>
+          </span>
+        ))}
+        <input
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); add(input); } }}
+          onBlur={() => input && add(input)}
+          placeholder={chips.length === 0 ? 'Type and press Enter…' : ''}
+          className="bg-transparent outline-none text-xs flex-1 min-w-[80px] text-foreground placeholder:text-muted-foreground"
+        />
+      </div>
+      {suggestions && (
+        <div className="flex flex-wrap gap-1 mt-1.5">
+          {suggestions.filter(s => !chips.includes(s)).slice(0, 8).map(s => (
+            <button key={s} type="button" onClick={() => setChips([...chips, s])}
+              className="text-xs text-muted-foreground hover:text-primary border border-border rounded-full px-2 py-0.5 hover:border-primary transition-colors">
+              +{s}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Field({ label, children, required }) {
+  return (
+    <div>
+      <label className="text-xs font-medium text-muted-foreground block mb-1.5">
+        {label}{required && <span className="text-destructive ml-0.5">*</span>}
+      </label>
+      {children}
+    </div>
+  );
+}
+
+function Input({ className = '', ...props }) {
+  return (
+    <input {...props} className={`w-full px-3 py-2 rounded-xl border border-input bg-background text-sm text-foreground placeholder:text-muted-foreground outline-none focus:ring-2 focus:ring-ring ${className}`} />
+  );
+}
+
+function Textarea({ className = '', ...props }) {
+  return (
+    <textarea {...props} className={`w-full px-3 py-2 rounded-xl border border-input bg-background text-sm text-foreground placeholder:text-muted-foreground outline-none focus:ring-2 focus:ring-ring resize-none ${className}`} />
+  );
+}
+
+function Select({ children, className = '', ...props }) {
+  return (
+    <select {...props} className={`w-full px-3 py-2 rounded-xl border border-input bg-background text-sm text-foreground outline-none focus:ring-2 focus:ring-ring ${className}`}>
+      {children}
+    </select>
+  );
+}
+
+function Toggle({ label, checked, onChange }) {
+  return (
+    <label className="flex items-center gap-2 cursor-pointer select-none">
+      <div onClick={onChange} className={`w-10 h-5 rounded-full transition-colors relative ${checked ? 'bg-primary' : 'bg-muted-foreground/30'}`}>
+        <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${checked ? 'translate-x-5' : 'translate-x-0.5'}`} />
+      </div>
+      <span className="text-sm text-foreground">{label}</span>
+    </label>
+  );
+}
+
+export default function ProductForm({ product, categories, onClose, onSaved }) {
+  const { currentUser } = useAuthUser();
+  const isNew = !product?.id;
+  const fileInputRef = useRef();
+
+  // ── Form state ──────────────────────────────────────────────────────────────
+  const [form, setForm] = useState({
+    slug: '', sku: '', name: '', name_ar: '',
+    short_description: '', short_description_ar: '',
+    description: '', description_ar: '',
+    category_id: '', subcategory_id: '', collection_ids: '', collection_id: '', gender: '', age_group: '',
+    price_usd: '', compare_at_price_usd: '', cost_usd: '',
+    tags: '', is_new: false, is_featured: false, status: 'Active',
+    has_variants: false, stock_quantity: 0, reorder_level: 3,
+    ...product,
+  });
+
+  const [sizes, setSizes] = useState([]);
+  const [colors, setColors] = useState([]);
+  const [variantGrid, setVariantGrid] = useState({});
+  const [images, setImages] = useState([]); // { url, is_primary, sort_order, id?, isNew? }
+  const [uploading, setUploading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [tab, setTab] = useState('basic'); // basic | variants | images | preview
+
+  // Load existing variants & images
+  const { data: existingVariants = [] } = useQuery({
+    queryKey: ['form-variants', product?.id],
+    queryFn: () => base44.entities.ProductVariant.filter({ product_id: product.id }),
+    enabled: !!product?.id,
+  });
+
+  const { data: existingImages = [] } = useQuery({
+    queryKey: ['form-images', product?.id],
+    queryFn: () => base44.entities.ProductImage.filter({ product_id: product.id }),
+    enabled: !!product?.id,
+  });
+
+  const { data: collections = [] } = useQuery({
+    queryKey: ['admin-collections'],
+    queryFn: () => base44.entities.Collection.list('name', 50),
+  });
+
+  // Subcategories for selected parent category
+  const subcategories = categories.filter(c => c.parent_id === form.category_id);
+  const parentCategories = categories.filter(c => !c.parent_id);
+
+  // Selected collection IDs as array
+  const selectedCollectionIds = (form.collection_ids || '').split(',').map(s => s.trim()).filter(Boolean);
+
+  useEffect(() => {
+    if (existingVariants.length > 0) {
+      const uniqueSizes = [...new Set(existingVariants.map(v => v.size).filter(Boolean))];
+      const uniqueColors = [...new Set(existingVariants.map(v => v.color).filter(Boolean))];
+      setSizes(uniqueSizes);
+      setColors(uniqueColors);
+      const grid = {};
+      for (const v of existingVariants) {
+        const key = `${v.size || ''}__${v.color || ''}`;
+        grid[key] = { qty: v.qty_on_hand || 0, id: v.id, sku: v.variant_sku };
+      }
+      setVariantGrid(grid);
+    }
+    if (existingImages.length > 0) {
+      setImages([...existingImages].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)));
+    }
+  }, [existingVariants, existingImages]);
+
+  function set(field, value) {
+    setForm(f => ({ ...f, [field]: value }));
+  }
+
+  function variantKey(size, color) { return `${size}__${color}`; }
+
+  function setVariantQty(size, color, qty) {
+    setVariantGrid(g => ({ ...g, [variantKey(size, color)]: { ...(g[variantKey(size, color)] || {}), qty: Number(qty) } }));
+  }
+
+  async function handleImageUpload(files) {
+    setUploading(true);
+    for (const file of files) {
+      const { file_url } = await base44.integrations.Core.UploadFile({ file });
+      setImages(imgs => [
+        ...imgs,
+        { url: file_url, is_primary: imgs.length === 0, sort_order: imgs.length, isNew: true }
+      ]);
+    }
+    setUploading(false);
+  }
+
+  function setPrimary(idx) {
+    setImages(imgs => imgs.map((img, i) => ({ ...img, is_primary: i === idx })));
+  }
+
+  function removeImage(idx) {
+    setImages(imgs => imgs.filter((_, i) => i !== idx));
+  }
+
+  async function handleSave() {
+    if (!form.name || !form.price_usd) { setError('Name and price are required.'); return; }
+    setSaving(true);
+    setError('');
+    try {
+      const slug = form.slug || form.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+      const payload = {
+        ...form,
+        slug,
+        price_usd: Number(form.price_usd),
+        compare_at_price_usd: form.compare_at_price_usd ? Number(form.compare_at_price_usd) : null,
+        cost_usd: form.cost_usd ? Number(form.cost_usd) : null,
+        stock_quantity: form.has_variants ? 0 : Number(form.stock_quantity || 0),
+      };
+
+      let productId;
+      if (isNew) {
+        const created = await base44.entities.Product.create(payload);
+        productId = created.id;
+      } else {
+        await base44.entities.Product.update(product.id, payload);
+        productId = product.id;
+      }
+
+      // Save variants
+      if (form.has_variants && (sizes.length > 0 || colors.length > 0)) {
+        const pairs = sizes.length > 0 && colors.length > 0
+          ? sizes.flatMap(s => colors.map(c => ({ size: s, color: c })))
+          : sizes.length > 0
+            ? sizes.map(s => ({ size: s, color: '' }))
+            : colors.map(c => ({ size: '', color: c }));
+
+        for (const { size, color } of pairs) {
+          const key = variantKey(size, color);
+          const entry = variantGrid[key] || { qty: 0 };
+          const sku = `${payload.sku || slug}-${size || color}`.toUpperCase();
+          if (entry.id) {
+            await base44.entities.ProductVariant.update(entry.id, { qty_on_hand: entry.qty });
+          } else {
+            await base44.entities.ProductVariant.create({
+              product_id: productId, variant_sku: sku, size, color, qty_on_hand: entry.qty,
+            });
+          }
+        }
+      }
+
+      // Save images
+      for (let i = 0; i < images.length; i++) {
+        const img = images[i];
+        const imgPayload = { product_id: productId, url: img.url, is_primary: img.is_primary, sort_order: i, alt: form.name, alt_ar: form.name_ar };
+        if (img.id && !img.isNew) {
+          await base44.entities.ProductImage.update(img.id, imgPayload);
+        } else if (img.isNew || !img.id) {
+          await base44.entities.ProductImage.create(imgPayload);
+        }
+      }
+
+      await logAction({ action: isNew ? 'created' : 'updated', entity: 'Product', entityId: productId, userName: currentUser?.email });
+      onSaved();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // ── Preview card ─────────────────────────────────────────────────────────────
+  const primaryImg = images.find(i => i.is_primary)?.url || images[0]?.url;
+
+  const tabs = [
+    { key: 'basic', label: 'Basic Info' },
+    { key: 'variants', label: 'Variants & Stock' },
+    { key: 'images', label: 'Images' },
+    { key: 'preview', label: 'Preview' },
+  ];
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-3 lg:p-6">
+      <div className="bg-card border border-border rounded-2xl w-full max-w-3xl max-h-[95vh] flex flex-col shadow-2xl">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
+          <h2 className="font-heading font-bold text-foreground text-lg">{isNew ? 'Add Product' : 'Edit Product'}</h2>
+          <button onClick={onClose} className="p-2 rounded-xl hover:bg-muted"><X className="w-4 h-4" /></button>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex gap-1 px-4 pt-3 border-b border-border shrink-0 overflow-x-auto">
+          {tabs.map(t => (
+            <button key={t.key} onClick={() => setTab(t.key)}
+              className={`px-4 py-2 text-sm font-medium rounded-t-lg whitespace-nowrap transition-colors border-b-2 -mb-px ${tab === t.key ? 'border-primary text-primary bg-primary/5' : 'border-transparent text-muted-foreground hover:text-foreground'}`}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto p-6">
+
+          {/* ── BASIC INFO ── */}
+          {tab === 'basic' && (
+            <div className="space-y-5">
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="Name (English)" required>
+                  <Input value={form.name} onChange={e => set('name', e.target.value)} placeholder="e.g. Soft Bodysuit" />
+                </Field>
+                <Field label="اسم المنتج (عربي)">
+                  <Input value={form.name_ar} onChange={e => set('name_ar', e.target.value)} placeholder="مثلاً: بودي سوفت" dir="rtl" />
+                </Field>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="SKU"><Input value={form.sku} onChange={e => set('sku', e.target.value)} placeholder="e.g. BODY-WH-NB" /></Field>
+                <Field label="Slug"><Input value={form.slug} onChange={e => set('slug', e.target.value)} placeholder="auto-generated from name" /></Field>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="Short Description">
+                  <Textarea value={form.short_description} onChange={e => set('short_description', e.target.value)} rows={2} placeholder="One-line product pitch…" />
+                </Field>
+                <Field label="وصف مختصر">
+                  <Textarea value={form.short_description_ar} onChange={e => set('short_description_ar', e.target.value)} rows={2} dir="rtl" />
+                </Field>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="Full Description">
+                  <Textarea value={form.description} onChange={e => set('description', e.target.value)} rows={4} />
+                </Field>
+                <Field label="وصف كامل">
+                  <Textarea value={form.description_ar} onChange={e => set('description_ar', e.target.value)} rows={4} dir="rtl" />
+                </Field>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="Category">
+                  <Select value={form.category_id} onChange={e => { set('category_id', e.target.value); set('subcategory_id', ''); }}>
+                    <option value="">— Select —</option>
+                    {parentCategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </Select>
+                </Field>
+                <Field label="Subcategory">
+                  <Select value={form.subcategory_id || ''} onChange={e => set('subcategory_id', e.target.value)} disabled={subcategories.length === 0}>
+                    <option value="">— None —</option>
+                    {subcategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </Select>
+                </Field>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="Gender">
+                  <Select value={form.gender} onChange={e => set('gender', e.target.value)}>
+                    <option value="">— Select —</option>
+                    {['Girls','Boys','Unisex'].map(g => <option key={g}>{g}</option>)}
+                  </Select>
+                </Field>
+                <Field label="Age Group">
+                  <Select value={form.age_group} onChange={e => set('age_group', e.target.value)}>
+                    <option value="">— Select —</option>
+                    {['Newborn','Baby','Toddler','Kids'].map(a => <option key={a}>{a}</option>)}
+                  </Select>
+                </Field>
+              </div>
+              <div className="grid grid-cols-3 gap-4">
+                <Field label="Price (USD)" required>
+                  <Input type="number" step="0.01" min="0" value={form.price_usd} onChange={e => set('price_usd', e.target.value)} placeholder="0.00" />
+                </Field>
+                <Field label="Compare At (USD)">
+                  <Input type="number" step="0.01" min="0" value={form.compare_at_price_usd || ''} onChange={e => set('compare_at_price_usd', e.target.value)} placeholder="0.00" />
+                </Field>
+                <Field label="Cost (USD)">
+                  <Input type="number" step="0.01" min="0" value={form.cost_usd || ''} onChange={e => set('cost_usd', e.target.value)} placeholder="0.00" />
+                </Field>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="Tags (comma-separated)">
+                  <Input value={form.tags || ''} onChange={e => set('tags', e.target.value)} placeholder="organic, gift, summer" />
+                </Field>
+                <Field label="Collections">
+                  <div className="min-h-[42px] border border-input bg-background rounded-xl px-2 py-1.5 flex flex-wrap gap-1.5">
+                    {selectedCollectionIds.map(id => {
+                      const col = collections.find(c => c.id === id);
+                      return col ? (
+                        <span key={id} className="inline-flex items-center gap-1 bg-primary/10 text-primary text-xs px-2 py-0.5 rounded-full">
+                          {col.name}
+                          <button type="button" onClick={() => set('collection_ids', selectedCollectionIds.filter(x => x !== id).join(','))} className="hover:text-destructive"><X className="w-3 h-3" /></button>
+                        </span>
+                      ) : null;
+                    })}
+                    <select value="" onChange={e => { if (e.target.value && !selectedCollectionIds.includes(e.target.value)) set('collection_ids', [...selectedCollectionIds, e.target.value].join(',')); }}
+                      className="bg-transparent outline-none text-xs text-muted-foreground flex-1 min-w-[80px] cursor-pointer">
+                      <option value="">+ Add…</option>
+                      {collections.filter(c => !selectedCollectionIds.includes(c.id)).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                  </div>
+                </Field>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="Status">
+                  <Select value={form.status} onChange={e => set('status', e.target.value)}>
+                    <option>Active</option>
+                    <option>Hidden</option>
+                  </Select>
+                </Field>
+                <Field label="Reorder Level">
+                  <Input type="number" min="0" value={form.reorder_level || 3} onChange={e => set('reorder_level', e.target.value)} />
+                </Field>
+              </div>
+              <div className="flex flex-wrap gap-6 pt-1">
+                <Toggle label="Mark as New" checked={!!form.is_new} onChange={() => set('is_new', !form.is_new)} />
+                <Toggle label="Mark as Featured" checked={!!form.is_featured} onChange={() => set('is_featured', !form.is_featured)} />
+              </div>
+            </div>
+          )}
+
+          {/* ── VARIANTS & STOCK ── */}
+          {tab === 'variants' && (
+            <div className="space-y-5">
+              <Toggle label="This product has variants (sizes / colors)" checked={!!form.has_variants} onChange={() => set('has_variants', !form.has_variants)} />
+
+              {!form.has_variants && (
+                <Field label="Stock Quantity">
+                  <Input type="number" min="0" value={form.stock_quantity || 0} onChange={e => set('stock_quantity', e.target.value)} />
+                </Field>
+              )}
+
+              {form.has_variants && (
+                <div className="space-y-5">
+                  <ChipInput label="Sizes" chips={sizes} setChips={setSizes} suggestions={SIZES} />
+                  <ChipInput label="Colors" chips={colors} setChips={setColors} suggestions={COLORS_DEFAULT} />
+
+                  {(sizes.length > 0 || colors.length > 0) && (
+                    <div>
+                      <p className="text-xs font-medium text-muted-foreground mb-2">Stock per variant (qty_on_hand)</p>
+                      <div className="overflow-x-auto">
+                        <table className="text-sm">
+                          <thead>
+                            <tr>
+                              <th className="text-left pr-4 pb-2 text-xs text-muted-foreground font-medium">Size / Color</th>
+                              {colors.length > 0 ? colors.map(c => (
+                                <th key={c} className="pb-2 px-3 text-xs text-muted-foreground font-medium text-center">{c}</th>
+                              )) : <th className="pb-2 px-3 text-xs text-muted-foreground font-medium text-center">Qty</th>}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {(sizes.length > 0 ? sizes : ['']).map(size => (
+                              <tr key={size}>
+                                <td className="pr-4 py-1.5 text-sm font-medium text-foreground">{size || 'Default'}</td>
+                                {(colors.length > 0 ? colors : ['']).map(color => (
+                                  <td key={color} className="px-2 py-1.5">
+                                    <input
+                                      type="number" min="0"
+                                      value={variantGrid[variantKey(size, color)]?.qty ?? 0}
+                                      onChange={e => setVariantQty(size, color, e.target.value)}
+                                      className="w-16 px-2 py-1 rounded-lg border border-input bg-background text-sm text-center outline-none focus:ring-2 focus:ring-ring"
+                                    />
+                                  </td>
+                                ))}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── IMAGES ── */}
+          {tab === 'images' && (
+            <div className="space-y-4">
+              {/* Upload zone */}
+              <div
+                onClick={() => fileInputRef.current?.click()}
+                onDragOver={e => e.preventDefault()}
+                onDrop={e => { e.preventDefault(); handleImageUpload([...e.dataTransfer.files]); }}
+                className="border-2 border-dashed border-border rounded-2xl p-8 text-center cursor-pointer hover:border-primary hover:bg-primary/5 transition-colors"
+              >
+                {uploading ? (
+                  <div className="flex flex-col items-center gap-2">
+                    <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                    <p className="text-sm text-muted-foreground">Uploading…</p>
+                  </div>
+                ) : (
+                  <>
+                    <Upload className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
+                    <p className="text-sm text-muted-foreground">Drop images here or <span className="text-primary font-medium">click to upload</span></p>
+                    <p className="text-xs text-muted-foreground mt-1">Multiple files supported</p>
+                  </>
+                )}
+              </div>
+              <input ref={fileInputRef} type="file" multiple accept="image/*" className="hidden"
+                onChange={e => handleImageUpload([...e.target.files])} />
+
+              {/* Image grid */}
+              {images.length > 0 && (
+                <div className="grid grid-cols-3 gap-3">
+                  {images.map((img, idx) => (
+                    <div key={idx} className={`relative rounded-xl overflow-hidden border-2 transition-colors ${img.is_primary ? 'border-primary' : 'border-border'}`}>
+                      <img src={img.url} alt="" className="w-full h-24 object-cover" />
+                      <div className="absolute inset-0 bg-black/0 hover:bg-black/40 transition-colors flex items-center justify-center gap-1.5 opacity-0 hover:opacity-100">
+                        <button type="button" onClick={() => setPrimary(idx)}
+                          className="p-1.5 bg-white rounded-full shadow hover:bg-amber-50">
+                          <Star className={`w-3.5 h-3.5 ${img.is_primary ? 'fill-amber-400 text-amber-400' : 'text-muted-foreground'}`} />
+                        </button>
+                        <button type="button" onClick={() => removeImage(idx)}
+                          className="p-1.5 bg-white rounded-full shadow hover:bg-red-50">
+                          <Trash2 className="w-3.5 h-3.5 text-destructive" />
+                        </button>
+                      </div>
+                      {img.is_primary && (
+                        <span className="absolute top-1.5 left-1.5 bg-primary text-primary-foreground text-xs px-2 py-0.5 rounded-full">Primary</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── PREVIEW ── */}
+          {tab === 'preview' && (
+            <div className="flex flex-col items-center gap-4">
+              <p className="text-xs text-muted-foreground">Storefront card preview</p>
+              <div className="w-52 bg-card border border-border rounded-2xl overflow-hidden shadow-md">
+                <div className="w-full h-52 bg-muted flex items-center justify-center overflow-hidden">
+                  {primaryImg
+                    ? <img src={primaryImg} alt={form.name} className="w-full h-full object-cover" />
+                    : <ImageIcon className="w-10 h-10 text-muted-foreground/40" />
+                  }
+                </div>
+                <div className="p-3">
+                  <div className="flex gap-1 mb-1 flex-wrap">
+                    {form.is_new && <span className="text-xs bg-accent/50 text-accent-foreground px-2 py-0.5 rounded-full">New</span>}
+                    {form.is_featured && <span className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full">★ Featured</span>}
+                  </div>
+                  <p className="font-heading font-semibold text-foreground text-sm leading-tight">{form.name || 'Product Name'}</p>
+                  {form.name_ar && <p className="text-xs text-muted-foreground mt-0.5" dir="rtl">{form.name_ar}</p>}
+                  <div className="flex items-baseline gap-1.5 mt-2">
+                    <span className="font-bold text-foreground">${Number(form.price_usd || 0).toFixed(2)}</span>
+                    {form.compare_at_price_usd > form.price_usd && (
+                      <span className="text-xs text-muted-foreground line-through">${Number(form.compare_at_price_usd).toFixed(2)}</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        {error && <p className="px-6 py-2 text-xs text-destructive bg-destructive/5">{error}</p>}
+        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-border shrink-0">
+          <button onClick={onClose} className="px-5 py-2 rounded-xl border border-border text-sm hover:bg-muted">Cancel</button>
+          <button onClick={handleSave} disabled={saving}
+            className="px-6 py-2 rounded-xl bg-primary text-primary-foreground text-sm font-semibold disabled:opacity-50 hover:bg-primary/90 transition-colors">
+            {saving ? 'Saving…' : isNew ? 'Create Product' : 'Save Changes'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

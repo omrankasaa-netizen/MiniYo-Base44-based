@@ -1,0 +1,27 @@
+{
+  "name": "OrderStatusHistory",
+  "type": "object",
+  "properties": {
+    "order_id": {
+      "type": "string",
+      "description": "Link to Order"
+    },
+    "status": {
+      "type": "string"
+    },
+    "note": {
+      "type": "string"
+    },
+    "changed_by": {
+      "type": "string"
+    },
+    "changed_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "order_id",
+    "status"
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "name": "AuditLog",
+  "type": "object",
+  "properties": {
+    "action": {
+      "type": "string",
+      "description": "e.g. created, updated, deleted, status_changed"
+    },
+    "entity": {
+      "type": "string",
+      "description": "Entity type name"
+    },
+    "entity_id": {
+      "type": "string"
+    },
+    "details": {
+      "type": "string",
+      "description": "JSON or human-readable change details"
+    },
+    "user_name": {
+      "type": "string"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "action",
+    "entity"
+  ]
+}

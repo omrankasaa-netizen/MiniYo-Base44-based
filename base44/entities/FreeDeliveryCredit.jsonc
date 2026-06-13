@@ -1,0 +1,52 @@
+{
+  "name": "FreeDeliveryCredit",
+  "type": "object",
+  "properties": {
+    "customer_id": {
+      "type": "string",
+      "description": "Link to Customer entity"
+    },
+    "source_tier": {
+      "type": "string",
+      "enum": [
+        "Bronze",
+        "Silver",
+        "Gold"
+      ],
+      "description": "Which tier granted this credit"
+    },
+    "granted_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "expires_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Null if never expires"
+    },
+    "used_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When this credit was used"
+    },
+    "used_on_order": {
+      "type": "string",
+      "description": "Order ID if used"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "available",
+        "used",
+        "expired"
+      ],
+      "default": "available"
+    }
+  },
+  "required": [
+    "customer_id",
+    "source_tier",
+    "granted_at",
+    "status"
+  ]
+}

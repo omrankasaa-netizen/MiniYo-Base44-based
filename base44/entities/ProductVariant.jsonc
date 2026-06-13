@@ -1,0 +1,36 @@
+{
+  "name": "ProductVariant",
+  "type": "object",
+  "properties": {
+    "product_id": {
+      "type": "string",
+      "description": "Link to Product"
+    },
+    "variant_sku": {
+      "type": "string",
+      "description": "Unique variant SKU"
+    },
+    "size": {
+      "type": "string"
+    },
+    "color": {
+      "type": "string"
+    },
+    "price_usd": {
+      "type": "number",
+      "description": "Optional price override"
+    },
+    "qty_on_hand": {
+      "type": "number",
+      "default": 0
+    },
+    "qty_reserved": {
+      "type": "number",
+      "default": 0
+    }
+  },
+  "required": [
+    "product_id",
+    "variant_sku"
+  ]
+}

@@ -1,0 +1,52 @@
+{
+  "name": "MembershipSettings",
+  "type": "object",
+  "properties": {
+    "bronze_credits": {
+      "type": "number",
+      "default": 2,
+      "description": "Credits granted at registration"
+    },
+    "bronze_discount_pct": {
+      "type": "number",
+      "default": 5,
+      "description": "Discount percentage for Bronze"
+    },
+    "silver_threshold_usd": {
+      "type": "number",
+      "default": 100,
+      "description": "Lifetime spend to reach Silver"
+    },
+    "silver_credits": {
+      "type": "number",
+      "default": 4,
+      "description": "Credits granted when reaching Silver"
+    },
+    "silver_discount_pct": {
+      "type": "number",
+      "default": 10,
+      "description": "Discount percentage for Silver"
+    },
+    "gold_threshold_usd": {
+      "type": "number",
+      "default": 250,
+      "description": "Lifetime spend to reach Gold"
+    },
+    "gold_credits": {
+      "type": "number",
+      "default": 6,
+      "description": "Credits granted when reaching Gold"
+    },
+    "gold_discount_pct": {
+      "type": "number",
+      "default": 15,
+      "description": "Discount percentage for Gold"
+    },
+    "credit_expiry_days": {
+      "type": "number",
+      "default": 0,
+      "description": "0 or null = never expires; otherwise days until expiry"
+    }
+  },
+  "required": []
+}

@@ -1,0 +1,59 @@
+{
+  "name": "Customer",
+  "type": "object",
+  "properties": {
+    "user_id": {
+      "type": "string",
+      "description": "Link to User entity"
+    },
+    "name": {
+      "type": "string"
+    },
+    "email": {
+      "type": "string",
+      "format": "email"
+    },
+    "phone": {
+      "type": "string"
+    },
+    "current_tier": {
+      "type": "string",
+      "enum": [
+        "Bronze",
+        "Silver",
+        "Gold"
+      ],
+      "default": "Bronze"
+    },
+    "lifetime_spend_usd": {
+      "type": "number",
+      "default": 0
+    },
+    "free_delivery_credits_remaining": {
+      "type": "number",
+      "default": 0
+    },
+    "silver_granted": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether Silver tier credits have been granted"
+    },
+    "gold_granted": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether Gold tier credits have been granted"
+    },
+    "total_orders": {
+      "type": "number",
+      "default": 0
+    },
+    "total_spent_usd": {
+      "type": "number",
+      "default": 0
+    }
+  },
+  "required": [
+    "name",
+    "email"
+  ]
+}

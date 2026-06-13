@@ -1,0 +1,39 @@
+{
+  "name": "Purchase",
+  "type": "object",
+  "properties": {
+    "purchase_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "supplier_name": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "category": {
+      "type": "string",
+      "enum": [
+        "Stock",
+        "Shipping",
+        "Packaging",
+        "Marketing",
+        "Other"
+      ]
+    },
+    "amount_usd": {
+      "type": "number"
+    },
+    "receipt_url": {
+      "type": "string"
+    },
+    "notes": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "purchase_date",
+    "amount_usd"
+  ]
+}

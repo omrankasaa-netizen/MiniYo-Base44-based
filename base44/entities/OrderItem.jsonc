@@ -1,0 +1,42 @@
+{
+  "name": "OrderItem",
+  "type": "object",
+  "properties": {
+    "order_id": {
+      "type": "string",
+      "description": "Link to Order"
+    },
+    "product_id": {
+      "type": "string",
+      "description": "Link to Product"
+    },
+    "product_name": {
+      "type": "string"
+    },
+    "sku": {
+      "type": "string"
+    },
+    "size": {
+      "type": "string"
+    },
+    "color": {
+      "type": "string"
+    },
+    "quantity": {
+      "type": "number",
+      "default": 1
+    },
+    "unit_price_usd": {
+      "type": "number"
+    },
+    "line_total_usd": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "order_id",
+    "product_id",
+    "quantity",
+    "unit_price_usd"
+  ]
+}

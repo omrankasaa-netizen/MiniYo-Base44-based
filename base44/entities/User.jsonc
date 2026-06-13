@@ -1,0 +1,28 @@
+{
+  "name": "User",
+  "type": "object",
+  "properties": {
+    "role": {
+      "type": "string",
+      "enum": [
+        "super_admin",
+        "admin",
+        "staff",
+        "customer"
+      ],
+      "default": "customer"
+    },
+    "phone": {
+      "type": "string"
+    },
+    "preferred_payment": {
+      "type": "string",
+      "description": "Customer's last used payment method for faster checkout",
+      "enum": [
+        "Cash on Delivery",
+        "Whish",
+        "Card"
+      ]
+    }
+  }
+}

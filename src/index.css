@@ -1,0 +1,134 @@
+@import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&family=Poppins:wght@300;400;500;600&family=Cairo:wght@400;500;600;700&family=Tajawal:wght@300;400;500;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* MiniYo Brand Palette */
+    --background: 34 33% 96%;        /* #FAF7F2 cream canvas */
+    --foreground: 0 0% 17%;           /* #2B2B2B charcoal */
+    --card: 0 0% 100%;                /* #FFFFFF white surfaces */
+    --card-foreground: 0 0% 17%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 17%;
+    --primary: 170 33% 27%;           /* #2F5D57 deep sage-teal */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 155 22% 55%;         /* #7FA99B soft sage */
+    --secondary-foreground: 0 0% 100%;
+    --muted: 34 25% 93%;              /* slightly darker cream */
+    --muted-foreground: 0 0% 40%;
+    --accent: 4 46% 85%;              /* #E8C7C4 blush */
+    --accent-foreground: 0 0% 17%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 30 15% 88%;
+    --input: 30 15% 88%;
+    --ring: 170 33% 27%;
+    --chart-1: 170 33% 27%;
+    --chart-2: 155 22% 55%;
+    --chart-3: 4 46% 85%;
+    --chart-4: 34 33% 96%;
+    --chart-5: 0 0% 17%;
+    --radius: 1.5rem;
+
+    /* Font tokens */
+    --font-heading: 'Quicksand', ui-sans-serif, system-ui, sans-serif;
+    --font-body: 'Poppins', ui-sans-serif, system-ui, sans-serif;
+    --font-display: 'Quicksand', ui-sans-serif, system-ui, sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+    --sidebar-background: 34 33% 96%;
+    --sidebar-foreground: 0 0% 17%;
+    --sidebar-primary: 170 33% 27%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 4 46% 85%;
+    --sidebar-accent-foreground: 0 0% 17%;
+    --sidebar-border: 30 15% 88%;
+    --sidebar-ring: 170 33% 27%;
+  }
+
+  .dark {
+    --background: 170 20% 8%;
+    --foreground: 34 33% 96%;
+    --card: 170 15% 12%;
+    --card-foreground: 34 33% 96%;
+    --popover: 170 15% 12%;
+    --popover-foreground: 34 33% 96%;
+    --primary: 155 22% 55%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 170 33% 27%;
+    --secondary-foreground: 0 0% 100%;
+    --muted: 170 10% 15%;
+    --muted-foreground: 34 20% 70%;
+    --accent: 4 30% 40%;
+    --accent-foreground: 34 33% 96%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 170 10% 18%;
+    --input: 170 10% 18%;
+    --ring: 155 22% 55%;
+    --chart-1: 155 22% 55%;
+    --chart-2: 170 33% 27%;
+    --chart-3: 4 46% 85%;
+    --chart-4: 34 33% 96%;
+    --chart-5: 0 0% 17%;
+    --sidebar-background: 170 20% 8%;
+    --sidebar-foreground: 34 33% 96%;
+    --sidebar-primary: 155 22% 55%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 170 10% 15%;
+    --sidebar-accent-foreground: 34 33% 96%;
+    --sidebar-border: 170 10% 18%;
+    --sidebar-ring: 155 22% 55%;
+  }
+}
+
+/* RTL support */
+[dir="rtl"] body {
+  font-family: 'Tajawal', 'Cairo', ui-sans-serif, system-ui, sans-serif;
+}
+
+[dir="rtl"] h1,
+[dir="rtl"] h2,
+[dir="rtl"] h3,
+[dir="rtl"] h4,
+[dir="rtl"] h5,
+[dir="rtl"] h6,
+[dir="rtl"] .font-heading,
+[dir="rtl"] .font-display {
+  font-family: 'Cairo', ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Arabic body text gets slightly larger line-height for readability */
+[dir="rtl"] p,
+[dir="rtl"] span,
+[dir="rtl"] li,
+[dir="rtl"] label,
+[dir="rtl"] .font-body {
+  font-family: 'Tajawal', ui-sans-serif, system-ui, sans-serif;
+  line-height: 1.7;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background text-foreground font-body antialiased;
+    font-size: 16px;
+    line-height: 1.6;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-heading;
+  }
+}
+
+/* Smooth transitions for RTL toggle */
+* {
+  transition-property: direction, text-align;
+  transition-duration: 0ms;
+}

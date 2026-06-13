@@ -1,0 +1,49 @@
+{
+  "name": "InventoryMovement",
+  "type": "object",
+  "properties": {
+    "product_id": {
+      "type": "string",
+      "description": "Link to Product"
+    },
+    "variant_sku": {
+      "type": "string",
+      "description": "Optional variant SKU"
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "Received",
+        "Sold",
+        "Returned",
+        "Correction",
+        "Damaged"
+      ]
+    },
+    "quantity": {
+      "type": "number",
+      "description": "Positive or negative delta"
+    },
+    "previous_stock": {
+      "type": "number"
+    },
+    "new_stock": {
+      "type": "number"
+    },
+    "reason": {
+      "type": "string"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "created_by": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "product_id",
+    "type",
+    "quantity"
+  ]
+}

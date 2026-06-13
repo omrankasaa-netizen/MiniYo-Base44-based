@@ -1,0 +1,32 @@
+{
+  "name": "MembershipHistory",
+  "type": "object",
+  "properties": {
+    "customer_id": {
+      "type": "string"
+    },
+    "user_id": {
+      "type": "string"
+    },
+    "old_tier": {
+      "type": "string"
+    },
+    "new_tier": {
+      "type": "string"
+    },
+    "trigger_order_id": {
+      "type": "string"
+    },
+    "total_spent_at_change": {
+      "type": "number"
+    },
+    "changed_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "customer_id",
+    "new_tier"
+  ]
+}

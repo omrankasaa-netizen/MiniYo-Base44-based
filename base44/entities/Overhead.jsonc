@@ -1,0 +1,29 @@
+{
+  "name": "Overhead",
+  "type": "object",
+  "properties": {
+    "month": {
+      "type": "string",
+      "description": "Format: YYYY-MM e.g. 2026-06"
+    },
+    "rent_usd": {
+      "type": "number",
+      "default": 0
+    },
+    "utilities_usd": {
+      "type": "number",
+      "default": 0
+    },
+    "marketing_usd": {
+      "type": "number",
+      "default": 0
+    },
+    "other_usd": {
+      "type": "number",
+      "default": 0
+    }
+  },
+  "required": [
+    "month"
+  ]
+}

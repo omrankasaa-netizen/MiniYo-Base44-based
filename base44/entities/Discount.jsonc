@@ -1,0 +1,63 @@
+{
+  "name": "Discount",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "name_ar": {
+      "type": "string"
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "percentage",
+        "fixed_amount"
+      ],
+      "default": "percentage"
+    },
+    "value": {
+      "type": "number"
+    },
+    "applies_to": {
+      "type": "string",
+      "enum": [
+        "all_products",
+        "category",
+        "collection",
+        "specific_products",
+        "tag"
+      ],
+      "default": "all_products"
+    },
+    "target": {
+      "type": "string",
+      "description": "Category ID / Collection ID / product IDs (comma-sep) / tag name based on applies_to"
+    },
+    "starts_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "ends_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "is_active": {
+      "type": "boolean",
+      "default": true
+    },
+    "badge_label": {
+      "type": "string",
+      "description": "e.g. SALE or -20%"
+    },
+    "badge_label_ar": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "name",
+    "type",
+    "value",
+    "applies_to"
+  ]
+}
