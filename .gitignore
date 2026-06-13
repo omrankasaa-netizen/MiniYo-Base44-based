@@ -1,6 +1,7 @@
 #env
 .env
 .env.*
+!.env.example
 
 # Logs
 /logs
@@ -15,6 +16,12 @@ node_modules
 dist
 dist-ssr
 *.local
+
+# Runtime data (self-host backend)
+data.db
+data.db-shm
+data.db-wal
+/uploads
 
 # Editor directories and files
 .vscode/*

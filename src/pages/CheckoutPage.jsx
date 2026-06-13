@@ -211,12 +211,14 @@ export default function CheckoutPage() {
   }
 
   function validateLebanesePhone(phone) {
-    // Lebanese formats: +961X XXXX XXXX or 0X XXX XXXX or just digits
-    // Valid prefixes: 03, 70, 71, 76, 78, 79, 81 (mobile) or 01-09 (landline)
-    const cleaned = phone.replace(/[\s\-()]/g, '');
-    // Accepts: +961 prefix, or 0 prefix (local), or just the number
-    const regex = /^(?:\+961|0)?(?:3|[1-9])[0-9]{7,8}$/;
-    return regex.test(cleaned);
+    // Lebanese formats. Mobile prefixes: 03, 70, 71, 76, 78, 79, 81; landline 01-09.
+    // Accepts +961 / 00961 / 961 / leading 0, with or without spaces/dashes, e.g.
+    // 03 123 456, 70123456, +961 3 123456, 01 234 567.
+    let c = String(phone || '').replace(/[\s\-()]/g, '');
+    c = c.replace(/^\+961/, '').replace(/^00961/, '').replace(/^961/, '').replace(/^0/, '');
+    const mobile = /^(3\d{6}|7[0-9]\d{6}|8[01]\d{6})$/; // 7-8 digit mobiles
+    const landline = /^[1-9]\d{6}$/;                     // 7-digit landline
+    return mobile.test(c) || landline.test(c);
   }
 
   async function revalidateStock() {
@@ -224,8 +226,7 @@ export default function CheckoutPage() {
     const issues = [];
     for (const item of items) {
       try {
-        const prod = await base44.entities.Product.list(1);
-        const currentProduct = prod.find(p => p.id === item.product.id);
+        const currentProduct = await base44.entities.Product.get(item.product.id);
         if (!currentProduct) {
           issues.push(`${item.product.name} is no longer available`);
         } else if (currentProduct.has_variants) {
