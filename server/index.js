@@ -13,9 +13,22 @@ import {
 import {
   registerUser, authenticate, signToken, setSessionCookie, clearSessionCookie,
   getUserFromRequest, publicUser, findUserByEmail, setPassword, updateUser,
+  issueOtp, verifyOtp as verifyOtpCode,
 } from './auth.js';
 import { invokeFunction } from './functions.js';
+import { sendEmail } from './email.js';
 import { runSeed } from './seed.js';
+
+// Build the verification-code email HTML.
+function otpEmailHtml(code) {
+  return `<!doctype html><html><body style="margin:0;background:#faf7f2;font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;">
+    <div style="max-width:480px;margin:0 auto;padding:32px 24px;">
+      <h1 style="font-size:20px;color:#5a4a3f;margin:0 0 8px;">Verify your MiniYo email</h1>
+      <p style="color:#6b5d52;font-size:14px;line-height:1.6;margin:0 0 24px;">Enter this code to confirm your email address. It expires in 10 minutes.</p>
+      <div style="font-size:34px;font-weight:700;letter-spacing:8px;color:#3f342c;background:#fff;border:1px solid #ece4da;border-radius:12px;padding:18px;text-align:center;">${code}</div>
+      <p style="color:#9a8d80;font-size:12px;margin:24px 0 0;">If you didn't create a MiniYo account, you can safely ignore this email.</p>
+    </div></body></html>`;
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
@@ -79,25 +92,57 @@ app.post('/api/auth/register', (req, res) => {
     const { email, password, full_name, phone } = req.body || {};
     if (!email || !password) return res.status(400).json({ error: 'email and password required' });
     const user = registerUser({ email, password, full_name, phone, role: 'customer' });
-    // OTP auto-verify model: registration succeeds immediately, client then calls verifyOtp.
+    // Issue a real verification code and email it. Email send is best-effort
+    // (never blocks signup), but the code is required to obtain a session.
+    const code = issueOtp(user.id);
+    if (process.env.MINIYO_OTP_DEBUG === '1') console.log(`[otp:register] ${user.email} -> ${code}`);
+    sendEmail({
+      to: user.email,
+      subject: 'Your MiniYo verification code',
+      html: otpEmailHtml(code),
+      email_type: 'otp_verification',
+      customer_id: user.id,
+      trigger_event: 'register',
+    }).catch(() => {});
     res.json({ ok: true, email: user.email, requires_otp: true });
   } catch (e) { handleError(res, e); }
 });
 
-// OTP auto-verify: any code accepted, returns a real session token.
+// Verify the emailed OTP code. Only issues a session on a correct, unexpired code.
 app.post('/api/auth/verify-otp', (req, res) => {
   try {
-    const { email } = req.body || {};
+    const { email, otpCode } = req.body || {};
     const user = findUserByEmail(email);
     if (!user) return res.status(404).json({ error: 'Account not found' });
+    const result = verifyOtpCode(user.id, otpCode);
+    if (!result.ok) return res.status(result.status || 400).json({ error: result.error });
+    const fresh = getRecord('User', user.id);
     const token = signToken(user.id);
     setSessionCookie(res, token);
-    res.json({ access_token: token, user: publicUser(user) });
+    res.json({ access_token: token, user: publicUser(fresh) });
   } catch (e) { handleError(res, e); }
 });
 
+// Regenerate and re-email a verification code.
 app.post('/api/auth/resend-otp', (req, res) => {
-  res.json({ ok: true });
+  try {
+    const { email } = req.body || {};
+    const user = findUserByEmail(email);
+    // Do not reveal whether the account exists.
+    if (user && !user.email_verified) {
+      const code = issueOtp(user.id);
+      if (process.env.MINIYO_OTP_DEBUG === '1') console.log(`[otp:resend] ${user.email} -> ${code}`);
+      sendEmail({
+        to: user.email,
+        subject: 'Your MiniYo verification code',
+        html: otpEmailHtml(code),
+        email_type: 'otp_verification',
+        customer_id: user.id,
+        trigger_event: 'resend_otp',
+      }).catch(() => {});
+    }
+    res.json({ ok: true });
+  } catch (e) { handleError(res, e); }
 });
 
 app.post('/api/auth/logout', (req, res) => {

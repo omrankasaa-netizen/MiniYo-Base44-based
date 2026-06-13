@@ -1,9 +1,13 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import {
   createRecord, getRecord, updateRecord, queryRecords,
   getCredentialByEmail, createCredential, updateCredentialPassword,
 } from './db.js';
+
+const OTP_TTL_MS = 10 * 60 * 1000; // 10 minutes
+const OTP_MAX_ATTEMPTS = 5;
 
 const JWT_SECRET = process.env.MINIYO_JWT_SECRET || 'miniyo-dev-secret-change-me';
 const COOKIE_NAME = 'miniyo_session';
@@ -57,13 +61,14 @@ export function getUserFromRequest(req) {
   const user = getRecord('User', payload.sub);
   if (!user) return null;
   delete user.password_hash;
+  delete user.otp_hash;
   return user;
 }
 
 // Public-facing user shape (never leak credentials).
 export function publicUser(user) {
   if (!user) return null;
-  const { password_hash, ...rest } = user;
+  const { password_hash, otp_hash, ...rest } = user;
   return rest;
 }
 
@@ -103,6 +108,48 @@ export function authenticate(email, password) {
 
 export function setPassword(userId, newPassword) {
   updateCredentialPassword(userId, hashPassword(newPassword));
+}
+
+// ─── Email-verification OTP ──────────────────────────────────────────────────
+// Generate a 6-digit code, store its bcrypt hash + expiry on the User record,
+// and return the plaintext code so the caller can email it.
+export function issueOtp(userId) {
+  const code = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
+  updateRecord('User', userId, {
+    otp_hash: bcrypt.hashSync(code, 10),
+    otp_expires_at: Date.now() + OTP_TTL_MS,
+    otp_attempts: 0,
+  });
+  return code;
+}
+
+// Verify a submitted OTP code for a user. Returns { ok, error }.
+export function verifyOtp(userId, code) {
+  const user = getRecord('User', userId);
+  if (!user) return { ok: false, error: 'Account not found', status: 404 };
+  if (user.email_verified) return { ok: true }; // already verified — idempotent
+  if (!user.otp_hash || !user.otp_expires_at) {
+    return { ok: false, error: 'No verification code pending. Please request a new one.', status: 400 };
+  }
+  if (Date.now() > Number(user.otp_expires_at)) {
+    return { ok: false, error: 'Verification code expired. Please request a new one.', status: 400 };
+  }
+  if (Number(user.otp_attempts || 0) >= OTP_MAX_ATTEMPTS) {
+    return { ok: false, error: 'Too many attempts. Please request a new code.', status: 429 };
+  }
+  const match = bcrypt.compareSync(String(code || ''), user.otp_hash);
+  if (!match) {
+    updateRecord('User', userId, { otp_attempts: Number(user.otp_attempts || 0) + 1 });
+    return { ok: false, error: 'Invalid verification code', status: 400 };
+  }
+  // Success: mark verified, clear OTP fields.
+  updateRecord('User', userId, {
+    email_verified: true,
+    otp_hash: '',
+    otp_expires_at: 0,
+    otp_attempts: 0,
+  });
+  return { ok: true };
 }
 
 export function updateUser(userId, patch) {
