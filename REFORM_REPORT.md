@@ -43,6 +43,19 @@ membership flows pass an HTTP-level smoke test.
 - **`.gitignore`** — ignores `data.db*` and `/uploads`.
 
 ### Bugs / hardening
+- **Cart persistence (`src/contexts/CartContext.jsx`)** — pre-existing bug from the
+  original Base44 app: the cart lived only in React `useState`, so navigating to
+  `/checkout` (a full route change) lost every item and no order could be placed.
+  Fixed by persisting to `localStorage` key `miniyo-cart`: lazy `useState`
+  initializer reads on mount, a `useEffect` writes on every change, JSON parse is
+  guarded by `try/catch`, and the full item shape
+  `{key, product, variant, quantity, price}` is serialized intact so checkout still
+  reads `product.id/name/name_ar/price_usd/sku` and `variant.size/color`.
+- **Checkout stock revalidation (`src/pages/CheckoutPage.jsx`)** — pre-existing bug:
+  `revalidateStock` fetched a single product via `Product.list(1)` then `find`-ed by
+  id, which matched only 1 of 113 products and falsely flagged everything else as
+  "no longer available", blocking every order. Fixed to fetch the exact product with
+  `Product.get(item.product.id)`.
 - 404 page (`src/lib/PageNotFound.jsx`) is already MiniYo-branded, bilingual, and
   tolerates an unauthenticated `me()` — verified.
 - Guest `me()` no longer logs a console error.
@@ -91,14 +104,33 @@ ROUTES: 42 pass, 0 fail
 Functions return the `{data}` shape the frontend reads (`inventory.js` uses
 `res.data`).
 
+### End-to-end purchase (headless Chromium / Playwright, 11/11 PASS)
+A real browser drove the full guest checkout against the built app on `:4000`:
+
+```
+PASS  shop renders product grid            — 113 product links
+PASS  product page renders                 — "7-piece Tissue Box Cloth"
+PASS  clicked Add to Cart
+PASS  cart persisted to localStorage after reload   — 1 item(s)
+PASS  persisted item shape intact          — key,product,variant,quantity,price
+PASS  /cart shows the added item
+PASS  /checkout is NOT empty (cart rehydrated)
+PASS  /checkout has no NaN in totals       — clean
+PASS  Place Order button found & clicked
+PASS  Order row created via API            — before=0 after=1
+PASS  confirmation shows order number      — MNY-74602
+```
+
+This proves the cart survives a full page reload + route change to `/checkout`,
+the order summary / free-shipping progress bar / `$50` threshold render without
+`NaN`, the shipping-zone `<select>` works, and Place Order creates a real `Order`
+row (confirmed via `GET /api/entities/Order`) ending on the branded confirmation
+screen with order number `MNY-74602`. The only console output is expected guest
+`me()` 401s (no session cookie), which are handled silently.
+
 ---
 
 ## Known limitations / notes
-- **DOM rendering was not browser-verified.** No headless browser (Playwright /
-  Puppeteer) is available in this environment, so route checks are HTTP-level
-  (correct shell + working data APIs) rather than full render assertions. The
-  ErrorBoundary and bilingual EN/AR toggling are wired the same way they were
-  under Base44; the data they consume is confirmed present.
 - **OTP is auto-verify** (any code accepted) and **password reset** issues a token
   without an email step, since self-host has no mandated mail provider. Emails
   fall back to `EmailLog` rows when `RESEND_API_KEY` is unset.

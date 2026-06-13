@@ -224,8 +224,7 @@ export default function CheckoutPage() {
     const issues = [];
     for (const item of items) {
       try {
-        const prod = await base44.entities.Product.list(1);
-        const currentProduct = prod.find(p => p.id === item.product.id);
+        const currentProduct = await base44.entities.Product.get(item.product.id);
         if (!currentProduct) {
           issues.push(`${item.product.name} is no longer available`);
         } else if (currentProduct.has_variants) {
