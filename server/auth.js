@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import {
   createRecord, getRecord, updateRecord, queryRecords,
-  getCredentialByEmail, createCredential, updateCredentialPassword,
+  getCredentialByEmail, getCredentialByUserId, createCredential, updateCredentialPassword,
 } from './db.js';
 
 const OTP_TTL_MS = 10 * 60 * 1000; // 10 minutes
@@ -108,6 +108,35 @@ export function authenticate(email, password) {
 
 export function setPassword(userId, newPassword) {
   updateCredentialPassword(userId, hashPassword(newPassword));
+}
+
+// Securely change a logged-in user's password.
+// Requires the correct current password; enforces a minimum new-password length.
+// Throws with a `status` so the route returns the right HTTP code.
+export function changePassword(userId, currentPassword, newPassword) {
+  const cred = getCredentialByUserId(userId);
+  if (!cred) {
+    const err = new Error('Account credentials not found');
+    err.status = 404;
+    throw err;
+  }
+  if (!verifyPassword(currentPassword, cred.password_hash)) {
+    const err = new Error('Current password is incorrect');
+    err.status = 400;
+    throw err;
+  }
+  if (!newPassword || String(newPassword).length < 8) {
+    const err = new Error('New password must be at least 8 characters');
+    err.status = 400;
+    throw err;
+  }
+  if (verifyPassword(newPassword, cred.password_hash)) {
+    const err = new Error('New password must be different from the current password');
+    err.status = 400;
+    throw err;
+  }
+  updateCredentialPassword(userId, hashPassword(newPassword));
+  return true;
 }
 
 // ─── Email-verification OTP ──────────────────────────────────────────────────

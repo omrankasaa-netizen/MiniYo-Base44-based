@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuthUser } from '@/contexts/AuthUserContext';
 import { useLang } from '@/contexts/LanguageContext';
 import { base44 } from '@/api/base44Client';
-import { User, Save } from 'lucide-react';
+import { User, Save, Lock, Eye, EyeOff } from 'lucide-react';
 import { useCustomerTier } from '@/hooks/useCustomerTier';
 import MembershipWidget from '@/components/account/MembershipWidget';
 import { useQuery } from '@tanstack/react-query';
@@ -14,6 +14,11 @@ export default function ProfilePage() {
   const [form, setForm] = useState({ full_name: '', phone: '' });
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
+  const [pwForm, setPwForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
+  const [pwSaving, setPwSaving] = useState(false);
+  const [pwMsg, setPwMsg] = useState('');
+  const [pwErr, setPwErr] = useState('');
+  const [showPw, setShowPw] = useState(false);
 
   const { data: memSettings = [] } = useQuery({
     queryKey: ['membership-settings'],
@@ -42,10 +47,36 @@ export default function ProfilePage() {
     }
   }
 
-  async function handlePasswordReset() {
-    await base44.auth.resetPasswordRequest(currentUser.email);
-    setMsg(t('Password reset email sent!', 'تم إرسال بريد إعادة تعيين كلمة المرور!'));
-    setTimeout(() => setMsg(''), 4000);
+  async function handleChangePassword(e) {
+    e.preventDefault();
+    setPwMsg('');
+    setPwErr('');
+    if (pwForm.newPassword.length < 8) {
+      setPwErr(t('New password must be at least 8 characters.', 'يجب أن تتكون كلمة المرور الجديدة من 8 أحرف على الأقل.'));
+      return;
+    }
+    if (pwForm.newPassword !== pwForm.confirmPassword) {
+      setPwErr(t('New passwords do not match.', 'كلمتا المرور غير متطابقتين.'));
+      return;
+    }
+    setPwSaving(true);
+    try {
+      await base44.auth.changePassword({
+        currentPassword: pwForm.currentPassword,
+        newPassword: pwForm.newPassword,
+      });
+      setPwMsg(t('Password changed successfully.', 'تم تغيير كلمة المرور بنجاح.'));
+      setPwForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+      setTimeout(() => setPwMsg(''), 4000);
+    } catch (err) {
+      const map = {
+        'Current password is incorrect': t('Current password is incorrect.', 'كلمة المرور الحالية غير صحيحة.'),
+        'New password must be different from the current password': t('New password must be different from the current one.', 'يجب أن تختلف كلمة المرور الجديدة عن الحالية.'),
+      };
+      setPwErr(map[err?.message] || err?.message || t('Could not change password.', 'تعذّر تغيير كلمة المرور.'));
+    } finally {
+      setPwSaving(false);
+    }
   }
 
   return (
@@ -142,12 +173,59 @@ export default function ProfilePage() {
         </form>
       </div>
       <div className="bg-card border border-border rounded-2xl p-5 shadow-sm">
-        <h2 className="text-sm font-semibold text-foreground mb-3">{t('Password', 'كلمة المرور')}</h2>
-        <p className="text-xs text-muted-foreground mb-3">{t('We\'ll send a reset link to your email.', 'سنرسل رابط إعادة التعيين إلى بريدك الإلكتروني.')}</p>
-        <button onClick={handlePasswordReset}
-          className="px-4 py-2 border border-border rounded-xl text-sm hover:bg-muted transition-colors">
-          {t('Send Reset Email', 'إرسال رابط التعيين')}
-        </button>
+        <div className="flex items-center gap-2 mb-1">
+          <Lock className="w-4 h-4 text-muted-foreground" />
+          <h2 className="text-sm font-semibold text-foreground">{t('Change Password', 'تغيير كلمة المرور')}</h2>
+        </div>
+        <p className="text-xs text-muted-foreground mb-4">{t('Enter your current password and choose a new one.', 'أدخل كلمة المرور الحالية واختر كلمة مرور جديدة.')}</p>
+        <form onSubmit={handleChangePassword} className="space-y-3 max-w-md">
+          <div>
+            <label className="block text-xs font-medium text-foreground mb-1">{t('Current Password', 'كلمة المرور الحالية')}</label>
+            <input
+              type={showPw ? 'text' : 'password'}
+              autoComplete="current-password"
+              value={pwForm.currentPassword}
+              onChange={(e) => setPwForm({ ...pwForm, currentPassword: e.target.value })}
+              className="w-full h-11 px-3 border border-border rounded-xl text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-foreground mb-1">{t('New Password', 'كلمة المرور الجديدة')}</label>
+            <input
+              type={showPw ? 'text' : 'password'}
+              autoComplete="new-password"
+              value={pwForm.newPassword}
+              onChange={(e) => setPwForm({ ...pwForm, newPassword: e.target.value })}
+              className="w-full h-11 px-3 border border-border rounded-xl text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
+              minLength={8}
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-foreground mb-1">{t('Confirm New Password', 'تأكيد كلمة المرور الجديدة')}</label>
+            <input
+              type={showPw ? 'text' : 'password'}
+              autoComplete="new-password"
+              value={pwForm.confirmPassword}
+              onChange={(e) => setPwForm({ ...pwForm, confirmPassword: e.target.value })}
+              className="w-full h-11 px-3 border border-border rounded-xl text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
+              minLength={8}
+              required
+            />
+          </div>
+          <button type="button" onClick={() => setShowPw((v) => !v)}
+            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors">
+            {showPw ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+            {showPw ? t('Hide passwords', 'إخفاء كلمات المرور') : t('Show passwords', 'إظهار كلمات المرور')}
+          </button>
+          {pwErr && <p className="text-xs text-destructive">{pwErr}</p>}
+          {pwMsg && <p className="text-xs text-emerald-600">{pwMsg}</p>}
+          <button type="submit" disabled={pwSaving}
+            className="btn-primary h-11 px-5 text-sm disabled:opacity-60">
+            {pwSaving ? t('Saving...', 'جارٍ الحفظ...') : t('Update Password', 'تحديث كلمة المرور')}
+          </button>
+        </form>
       </div>
     </div>
   );
