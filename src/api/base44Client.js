@@ -117,6 +117,9 @@ const auth = {
   async updateMe(patch) {
     return request('POST', '/auth/update-me', patch || {});
   },
+  async changePassword({ currentPassword, newPassword }) {
+    return request('POST', '/auth/change-password', { currentPassword, newPassword });
+  },
   async resetPasswordRequest(email) {
     return request('POST', '/auth/reset-password-request', { email });
   },

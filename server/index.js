@@ -12,7 +12,7 @@ import {
 } from './db.js';
 import {
   registerUser, authenticate, signToken, setSessionCookie, clearSessionCookie,
-  getUserFromRequest, publicUser, findUserByEmail, setPassword, updateUser,
+  getUserFromRequest, publicUser, findUserByEmail, setPassword, changePassword, updateUser,
   issueOtp, verifyOtp as verifyOtpCode,
 } from './auth.js';
 import { invokeFunction } from './functions.js';
@@ -156,6 +156,19 @@ app.post('/api/auth/update-me', (req, res) => {
     if (!user) return res.status(401).json({ error: 'Not authenticated' });
     const updated = updateUser(user.id, req.body || {});
     res.json(publicUser(updated));
+  } catch (e) { handleError(res, e); }
+});
+
+app.post('/api/auth/change-password', (req, res) => {
+  try {
+    const user = getUserFromRequest(req);
+    if (!user) return res.status(401).json({ error: 'Not authenticated' });
+    const { currentPassword, newPassword } = req.body || {};
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: 'currentPassword and newPassword are required' });
+    }
+    changePassword(user.id, currentPassword, newPassword);
+    res.json({ ok: true });
   } catch (e) { handleError(res, e); }
 });
 
