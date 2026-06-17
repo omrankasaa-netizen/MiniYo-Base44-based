@@ -80,7 +80,7 @@ export async function sendResendEvent({ event, email, payload, email_type, order
 
   if (resendKey) {
     try {
-      const res = await fetch('https://api.resend.com/events', {
+      const res = await fetch('https://api.resend.com/events/send', {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${resendKey}`,
