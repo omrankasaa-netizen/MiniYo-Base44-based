@@ -1,5 +1,5 @@
 import { createRecord, getRecord, updateRecord, queryRecords, bulkCreate, nowIso } from './db.js';
-import { sendEmail, sendResendEvent } from './email.js';
+import { sendEmail } from './email.js';
 
 // ─── Resend Automation event constants ──────────────────────────────────────
 // Public site base used for links inside automated emails.
@@ -23,10 +23,39 @@ function formatOrderDate(value) {
 
 // Pre-rendered <table> of order items, reusing the shape from the order emails.
 function orderItemsTableHtml(items) {
+  const td = 'padding:10px 8px;border-bottom:1px solid #f0e9e6;font-size:14px;';
+  const tdR = td + 'text-align:right;white-space:nowrap;';
   const rows = items.map((it) =>
-    `<tr><td>${it.product_name} ${[it.size, it.color].filter(Boolean).join(' / ')}</td><td>×${it.quantity}</td><td>$${Number(it.unit_price_usd || 0).toFixed(2)}</td><td>$${Number(it.line_total_usd || 0).toFixed(2)}</td></tr>`
+    `<tr><td style="${td}">${it.product_name}${[it.size, it.color].filter(Boolean).length ? ` <span style="color:#9a8f8b;font-size:12px;">${[it.size, it.color].filter(Boolean).join(' / ')}</span>` : ''}</td><td style="${tdR}">×${it.quantity}</td><td style="${tdR}">$${Number(it.unit_price_usd || 0).toFixed(2)}</td><td style="${tdR}">$${Number(it.line_total_usd || 0).toFixed(2)}</td></tr>`
   ).join('');
-  return `<table border="1" cellpadding="6"><tbody>${rows}</tbody></table>`;
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;margin:8px 0 4px;">`
+    + `<thead><tr>`
+    + `<th align="left" style="padding:8px;border-bottom:2px solid #f7c7c2;font-size:12px;color:#9a8f8b;text-transform:uppercase;letter-spacing:.4px;">Item</th>`
+    + `<th align="right" style="padding:8px;border-bottom:2px solid #f7c7c2;font-size:12px;color:#9a8f8b;">Qty</th>`
+    + `<th align="right" style="padding:8px;border-bottom:2px solid #f7c7c2;font-size:12px;color:#9a8f8b;">Price</th>`
+    + `<th align="right" style="padding:8px;border-bottom:2px solid #f7c7c2;font-size:12px;color:#9a8f8b;">Total</th>`
+    + `</tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+// Shared branded HTML wrapper for direct customer emails. Brand pinks
+// (#f7c7c2 header, #c2766e accent), inline styles only (email-safe).
+function emailShell(headingHtml, bodyHtml) {
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+  <body style="margin:0;background:#faf7f5;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#3a3a3a;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#faf7f5;padding:24px 0;"><tr><td align="center">
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.06);">
+        <tr><td style="background:#f7c7c2;padding:22px 28px;"><span style="font-size:22px;font-weight:700;color:#7a4b46;letter-spacing:.3px;">MiniYo Shop</span></td></tr>
+        <tr><td style="padding:28px;">${headingHtml}${bodyHtml}</td></tr>
+        <tr><td style="padding:18px 28px;border-top:1px solid #f0e9e6;font-size:12px;color:#9a8f8b;">
+          Need help? Email <a href="mailto:admin@miniyo.store" style="color:#c2766e;">admin@miniyo.store</a> · MiniYo Shop · miniyokids.com
+        </td></tr>
+      </table>
+    </td></tr></table>
+  </body></html>`;
+}
+
+function btn(href, label) {
+  return `<p style="margin:24px 0;"><a href="${href}" style="display:inline-block;background:#c2766e;color:#fff;text-decoration:none;padding:12px 22px;border-radius:8px;font-weight:600;">${label}</a></p>`;
 }
 
 // All functions return a plain object. The HTTP layer wraps it as { data, status }.
@@ -243,30 +272,30 @@ function membershipEngine(body) {
       newTier = 'Gold';
       upgraded = true;
     }
-    // Fire the membership.tier.updated Resend Automation event when the tier
-    // actually changed. Best-effort and non-blocking (sendResendEvent never
-    // throws and always writes an EmailLog row). Idempotency is provided by the
-    // silver_granted/gold_granted flags above, so an event fires only once per tier.
+    // Send a branded tier-upgrade email when the tier actually changed.
+    // Best-effort and non-blocking (sendEmail never throws and always writes an
+    // EmailLog row; the .catch keeps tier logic unblocked). Idempotency is
+    // provided by the silver_granted/gold_granted flags above, so it sends only
+    // once per tier.
     if (upgraded && newTier !== oldTier) {
       // Customer email: prefer the Customer record; fall back to a User by email.
       const recipient = customer.email
         || queryRecords('User', { query: { id: customer_id }, limit: 1 })[0]?.email
         || '';
-      sendResendEvent({
-        event: 'membership.tier.updated',
-        email: recipient,
-        payload: {
-          customerFirstName: firstName(customer.name || customer.full_name),
-          oldTier,
-          newTier,
-          membershipBenefitsUrl: `${STORE_BASE_URL}/account/membership`,
-          storeName: STORE_NAME,
-          supportEmail: SUPPORT_EMAIL,
-        },
-        email_type: 'membership_tier_updated',
-        customer_id,
-        trigger_event: 'membership.tier.updated',
-      }).catch(() => {});
+      if (recipient) {
+        const subject = `You've reached ${newTier} status at MiniYo Shop! 🎉`;
+        const heading = `<h2 style="margin:0 0 12px;font-size:20px;color:#7a4b46;">Congratulations — you're now ${escapeHtml(newTier)}!</h2>`;
+        const bodyHtml = `<p style="margin:0 0 16px;">You've been upgraded from ${escapeHtml(oldTier)} to ${escapeHtml(newTier)}. Enjoy your new member benefits.</p>
+          ${btn(`${STORE_BASE_URL}/account/membership`, 'See your benefits')}`;
+        sendEmail({
+          to: recipient,
+          subject,
+          html: emailShell(heading, bodyHtml),
+          email_type: 'membership_tier_updated',
+          customer_id,
+          trigger_event: 'membership.tier.updated',
+        }).catch(() => {});
+      }
     }
     return { upgraded, newTier };
   }
@@ -341,21 +370,20 @@ async function sendOrderConfirmation(body) {
   if (already.length > 0) return { status: 'already_sent', message: 'Confirmation email already sent for this order' };
 
   const items = queryRecords('OrderItem', { query: { order_id } });
-  // orderStatusUrl: no per-order detail route exists in the SPA (only /track and
-  // /account/orders); use the per-order path from the spec as the canonical link.
-  const result = await sendResendEvent({
-    event: 'order.submitted',
-    email: order.customer_email,
-    payload: {
-      customerFirstName: firstName(order.customer_name),
-      orderNumber: order.order_number,
-      orderDate: formatOrderDate(order.order_date || order.created_date),
-      orderTotal: `$${Number(order.grand_total_usd || 0).toFixed(2)}`,
-      orderItemsHtml: orderItemsTableHtml(items),
-      orderStatusUrl: `${STORE_BASE_URL}/account/orders/${order_id}`,
-      storeName: STORE_NAME,
-      supportEmail: SUPPORT_EMAIL,
-    },
+  const orderDate = formatOrderDate(order.order_date || order.created_date);
+  const orderTotal = `$${Number(order.grand_total_usd || 0).toFixed(2)}`;
+  const subject = `We received your order #${order.order_number}`;
+  const heading = `<h2 style="margin:0 0 12px;font-size:20px;color:#7a4b46;">Thanks, ${escapeHtml(firstName(order.customer_name))}! 🎀</h2>`;
+  const bodyHtml = `<p style="margin:0 0 16px;">We've received your order and will confirm it shortly.</p>
+    <p style="margin:0 0 16px;">Order <strong>#${escapeHtml(order.order_number)}</strong><br/>
+    Date: ${escapeHtml(orderDate)}<br/>
+    Total: <strong>${orderTotal}</strong></p>
+    ${orderItemsTableHtml(items)}
+    ${btn(`${STORE_BASE_URL}/account/orders/${order_id}`, 'View your order')}`;
+  const result = await sendEmail({
+    to: order.customer_email,
+    subject,
+    html: emailShell(heading, bodyHtml),
     email_type: 'order_confirmation',
     order_id,
     customer_id: order.customer_id || '',
@@ -449,24 +477,24 @@ async function sendOrderStatusUpdate(body) {
   });
   if (already.length > 0) return { status: 'already_sent', message: `${new_status} email already sent` };
 
-  // Confirmed-only: fire the `order.confirmed` Resend Automation event instead
-  // of a direct email (the automation owns this customer email). All other
-  // statuses keep their direct status emails — no automations exist for those.
+  // Confirmed-only: send a branded confirmation email directly. All other
+  // statuses keep their direct status emails below — unchanged.
   if (new_status === 'Confirmed') {
     const items = queryRecords('OrderItem', { query: { order_id } });
-    const result = await sendResendEvent({
-      event: 'order.confirmed',
-      email: order.customer_email,
-      payload: {
-        customerFirstName: firstName(order.customer_name),
-        orderNumber: order.order_number,
-        orderDate: formatOrderDate(order.order_date || order.created_date),
-        orderTotal: `$${Number(order.grand_total_usd || 0).toFixed(2)}`,
-        orderItemsHtml: orderItemsTableHtml(items),
-        orderStatusUrl: `${STORE_BASE_URL}/account/orders/${order_id}`,
-        storeName: STORE_NAME,
-        supportEmail: SUPPORT_EMAIL,
-      },
+    const orderDate = formatOrderDate(order.order_date || order.created_date);
+    const orderTotal = `$${Number(order.grand_total_usd || 0).toFixed(2)}`;
+    const subject = `Your order #${order.order_number} is confirmed ✅`;
+    const heading = `<h2 style="margin:0 0 12px;font-size:20px;color:#7a4b46;">Your order is confirmed</h2>`;
+    const bodyHtml = `<p style="margin:0 0 16px;">Good news ${escapeHtml(firstName(order.customer_name))} — your order is confirmed and we're preparing it.</p>
+      <p style="margin:0 0 16px;">Order <strong>#${escapeHtml(order.order_number)}</strong><br/>
+      Date: ${escapeHtml(orderDate)}<br/>
+      Total: <strong>${orderTotal}</strong></p>
+      ${orderItemsTableHtml(items)}
+      ${btn(`${STORE_BASE_URL}/account/orders/${order_id}`, 'View your order')}`;
+    const result = await sendEmail({
+      to: order.customer_email,
+      subject,
+      html: emailShell(heading, bodyHtml),
       email_type: 'order_status_update',
       order_id,
       customer_id: order.customer_id || '',
@@ -499,15 +527,15 @@ async function sendWelcomeEmailNew(body) {
   if (already.length > 0) return { status: 'already_sent', message: 'Welcome email already sent' };
 
   const localPart = String(email).split('@')[0] || 'there';
-  const result = await sendResendEvent({
-    event: 'user.registered',
-    email,
-    payload: {
-      customerFirstName: firstName(full_name || name, localPart),
-      accountDashboardUrl: `${STORE_BASE_URL}/account`,
-      storeName: STORE_NAME,
-      supportEmail: SUPPORT_EMAIL,
-    },
+  const fname = firstName(full_name || name, localPart);
+  const subject = `Welcome to MiniYo Shop, ${fname} 🐰`;
+  const heading = `<h2 style="margin:0 0 12px;font-size:20px;color:#7a4b46;">Welcome, ${escapeHtml(fname)}!</h2>`;
+  const bodyHtml = `<p style="margin:0 0 16px;">Thanks for creating your MiniYo account. Discover adorable, comfy clothing for your little ones.</p>
+    ${btn(`${STORE_BASE_URL}/account`, 'Go to your account')}`;
+  const result = await sendEmail({
+    to: email,
+    subject,
+    html: emailShell(heading, bodyHtml),
     email_type: 'welcome',
     customer_id,
     trigger_event: 'user.registered',
