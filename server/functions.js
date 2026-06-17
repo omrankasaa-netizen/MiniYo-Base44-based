@@ -23,10 +23,18 @@ function formatOrderDate(value) {
 
 // Pre-rendered <table> of order items, reusing the shape from the order emails.
 function orderItemsTableHtml(items) {
+  const td = 'padding:10px 8px;border-bottom:1px solid #f0e9e6;font-size:14px;';
+  const tdR = td + 'text-align:right;white-space:nowrap;';
   const rows = items.map((it) =>
-    `<tr><td>${it.product_name} ${[it.size, it.color].filter(Boolean).join(' / ')}</td><td>×${it.quantity}</td><td>$${Number(it.unit_price_usd || 0).toFixed(2)}</td><td>$${Number(it.line_total_usd || 0).toFixed(2)}</td></tr>`
+    `<tr><td style="${td}">${it.product_name}${[it.size, it.color].filter(Boolean).length ? ` <span style="color:#9a8f8b;font-size:12px;">${[it.size, it.color].filter(Boolean).join(' / ')}</span>` : ''}</td><td style="${tdR}">×${it.quantity}</td><td style="${tdR}">$${Number(it.unit_price_usd || 0).toFixed(2)}</td><td style="${tdR}">$${Number(it.line_total_usd || 0).toFixed(2)}</td></tr>`
   ).join('');
-  return `<table border="1" cellpadding="6"><tbody>${rows}</tbody></table>`;
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;margin:8px 0 4px;">`
+    + `<thead><tr>`
+    + `<th align="left" style="padding:8px;border-bottom:2px solid #f7c7c2;font-size:12px;color:#9a8f8b;text-transform:uppercase;letter-spacing:.4px;">Item</th>`
+    + `<th align="right" style="padding:8px;border-bottom:2px solid #f7c7c2;font-size:12px;color:#9a8f8b;">Qty</th>`
+    + `<th align="right" style="padding:8px;border-bottom:2px solid #f7c7c2;font-size:12px;color:#9a8f8b;">Price</th>`
+    + `<th align="right" style="padding:8px;border-bottom:2px solid #f7c7c2;font-size:12px;color:#9a8f8b;">Total</th>`
+    + `</tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 // Shared branded HTML wrapper for direct customer emails. Brand pinks
