@@ -1,5 +1,33 @@
 import { createRecord, getRecord, updateRecord, queryRecords, bulkCreate, nowIso } from './db.js';
-import { sendEmail } from './email.js';
+import { sendEmail, sendResendEvent } from './email.js';
+
+// ─── Resend Automation event constants ──────────────────────────────────────
+// Public site base used for links inside automated emails.
+const STORE_BASE_URL = 'https://miniyokids.com';
+// STATIC values matching the user's Resend automation variable mapping.
+const STORE_NAME = 'MiniYo Shop';
+const SUPPORT_EMAIL = 'admin@miniyo.store';
+
+// First token of a name; falls back to the provided default ("there", local-part…).
+function firstName(name, fallback = 'there') {
+  const tok = String(name || '').trim().split(/\s+/)[0];
+  return tok || fallback;
+}
+
+// Format a date for the orderDate template variable, e.g. "June 17, 2026".
+function formatOrderDate(value) {
+  const d = value ? new Date(value) : new Date();
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+}
+
+// Pre-rendered <table> of order items, reusing the shape from the order emails.
+function orderItemsTableHtml(items) {
+  const rows = items.map((it) =>
+    `<tr><td>${it.product_name} ${[it.size, it.color].filter(Boolean).join(' / ')}</td><td>×${it.quantity}</td><td>$${Number(it.unit_price_usd || 0).toFixed(2)}</td><td>$${Number(it.line_total_usd || 0).toFixed(2)}</td></tr>`
+  ).join('');
+  return `<table border="1" cellpadding="6"><tbody>${rows}</tbody></table>`;
+}
 
 // All functions return a plain object. The HTTP layer wraps it as { data, status }.
 // `user` is the authenticated user (or null for public-invokable functions).
@@ -188,6 +216,7 @@ function membershipEngine(body) {
     const goldCredits = settings.gold_credits ?? 6;
     const spend = customer.lifetime_spend_usd || 0;
     const currentTier = customer.current_tier || 'Bronze';
+    const oldTier = currentTier; // captured before any upgrade for the event payload
     let upgraded = false;
     let newTier = currentTier;
 
@@ -213,6 +242,31 @@ function membershipEngine(body) {
       });
       newTier = 'Gold';
       upgraded = true;
+    }
+    // Fire the membership.tier.updated Resend Automation event when the tier
+    // actually changed. Best-effort and non-blocking (sendResendEvent never
+    // throws and always writes an EmailLog row). Idempotency is provided by the
+    // silver_granted/gold_granted flags above, so an event fires only once per tier.
+    if (upgraded && newTier !== oldTier) {
+      // Customer email: prefer the Customer record; fall back to a User by email.
+      const recipient = customer.email
+        || queryRecords('User', { query: { id: customer_id }, limit: 1 })[0]?.email
+        || '';
+      sendResendEvent({
+        event: 'membership.tier.updated',
+        email: recipient,
+        payload: {
+          customerFirstName: firstName(customer.name || customer.full_name),
+          oldTier,
+          newTier,
+          membershipBenefitsUrl: `${STORE_BASE_URL}/account/membership`,
+          storeName: STORE_NAME,
+          supportEmail: SUPPORT_EMAIL,
+        },
+        email_type: 'membership_tier_updated',
+        customer_id,
+        trigger_event: 'membership.tier.updated',
+      }).catch(() => {});
     }
     return { upgraded, newTier };
   }
@@ -271,6 +325,10 @@ function seedShippingZones(body, user) {
 }
 
 // ─── Email functions ──────────────────────────────────────────────────────────
+// Customer order confirmation. Switched to a Resend Automation event
+// (`order.submitted`) instead of a direct customer email to avoid duplicate
+// sends — the `order.submitted` automation owns the customer-facing email now.
+// The EmailLog idempotency guard is preserved.
 async function sendOrderConfirmation(body) {
   const { order_id } = body;
   if (!order_id) return { _status: 400, error: 'order_id required' };
@@ -283,30 +341,25 @@ async function sendOrderConfirmation(body) {
   if (already.length > 0) return { status: 'already_sent', message: 'Confirmation email already sent for this order' };
 
   const items = queryRecords('OrderItem', { query: { order_id } });
-  const itemsHtml = items.map((it) =>
-    `<tr><td>${it.product_name} ${[it.size, it.color].filter(Boolean).join(' / ')}</td><td>×${it.quantity}</td><td>$${Number(it.unit_price_usd || 0).toFixed(2)}</td><td>$${Number(it.line_total_usd || 0).toFixed(2)}</td></tr>`
-  ).join('');
-  const giftHtml = order.is_gift
-    ? `<div style="margin-top:12px;padding:10px;border:1px dashed #d97706;border-radius:8px;background:#fffbeb">
-        <p style="margin:0;font-weight:bold;color:#92400e">🎁 This order is a gift</p>
-        ${order.gift_wrapping ? '<p style="margin:4px 0 0;color:#92400e">Gift wrapping requested.</p>' : ''}
-        ${order.gift_message ? `<p style="margin:4px 0 0;color:#92400e">Message: "${escapeHtml(order.gift_message)}"</p>` : ''}
-        ${order.hide_invoice_price ? '<p style="margin:4px 0 0;color:#92400e">Prices will be hidden on the packing slip.</p>' : ''}
-      </div>`
-    : '';
-  const html = `<!DOCTYPE html><html><body><h2>Order Confirmation</h2>
-    <p>Order #: <strong>${order.order_number}</strong></p>
-    <table border="1" cellpadding="6"><tbody>${itemsHtml}</tbody></table>
-    <p>Subtotal: $${Number(order.subtotal_usd || 0).toFixed(2)}<br/>
-    Discount: $${Number(order.discount_usd || 0).toFixed(2)}<br/>
-    Delivery: $${Number(order.delivery_fee_usd || 0).toFixed(2)}<br/>
-    <strong>Total: $${Number(order.grand_total_usd || 0).toFixed(2)}</strong></p>
-    <p>Payment: ${order.payment_method}</p>
-    ${giftHtml}</body></html>`;
-
-  const result = await sendEmail({
-    to: order.customer_email, subject: 'Order Confirmation', html,
-    email_type: 'order_confirmation', order_id, trigger_event: 'order_created',
+  // orderStatusUrl: no per-order detail route exists in the SPA (only /track and
+  // /account/orders); use the per-order path from the spec as the canonical link.
+  const result = await sendResendEvent({
+    event: 'order.submitted',
+    email: order.customer_email,
+    payload: {
+      customerFirstName: firstName(order.customer_name),
+      orderNumber: order.order_number,
+      orderDate: formatOrderDate(order.order_date || order.created_date),
+      orderTotal: `$${Number(order.grand_total_usd || 0).toFixed(2)}`,
+      orderItemsHtml: orderItemsTableHtml(items),
+      orderStatusUrl: `${STORE_BASE_URL}/account/orders/${order_id}`,
+      storeName: STORE_NAME,
+      supportEmail: SUPPORT_EMAIL,
+    },
+    email_type: 'order_confirmation',
+    order_id,
+    customer_id: order.customer_id || '',
+    trigger_event: 'order.submitted',
   });
   return { status: result.status, log_id: result.log_id };
 }
@@ -376,6 +429,32 @@ async function sendOrderStatusUpdate(body) {
   });
   if (already.length > 0) return { status: 'already_sent', message: `${new_status} email already sent` };
 
+  // Confirmed-only: fire the `order.confirmed` Resend Automation event instead
+  // of a direct email (the automation owns this customer email). All other
+  // statuses keep their direct status emails — no automations exist for those.
+  if (new_status === 'Confirmed') {
+    const items = queryRecords('OrderItem', { query: { order_id } });
+    const result = await sendResendEvent({
+      event: 'order.confirmed',
+      email: order.customer_email,
+      payload: {
+        customerFirstName: firstName(order.customer_name),
+        orderNumber: order.order_number,
+        orderDate: formatOrderDate(order.order_date || order.created_date),
+        orderTotal: `$${Number(order.grand_total_usd || 0).toFixed(2)}`,
+        orderItemsHtml: orderItemsTableHtml(items),
+        orderStatusUrl: `${STORE_BASE_URL}/account/orders/${order_id}`,
+        storeName: STORE_NAME,
+        supportEmail: SUPPORT_EMAIL,
+      },
+      email_type: 'order_status_update',
+      order_id,
+      customer_id: order.customer_id || '',
+      trigger_event: trigger,
+    });
+    return { status: result.status, log_id: result.log_id };
+  }
+
   const tpl = STATUS_TEMPLATES[new_status];
   const html = `<!DOCTYPE html><html><body><h2>${tpl.subject}</h2><p>${tpl.message}</p>
     <p>Order #: <strong>${order.order_number}</strong><br/>Status: ${new_status}<br/>
@@ -388,22 +467,30 @@ async function sendOrderStatusUpdate(body) {
   return { status: result.status, log_id: result.log_id };
 }
 
+// Welcome / registration email. Switched to the `user.registered` Resend
+// Automation event (events-only) instead of a direct customer email. The OTP
+// verification email sent at /api/auth/register is separate and untouched.
 async function sendWelcomeEmailNew(body) {
-  const { customer_id, email } = body;
+  const { customer_id, email, name, full_name } = body;
   if (!customer_id || !email) return { _status: 400, error: 'customer_id and email required' };
   const already = queryRecords('EmailLog', {
     query: { email_type: 'welcome', customer_id, status: 'sent' }, sort: 'sent_at', limit: 1,
   });
   if (already.length > 0) return { status: 'already_sent', message: 'Welcome email already sent' };
 
-  const html = `<!DOCTYPE html><html><body><h1>Welcome to MiniYo! 🎉</h1>
-    <p>You're now a Bronze member with exclusive benefits!</p>
-    <ul><li>2 Free Deliveries on your first orders</li><li>5% off all purchases</li>
-    <li>Auto-upgrade to Silver & Gold tiers</li></ul></body></html>`;
-
-  const result = await sendEmail({
-    to: email, subject: 'Welcome to MiniYo', html,
-    email_type: 'welcome', customer_id, trigger_event: 'account_created',
+  const localPart = String(email).split('@')[0] || 'there';
+  const result = await sendResendEvent({
+    event: 'user.registered',
+    email,
+    payload: {
+      customerFirstName: firstName(full_name || name, localPart),
+      accountDashboardUrl: `${STORE_BASE_URL}/account`,
+      storeName: STORE_NAME,
+      supportEmail: SUPPORT_EMAIL,
+    },
+    email_type: 'welcome',
+    customer_id,
+    trigger_event: 'user.registered',
   });
   return { status: result.status, log_id: result.log_id };
 }
