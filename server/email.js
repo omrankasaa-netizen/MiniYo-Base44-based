@@ -68,3 +68,53 @@ export async function sendEmail({ to, subject, html, email_type, order_id, custo
 
   return { status, log_id: log.id, error_message };
 }
+
+// Fire a Resend Automation event (NOT a direct email). Resend matches `event`
+// to an enabled automation and resolves the templated email's variables from
+// `payload`. Mirrors sendEmail: uses the same RESEND_API_KEY, never throws, and
+// always writes an EmailLog row so the send is traceable in the admin Email Log.
+export async function sendResendEvent({ event, email, payload, email_type, order_id, customer_id, trigger_event }) {
+  const resendKey = process.env.RESEND_API_KEY;
+  let status = 'pending';
+  let error_message = null;
+
+  if (resendKey) {
+    try {
+      const res = await fetch('https://api.resend.com/events', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${resendKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ event, email, payload }),
+      });
+      if (res.ok) {
+        status = 'sent';
+      } else {
+        status = 'failed';
+        error_message = await res.text().catch(() => 'event send failed');
+      }
+    } catch (e) {
+      status = 'failed';
+      error_message = e?.message || 'event send error';
+    }
+  } else {
+    // No mail provider configured — record it as logged so the flow succeeds.
+    status = 'sent';
+    error_message = 'logged_only_no_provider';
+  }
+
+  const log = createRecord('EmailLog', {
+    email_type,
+    recipient_email: email,
+    subject: `event:${event}`,
+    order_id: order_id || '',
+    customer_id: customer_id || '',
+    status,
+    error_message,
+    sent_at: nowIso(),
+    trigger_event: trigger_event || event || '',
+  });
+
+  return { status, log_id: log.id, error_message };
+}
