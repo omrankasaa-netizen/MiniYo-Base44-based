@@ -95,10 +95,28 @@ export default function OrderHistoryPage() {
   const { t, lang } = useLang();
   const [selected, setSelected] = useState(null);
 
+  // Match orders by the customer's email (always present on the User record and
+  // on every order), not by phone — User.phone is blank for accounts created via
+  // email/OTP, so the old phone filter returned nothing. Also merge any orders
+  // linked by customer_id (set to user.id at checkout) so re-orders show up too.
   const { data: orders = [], isLoading } = useQuery({
-    queryKey: ['customer-orders', currentUser?.phone],
-    queryFn: () => base44.entities.Order.filter({ customer_phone: currentUser?.phone }, '-created_date', 50),
-    enabled: !!currentUser?.phone,
+    queryKey: ['customer-orders', currentUser?.email, currentUser?.id],
+    queryFn: async () => {
+      const email = currentUser?.email;
+      const uid = currentUser?.id;
+      const [byEmail, byId] = await Promise.all([
+        email ? base44.entities.Order.filter({ customer_email: email }, '-created_date', 50) : Promise.resolve([]),
+        uid ? base44.entities.Order.filter({ customer_id: uid }, '-created_date', 50) : Promise.resolve([]),
+      ]);
+      const seen = new Set();
+      const merged = [];
+      for (const o of [...byEmail, ...byId]) {
+        if (o && !seen.has(o.id)) { seen.add(o.id); merged.push(o); }
+      }
+      merged.sort((a, b) => new Date(b.created_date || b.order_date || 0) - new Date(a.created_date || a.order_date || 0));
+      return merged;
+    },
+    enabled: !!(currentUser?.email || currentUser?.id),
   });
 
   return (
