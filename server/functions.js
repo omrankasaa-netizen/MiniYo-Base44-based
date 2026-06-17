@@ -371,7 +371,27 @@ async function sendOrderNotification(body) {
   const order = getRecord('Order', order_id);
   if (!order) return { _status: 404, error: 'Order not found' };
 
-  const adminEmail = process.env.MINIYO_ADMIN_EMAIL || process.env.MINIYO_EMAIL_FROM || 'management@miniyo.store';
+  // Order-alert recipients. The store owner's Gmail always gets a copy so new
+  // orders are never missed; any MINIYO_ADMIN_EMAIL / MINIYO_ORDER_ALERT_EMAILS
+  // (comma-separated) are merged in. De-duped, case-insensitive.
+  const recipients = [
+    'Miniyo.store.lb@gmail.com',
+    process.env.MINIYO_ADMIN_EMAIL,
+    process.env.MINIYO_ORDER_ALERT_EMAILS,
+  ]
+    .filter(Boolean)
+    .flatMap((v) => String(v).split(','))
+    .map((e) => e.trim())
+    .filter(Boolean);
+  const seen = new Set();
+  const adminEmail = recipients
+    .filter((e) => {
+      const k = e.toLowerCase();
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    })
+    .join(', ');
   const already = queryRecords('EmailLog', {
     query: { email_type: 'order_notification', order_id, status: 'sent' }, sort: 'sent_at', limit: 1,
   });
