@@ -37,9 +37,9 @@ export default function ProductCard({ product }) {
     <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }} className="group">
       <Link to={`/product/${product.slug}`} className="block">
         <div className="bg-card rounded-3xl overflow-hidden shadow-sm hover:shadow-md transition-shadow border border-border/60">
-          <div className="relative aspect-square bg-muted overflow-hidden">
+          <div className="relative aspect-[3/4] bg-muted overflow-hidden">
             {product.primaryImage
-              ? <img src={product.primaryImage} alt={name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+              ? <img src={product.primaryImage} alt={name} loading="lazy" className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-500" />
               : <div className="w-full h-full flex items-center justify-center bg-accent/20"><ShoppingBag className="w-12 h-12 text-accent" /></div>}
             {/* Badges */}
             <div className="absolute top-2.5 left-2.5 flex flex-col gap-1.5">

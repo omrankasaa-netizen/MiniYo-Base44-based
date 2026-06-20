@@ -512,9 +512,9 @@ export default function ProductForm({ product, categories, onClose, onSaved }) {
             <div className="flex flex-col items-center gap-4">
               <p className="text-xs text-muted-foreground">Storefront card preview</p>
               <div className="w-52 bg-card border border-border rounded-2xl overflow-hidden shadow-md">
-                <div className="w-full h-52 bg-muted flex items-center justify-center overflow-hidden">
+                <div className="w-full aspect-[3/4] bg-muted flex items-center justify-center overflow-hidden">
                   {primaryImg
-                    ? <img src={primaryImg} alt={form.name} className="w-full h-full object-cover" />
+                    ? <img src={primaryImg} alt={form.name} loading="lazy" className="w-full h-full object-cover object-center" />
                     : <ImageIcon className="w-10 h-10 text-muted-foreground/40" />
                   }
                 </div>
