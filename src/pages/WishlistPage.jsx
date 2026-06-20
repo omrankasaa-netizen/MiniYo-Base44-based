@@ -6,6 +6,7 @@ import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import { Heart } from 'lucide-react';
 import ProductCard from '@/components/storefront/ProductCard';
+import { buildImagesByProduct } from '@/lib/imageFraming';
 import { Link } from 'react-router-dom';
 
 export default function WishlistPage() {
@@ -23,9 +24,10 @@ export default function WishlistPage() {
       ]);
       const imgMap = {};
       for (const img of imgs) { if (!imgMap[img.product_id] || img.is_primary) imgMap[img.product_id] = img.url; }
+      const imagesByProduct = buildImagesByProduct(imgs);
       return prods
         .filter(p => wishlistIds.includes(p.id))
-        .map(p => ({ ...p, primaryImage: imgMap[p.id] || null }));
+        .map(p => ({ ...p, primaryImage: imgMap[p.id] || null, images: imagesByProduct[p.id] || [] }));
     },
     enabled: wishlistIds.length > 0,
   });
