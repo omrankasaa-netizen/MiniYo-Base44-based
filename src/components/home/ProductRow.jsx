@@ -5,6 +5,7 @@ import { useLang } from '@/contexts/LanguageContext';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import ProductCard from '@/components/storefront/ProductCard';
+import { buildImagesByProduct } from '@/lib/imageFraming';
 import { ChevronRight, ChevronLeft } from 'lucide-react';
 
 export default function ProductRow({ title, titleAr, filter, viewAllLink }) {
@@ -18,21 +19,20 @@ export default function ProductRow({ title, titleAr, filter, viewAllLink }) {
   });
 
   const { data: allImages = [] } = useQuery({
-    queryKey: ['product-images-home', rawProducts.map(p => p.id).join(',')],
+    queryKey: ['product-images-home-all', rawProducts.map(p => p.id).join(',')],
     queryFn: async () => {
       if (rawProducts.length === 0) return [];
-      return base44.entities.ProductImage.filter({ is_primary: true }, 'sort_order', 100);
+      return base44.entities.ProductImage.list('sort_order', 3000);
     },
     enabled: rawProducts.length > 0,
     staleTime: 60_000,
   });
 
-  const imgMap = {};
-  for (const img of allImages) {
-    if (!imgMap[img.product_id]) imgMap[img.product_id] = img.url;
-  }
-
-  const products = rawProducts.map(p => ({ ...p, primaryImage: imgMap[p.id] || null }));
+  const imagesByProduct = buildImagesByProduct(allImages);
+  const products = rawProducts.map(p => {
+    const imgs = imagesByProduct[p.id] || [];
+    return { ...p, images: imgs, primaryImage: imgs[0]?.url || null };
+  });
 
   if (products.length === 0) return null;
 

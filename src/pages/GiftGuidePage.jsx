@@ -4,6 +4,7 @@ import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import { Gift, Filter } from 'lucide-react';
 import ProductCard from '@/components/storefront/ProductCard';
+import { buildImagesByProduct } from '@/lib/imageFraming';
 
 const GIFT_CATEGORIES = [
   { slug: 'newborn-essentials', name: 'Newborn Essentials', nameAr: 'ضروريات المواليد', ageGroup: 'Newborn' },
@@ -20,10 +21,23 @@ export default function GiftGuidePage() {
   const { t, lang } = useLang();
   const [selected, setSelected] = useState('newborn-essentials');
 
-  const { data: products = [] } = useQuery({
+  const { data: rawProducts = [] } = useQuery({
     queryKey: ['gift-guide-products'],
     queryFn: () => base44.entities.Product.filter({ status: 'Active' }, '-created_date', 500),
   });
+
+  const { data: images = [] } = useQuery({
+    queryKey: ['gift-guide-images'],
+    queryFn: () => base44.entities.ProductImage.list('-created_date', 3000),
+    enabled: rawProducts.length > 0,
+    staleTime: 60_000,
+  });
+
+  const imagesByProduct = React.useMemo(() => buildImagesByProduct(images), [images]);
+  const products = React.useMemo(() => rawProducts.map(p => {
+    const imgs = imagesByProduct[p.id] || [];
+    return { ...p, images: imgs, primaryImage: imgs[0]?.url || null };
+  }), [rawProducts, imagesByProduct]);
 
   const selectedCat = GIFT_CATEGORIES.find(c => c.slug === selected);
 

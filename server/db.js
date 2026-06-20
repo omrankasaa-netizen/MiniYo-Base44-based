@@ -48,6 +48,14 @@ export const db = _db;
 
 // All 28 entities the frontend talks to. Each is stored in a generic table:
 //   id TEXT PK, created_date, updated_date, doc JSON
+//
+// Records store their full payload in the `doc` JSON column with no per-field
+// allow-list, so adding new fields to an entity requires no schema/migration
+// change here. For discoverability, ProductImage now also carries optional
+// non-destructive framing metadata used by the storefront 3:4 card:
+//   focal: { x, y }                normalized 0..1, default centre 0.5,0.5
+//   crop:  { x, y, width, height } normalized 0..1, optional
+// Absent metadata falls back to object-cover / object-center.
 export const ENTITIES = [
   'AuditLog', 'Campaign', 'Category', 'CmsSection', 'Collection', 'Customer',
   'CustomerAddress', 'Discount', 'EmailLog', 'Faq', 'FreeDeliveryCredit',

@@ -5,6 +5,7 @@ import { useDiscounts } from '@/contexts/DiscountContext';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import ProductCard from '@/components/storefront/ProductCard';
+import { buildImagesByProduct } from '@/lib/imageFraming';
 import { SlidersHorizontal, X, Search, ChevronDown, ChevronUp } from 'lucide-react';
 
 // ── URL state helpers ──────────────────────────────────────────────────────────
@@ -152,12 +153,14 @@ export default function ShopPage() {
     queryFn: () => base44.entities.Collection.filter({ is_active: true }, 'name', 50),
   });
 
-  // Build lookup maps
+  // Build lookup maps: primary url + full ordered image list (with focal/crop)
   const imgMap = useMemo(() => {
     const m = {};
     for (const img of images) { if (!m[img.product_id] || img.is_primary) m[img.product_id] = img.url; }
     return m;
   }, [images]);
+
+  const imagesByProduct = useMemo(() => buildImagesByProduct(images), [images]);
 
   const variantsByProduct = useMemo(() => {
     const m = {};
@@ -201,8 +204,8 @@ export default function ShopPage() {
     const totalStock = p.has_variants && pvs.length > 0
       ? pvs.reduce((s, v) => s + (v.qty_on_hand || 0), 0)
       : (p.stock_quantity || 0);
-    return { ...p, primaryImage: imgMap[p.id] || null, totalStock };
-  }), [products, imgMap, variantsByProduct]);
+    return { ...p, primaryImage: imgMap[p.id] || null, images: imagesByProduct[p.id] || [], totalStock };
+  }), [products, imgMap, imagesByProduct, variantsByProduct]);
 
   // Check if product is on sale
   function isOnSale(p) {
