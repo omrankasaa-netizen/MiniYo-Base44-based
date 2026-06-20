@@ -3,7 +3,9 @@ import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import { logAction } from '@/lib/auditLog';
 import { useAuthUser } from '@/contexts/AuthUserContext';
-import { X, Plus, Upload, GripVertical, Star, Trash2, ImageIcon } from 'lucide-react';
+import { X, Plus, Upload, GripVertical, Star, Trash2, ImageIcon, Crop as CropIcon } from 'lucide-react';
+import ImageFramingEditor from './ImageFramingEditor';
+import { framingStyle } from '@/lib/imageFraming';
 
 const SIZES = ['NB', '0-3M', '3-6M', '6-12M', '12-18M', '18-24M', '2Y', '3Y', '4Y', '5Y', '6Y'];
 const COLORS_DEFAULT = ['White', 'Black', 'Pink', 'Blue', 'Sage', 'Cream', 'Blush', 'Yellow', 'Red'];
@@ -114,6 +116,7 @@ export default function ProductForm({ product, categories, onClose, onSaved }) {
   const [variantGrid, setVariantGrid] = useState({});
   const [images, setImages] = useState([]); // { url, is_primary, sort_order, id?, isNew? }
   const [uploading, setUploading] = useState(false);
+  const [framingIdx, setFramingIdx] = useState(null); // index of image being framed
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [tab, setTab] = useState('basic'); // basic | variants | images | preview
@@ -191,6 +194,10 @@ export default function ProductForm({ product, categories, onClose, onSaved }) {
     setImages(imgs => imgs.filter((_, i) => i !== idx));
   }
 
+  function applyFraming(idx, { focal, crop }) {
+    setImages(imgs => imgs.map((img, i) => i === idx ? { ...img, focal, crop } : img));
+  }
+
   async function handleSave() {
     if (!form.name || !form.price_usd) { setError('Name and price are required.'); return; }
     setSaving(true);
@@ -240,7 +247,11 @@ export default function ProductForm({ product, categories, onClose, onSaved }) {
       // Save images
       for (let i = 0; i < images.length; i++) {
         const img = images[i];
-        const imgPayload = { product_id: productId, url: img.url, is_primary: img.is_primary, sort_order: i, alt: form.name, alt_ar: form.name_ar };
+        const imgPayload = {
+          product_id: productId, url: img.url, is_primary: img.is_primary, sort_order: i,
+          alt: form.name, alt_ar: form.name_ar,
+          focal: img.focal || null, crop: img.crop || null,
+        };
         if (img.id && !img.isNew) {
           await base44.entities.ProductImage.update(img.id, imgPayload);
         } else if (img.isNew || !img.id) {
@@ -258,7 +269,9 @@ export default function ProductForm({ product, categories, onClose, onSaved }) {
   }
 
   // ── Preview card ─────────────────────────────────────────────────────────────
-  const primaryImg = images.find(i => i.is_primary)?.url || images[0]?.url;
+  const primaryImage = images.find(i => i.is_primary) || images[0];
+  const primaryImg = primaryImage?.url;
+  const primaryFraming = primaryImage ? framingStyle(primaryImage) : null;
 
   const tabs = [
     { key: 'basic', label: 'Basic Info' },
@@ -488,17 +501,26 @@ export default function ProductForm({ product, categories, onClose, onSaved }) {
                     <div key={idx} className={`relative rounded-xl overflow-hidden border-2 transition-colors ${img.is_primary ? 'border-primary' : 'border-border'}`}>
                       <img src={img.url} alt="" className="w-full h-24 object-cover" />
                       <div className="absolute inset-0 bg-black/0 hover:bg-black/40 transition-colors flex items-center justify-center gap-1.5 opacity-0 hover:opacity-100">
-                        <button type="button" onClick={() => setPrimary(idx)}
+                        <button type="button" onClick={() => setPrimary(idx)} title="Set as primary"
                           className="p-1.5 bg-white rounded-full shadow hover:bg-amber-50">
                           <Star className={`w-3.5 h-3.5 ${img.is_primary ? 'fill-amber-400 text-amber-400' : 'text-muted-foreground'}`} />
                         </button>
-                        <button type="button" onClick={() => removeImage(idx)}
+                        <button type="button" onClick={() => setFramingIdx(idx)} title="Adjust card framing"
+                          className="p-1.5 bg-white rounded-full shadow hover:bg-primary/10">
+                          <CropIcon className="w-3.5 h-3.5 text-primary" />
+                        </button>
+                        <button type="button" onClick={() => removeImage(idx)} title="Remove"
                           className="p-1.5 bg-white rounded-full shadow hover:bg-red-50">
                           <Trash2 className="w-3.5 h-3.5 text-destructive" />
                         </button>
                       </div>
                       {img.is_primary && (
                         <span className="absolute top-1.5 left-1.5 bg-primary text-primary-foreground text-xs px-2 py-0.5 rounded-full">Primary</span>
+                      )}
+                      {(img.focal || img.crop) && (
+                        <span className="absolute bottom-1.5 right-1.5 bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded-full flex items-center gap-1">
+                          <CropIcon className="w-2.5 h-2.5" /> {img.crop ? 'Cropped' : 'Focal'}
+                        </span>
                       )}
                     </div>
                   ))}
@@ -512,9 +534,10 @@ export default function ProductForm({ product, categories, onClose, onSaved }) {
             <div className="flex flex-col items-center gap-4">
               <p className="text-xs text-muted-foreground">Storefront card preview</p>
               <div className="w-52 bg-card border border-border rounded-2xl overflow-hidden shadow-md">
-                <div className="w-full aspect-[3/4] bg-muted flex items-center justify-center overflow-hidden">
+                <div className="relative w-full aspect-[3/4] bg-muted flex items-center justify-center overflow-hidden">
                   {primaryImg
-                    ? <img src={primaryImg} alt={form.name} loading="lazy" className="w-full h-full object-cover object-center" />
+                    ? <img src={primaryImg} alt={form.name} loading="lazy" style={primaryFraming.style}
+                        className={primaryFraming.cropped ? '' : 'w-full h-full'} />
                     : <ImageIcon className="w-10 h-10 text-muted-foreground/40" />
                   }
                 </div>
@@ -547,6 +570,14 @@ export default function ProductForm({ product, categories, onClose, onSaved }) {
           </button>
         </div>
       </div>
+
+      {framingIdx != null && images[framingIdx] && (
+        <ImageFramingEditor
+          image={images[framingIdx]}
+          onApply={(framing) => applyFraming(framingIdx, framing)}
+          onClose={() => setFramingIdx(null)}
+        />
+      )}
     </div>
   );
 }
