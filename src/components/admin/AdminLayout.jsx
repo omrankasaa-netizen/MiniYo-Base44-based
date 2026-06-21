@@ -6,6 +6,7 @@ import {
   LayoutDashboard, Package, ShoppingBag, BarChart2, Tag, Settings,
   Users, FileText, LogOut, Menu, X, ChevronRight,
   Warehouse, Languages, ExternalLink, Upload, Percent, Megaphone, FolderTree, User, Crown, Mail, Truck,
+  FileSpreadsheet,
 } from 'lucide-react';
 
 const navItems = [
@@ -23,6 +24,7 @@ const navItems = [
   { label: 'Discounts',   icon: Percent,       path: '/admin/discounts',    permission: 'manage_discounts' },
   { label: 'Campaigns',   icon: Megaphone,     path: '/admin/campaigns',    permission: 'manage_discounts' },
   { label: 'Bulk Upload', icon: Upload,        path: '/admin/bulk-upload',  permission: 'edit_products' },
+  { label: 'Bulk Import', icon: FileSpreadsheet, path: '/admin/bulk-import', permission: 'edit_products' },
   { label: 'CMS',         icon: FileText,      path: '/admin/cms',          permission: 'manage_cms' },
   { label: 'Team',        icon: Users,         path: '/admin/team',         permission: 'manage_team' },
   { label: 'Audit Log',   icon: FileText,      path: '/admin/audit',        permission: 'view_audit_log'  },
