@@ -9,7 +9,7 @@ import { ShoppingBag, ArrowLeft, ChevronLeft, ChevronRight } from 'lucide-react'
 import WishlistHeart from '@/components/storefront/WishlistHeart';
 import { ReviewList, ReviewForm } from '@/components/storefront/ReviewCard';
 import { useQueryClient } from '@tanstack/react-query';
-import { normalizeImages } from '@/lib/imageFraming';
+import { normalizeImages, focalImageStyle } from '@/lib/imageFraming';
 
 export default function ProductPage() {
   const { slug } = useParams();
@@ -138,7 +138,8 @@ export default function ProductPage() {
           <div className="space-y-3">
             <div className="relative aspect-square bg-muted rounded-3xl overflow-hidden">
               {displayImages.length > 0 ? (
-                <img src={displayImages[imgIdx]?.url} alt={name} className="w-full h-full object-cover" />
+                <img src={displayImages[imgIdx]?.url} alt={name} className="w-full h-full"
+                  style={focalImageStyle(displayImages[imgIdx]?.focal)} />
               ) : (
                 <div className="w-full h-full flex items-center justify-center">
                   <ShoppingBag className="w-16 h-16 text-accent" />
