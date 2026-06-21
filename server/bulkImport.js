@@ -16,18 +16,13 @@
 // place — never duplicated. The images column being BLANK leaves existing photos
 // untouched so manually-adjusted images survive a re-import. Variants are
 // updated/added by default and only removed when removeMissingVariants is set.
-import fs from 'node:fs';
 import path from 'node:path';
-import crypto from 'node:crypto';
-import { fileURLToPath } from 'node:url';
 import * as XLSX from 'xlsx';
 import AdmZip from 'adm-zip';
 import {
   createRecord, updateRecord, deleteRecord, queryRecords, nowIso,
 } from './db.js';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const UPLOAD_DIR = path.join(__dirname, '..', 'uploads');
+import { optimizeAndStore, bufferFromBase64 } from './imageOptimize.js';
 
 // Canonical sheet columns (header row). Documented in docs/bulk-import/README.md.
 export const SHEET_COLUMNS = [
@@ -126,8 +121,7 @@ function parseImages(raw) {
 // Reads xlsx OR csv from a base64 payload. Returns array of plain row objects
 // keyed by the (trimmed, lowercased) header cells. Empty rows are dropped.
 function readSheet({ base64, filename }) {
-  const data = base64.includes(',') ? base64.split(',')[1] : base64;
-  const buf = Buffer.from(data, 'base64');
+  const buf = bufferFromBase64(base64);
   const isCsv = /\.csv$/i.test(filename || '');
   const wb = XLSX.read(buf, { type: 'buffer', raw: false, ...(isCsv ? { codepage: 65001 } : {}) });
   const sheet = wb.Sheets[wb.SheetNames[0]];
@@ -292,17 +286,17 @@ function normalizeRow(raw, ctx) {
   return { ok: errors.length === 0, row: normalized, errors, warnings };
 }
 
-// Persist a zip image entry to /uploads and return its public URL.
-function writeZipImage(zipEntry) {
-  if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
-  const base = path.basename(zipEntry.entryName).replace(/[^a-zA-Z0-9._-]/g, '_');
-  const name = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}-${base}`;
-  fs.writeFileSync(path.join(UPLOAD_DIR, name), zipEntry.getData());
-  return `/uploads/${name}`;
+// Optimize a zip image entry (sharp → WebP derivatives) and store it via the
+// active backend (R2 or local disk). Returns { url, variants } where `url` is
+// the canonical/card derivative. Reuses the SAME pipeline as /api/upload so
+// batch imports also get R2 + optimization.
+async function writeZipImage(zipEntry) {
+  const result = await optimizeAndStore(zipEntry.getData(), path.basename(zipEntry.entryName));
+  return { url: result.url, variants: result.variants };
 }
 
 // Replace a product's ProductImage rows from the row's images (files + urls).
-function reconcileImages(productId, productName, productNameAr, normalized, zipMap) {
+async function reconcileImages(productId, productName, productNameAr, normalized, zipMap) {
   // Remove existing images for this product, then recreate from the sheet.
   const existing = queryRecords('ProductImage', { query: { product_id: productId } });
   for (const img of existing) deleteRecord('ProductImage', img.id);
@@ -314,20 +308,23 @@ function reconcileImages(productId, productName, productNameAr, normalized, zipM
   for (const f of normalized.images.files) {
     const entry = zipMap.get(f);
     if (!entry) continue; // validated already; defensive
-    const url = writeZipImage(entry);
+    const { url, variants } = await writeZipImage(entry);
     const isPrimary = sort === 0;
     if (isPrimary) primaryUrl = url;
     created.push(createRecord('ProductImage', {
-      product_id: productId, url, image_url: url, is_primary: isPrimary,
+      product_id: productId, url, image_url: url, variants: variants || null,
+      is_primary: isPrimary,
       sort_order: sort, alt: productName, alt_ar: productNameAr, focal: null, crop: null,
     }));
     sort += 1;
   }
+  // Explicit http(s) URLs from the sheet are referenced as-is (no derivatives);
+  // the frontend falls back to the single URL when no variants are present.
   for (const url of normalized.images.urls) {
     const isPrimary = sort === 0;
     if (isPrimary) primaryUrl = url;
     created.push(createRecord('ProductImage', {
-      product_id: productId, url, image_url: url, is_primary: isPrimary,
+      product_id: productId, url, image_url: url, variants: null, is_primary: isPrimary,
       sort_order: sort, alt: productName, alt_ar: productNameAr, focal: null, crop: null,
     }));
     sort += 1;
@@ -404,7 +401,7 @@ function ensureCategories(normalizedRows, categoryIdx) {
 //   removeMissingVariants?: boolean,
 //   createCategories?: boolean (default true),
 // }
-export function bulkImportProducts(payload = {}) {
+export async function bulkImportProducts(payload = {}) {
   const dryRun = !!payload.dryRun;
   const createCategoriesFlag = payload.createCategories !== false;
   const removeMissingVariants = !!payload.removeMissingVariants;
@@ -429,9 +426,7 @@ export function bulkImportProducts(payload = {}) {
   let zipFiles = null;
   if (payload.imagesZip && payload.imagesZip.base64) {
     try {
-      const data = payload.imagesZip.base64.includes(',')
-        ? payload.imagesZip.base64.split(',')[1] : payload.imagesZip.base64;
-      zip = new AdmZip(Buffer.from(data, 'base64'));
+      zip = new AdmZip(bufferFromBase64(payload.imagesZip.base64));
       for (const entry of zip.getEntries()) {
         if (entry.isDirectory) continue;
         // Index by both the full entry path and the bare basename so the sheet
@@ -531,7 +526,7 @@ export function bulkImportProducts(payload = {}) {
       // Images: only touch when the column was provided. Blank => preserve.
       let imageStats = { count: 0, primaryUrl: null, skipped: true };
       if (n.images.provided) {
-        const r = reconcileImages(productId, n.fields.name, n.fields.name_ar, n, zipMap);
+        const r = await reconcileImages(productId, n.fields.name, n.fields.name_ar, n, zipMap);
         imageStats = { ...r, skipped: false };
         // Keep the legacy product.image_url in sync with the new primary.
         if (r.primaryUrl) updateRecord('Product', productId, { image_url: r.primaryUrl });

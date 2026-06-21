@@ -6,17 +6,22 @@ import { useCart } from '@/contexts/CartContext';
 import { useDiscounts } from '@/contexts/DiscountContext';
 import { motion } from 'framer-motion';
 import WishlistHeart from './WishlistHeart';
-import { framingStyle, normalizeImages } from '@/lib/imageFraming';
+import { framingStyle, normalizeImages, imageSrc, handleImageError } from '@/lib/imageFraming';
 
 // Renders one framed image inside the 3:4 box, honoring its focal/crop metadata.
 // Cropped images are absolutely sized via `style`; focal-only images fill the box.
+// Uses the CARD-sized derivative when available (falls back to the canonical URL
+// for legacy single-URL images), lazy-loads, and swaps a neutral placeholder on
+// load error so a dead image never shows the broken-image icon.
 function FramedImage({ image, alt, eager }) {
   const { style, cropped } = framingStyle(image);
   return (
     <img
-      src={image.url}
+      src={imageSrc(image, 'card')}
       alt={alt}
       loading={eager ? 'eager' : 'lazy'}
+      decoding="async"
+      onError={handleImageError}
       draggable={false}
       style={style}
       className={`${cropped ? '' : 'w-full h-full'} ${cropped ? '' : 'group-hover:scale-105'} transition-transform duration-300 will-change-transform`}

@@ -38,12 +38,54 @@ export function resolveImageUrl(rawUrl) {
   return url;
 }
 
-// Normalize one image entry of any shape into { url, focal, crop } or null.
+// Pull a per-size derivative map off an image record, tolerating absent fields.
+// Returns { large, card, thumb } of resolved URLs, or null when none exist.
+// Legacy records (string URL or {url} with no `variants`) return null so callers
+// fall back to the single canonical URL.
+function readVariants(image) {
+  if (!image || typeof image !== 'object') return null;
+  const v = image.variants || image.image_variants || image.srcset;
+  if (!v || typeof v !== 'object') return null;
+  const out = {};
+  for (const k of ['large', 'card', 'thumb']) {
+    const u = resolveImageUrl(v[k]);
+    if (u) out[k] = u;
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
+
+// Normalize one image entry of any shape into
+// { url, variants, focal, crop, is_primary, sort_order } or null.
+// `url` is the canonical fallback; `variants` (when present) lets callers request
+// a size via imageSrc().
 export function normalizeImage(image) {
   const url = resolveImageUrl(pickUrl(image));
   if (!url) return null;
   const { focal, crop } = readImageFraming(typeof image === 'object' ? image : null);
-  return { url, focal, crop, is_primary: !!(image && image.is_primary), sort_order: (image && image.sort_order) || 0 };
+  const variants = readVariants(image);
+  return {
+    url, variants, focal, crop,
+    is_primary: !!(image && image.is_primary),
+    sort_order: (image && image.sort_order) || 0,
+  };
+}
+
+// Pick the best URL for a desired size from a normalized image.
+//   size: 'large' | 'card' | 'thumb' (default 'card')
+// Falls back through sensible neighbors, then the canonical single URL, so
+// legacy images (no variants) and partially-generated sets always resolve.
+export function imageSrc(normalized, size = 'card') {
+  if (!normalized) return '';
+  const v = normalized.variants;
+  if (v) {
+    const order = {
+      large: ['large', 'card', 'thumb'],
+      card: ['card', 'large', 'thumb'],
+      thumb: ['thumb', 'card', 'large'],
+    }[size] || ['card', 'large', 'thumb'];
+    for (const k of order) if (v[k]) return v[k];
+  }
+  return normalized.url;
 }
 
 // Normalize a mixed list, dropping any entry without a usable URL so a carousel
@@ -122,6 +164,27 @@ export function cropImageStyle(crop) {
     maxWidth: 'none',
     objectFit: 'cover',
   };
+}
+
+// Neutral inline placeholder (warm muted bag glyph on the card background) used
+// as an <img> onError fallback so a dead/missing image never shows the browser's
+// broken-image icon. Inline SVG data URI keeps it dependency- and network-free.
+export const IMAGE_PLACEHOLDER =
+  'data:image/svg+xml;utf8,' + encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="120" height="160" viewBox="0 0 120 160">` +
+    `<rect width="120" height="160" fill="#f1ece4"/>` +
+    `<g fill="none" stroke="#c9bba9" stroke-width="4" stroke-linejoin="round" stroke-linecap="round">` +
+    `<path d="M44 64h32l6 44a8 8 0 0 1-8 9H46a8 8 0 0 1-8-9z"/>` +
+    `<path d="M50 64v-6a10 10 0 0 1 20 0v6"/></g></svg>`,
+  );
+
+// Attach to an <img onError={...}> to swap a failed image for the placeholder
+// exactly once (guards against an error loop if the placeholder itself fails).
+export function handleImageError(e) {
+  const img = e.currentTarget;
+  if (img.dataset.fallbackApplied) return;
+  img.dataset.fallbackApplied = '1';
+  img.src = IMAGE_PLACEHOLDER;
 }
 
 // Group a flat list of ProductImage records into an ordered array per product.
