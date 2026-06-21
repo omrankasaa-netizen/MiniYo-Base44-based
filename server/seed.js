@@ -135,6 +135,7 @@ function seedCatalog() {
         parent_id: parentSlug ? idFromSlug('cat', parentSlug) : null,
         is_active: true,
         sort_order: catSort++,
+        source: 'seed', // marks demo data so the bulk-import cleanup can remove it
       });
     }
     return categories.get(slug);
@@ -189,6 +190,7 @@ function seedCatalog() {
       tags: get(r, 'tags'),
       status: (get(r, 'status') || 'Active'),
       image_url: imageUrl,
+      source: 'seed', // marks demo data so the bulk-import cleanup can remove it
     });
 
     if (imageUrl) {
