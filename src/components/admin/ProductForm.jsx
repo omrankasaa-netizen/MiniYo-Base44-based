@@ -178,10 +178,17 @@ export default function ProductForm({ product, categories, onClose, onSaved }) {
   async function handleImageUpload(files) {
     setUploading(true);
     for (const file of files) {
-      const { file_url } = await base44.integrations.Core.UploadFile({ file });
+      // The upload endpoint optimizes the image and returns the canonical URL
+      // plus a `variants` map (large/card/thumb). Persist both so the storefront
+      // can request right-sized derivatives; legacy single-URL records still work.
+      const res = await base44.integrations.Core.UploadFile({ file });
+      const file_url = res.file_url || res.url;
       setImages(imgs => [
         ...imgs,
-        { url: file_url, is_primary: imgs.length === 0, sort_order: imgs.length, isNew: true }
+        {
+          url: file_url, variants: res.variants || null,
+          is_primary: imgs.length === 0, sort_order: imgs.length, isNew: true,
+        }
       ]);
     }
     setUploading(false);
@@ -283,7 +290,9 @@ export default function ProductForm({ product, categories, onClose, onSaved }) {
       for (let i = 0; i < images.length; i++) {
         const img = images[i];
         const imgPayload = {
-          product_id: productId, url: img.url, is_primary: img.is_primary, sort_order: i,
+          product_id: productId, url: img.url, image_url: img.url,
+          variants: img.variants || null,
+          is_primary: img.is_primary, sort_order: i,
           alt: form.name, alt_ar: form.name_ar,
           focal: img.focal || null, crop: img.crop || null,
         };

@@ -2,7 +2,7 @@ import React, { useRef, useState, useCallback } from 'react';
 import ReactCrop from 'react-image-crop';
 import 'react-image-crop/dist/ReactCrop.css';
 import { X, Crop as CropIcon, Crosshair, RotateCcw } from 'lucide-react';
-import { DEFAULT_FOCAL, normalizeFocal, framingStyle } from '@/lib/imageFraming';
+import { DEFAULT_FOCAL, normalizeFocal, framingStyle, imageSrc, normalizeImage } from '@/lib/imageFraming';
 
 // Per-image, non-destructive framing editor. The admin can:
 //   • set a FOCAL POINT (click / drag) stored as normalized {x,y}
@@ -62,8 +62,12 @@ export default function ImageFramingEditor({ image, onApply, onClose }) {
     setCrop(undefined);
   }
 
+  // Edit/preview on the LARGEST available derivative for precision (falls back
+  // to the canonical URL for legacy images). focal/crop are normalized 0..1, so
+  // the source size doesn't affect the stored values.
+  const editUrl = imageSrc(normalizeImage(image), 'large') || image.url;
   // Preview uses the SAME framing util as the storefront card.
-  const previewImage = { url: image.url, focal, crop: normalizedCrop() };
+  const previewImage = { url: editUrl, focal, crop: normalizedCrop() };
   const { style: previewStyle, cropped: previewCropped } = framingStyle(previewImage);
 
   return (
@@ -108,7 +112,7 @@ export default function ImageFramingEditor({ image, onApply, onClose }) {
                     onTouchEnd={endDrag}
                     className="relative w-full max-h-[55vh] overflow-hidden rounded-xl border border-border bg-muted cursor-crosshair select-none"
                   >
-                    <img src={image.url} alt="" className="w-full h-auto block pointer-events-none" draggable={false} />
+                    <img src={editUrl} alt="" className="w-full h-auto block pointer-events-none" draggable={false} />
                     <div
                       className="absolute w-6 h-6 -ml-3 -mt-3 rounded-full border-2 border-white shadow-[0_0_0_2px_rgba(0,0,0,0.4)] bg-primary/70 pointer-events-none"
                       style={{ left: `${focal.x * 100}%`, top: `${focal.y * 100}%` }}
@@ -119,7 +123,7 @@ export default function ImageFramingEditor({ image, onApply, onClose }) {
                 <>
                   <p className="text-xs text-muted-foreground mb-2">Drag a 3:4 rectangle to crop. The original image is never modified.</p>
                   <ReactCrop crop={crop} aspect={3 / 4} onChange={(_, percentCrop) => setCrop(percentCrop)} className="max-h-[55vh]">
-                    <img src={image.url} alt="" className="max-h-[55vh] w-auto block" />
+                    <img src={editUrl} alt="" className="max-h-[55vh] w-auto block" />
                   </ReactCrop>
                 </>
               )}
@@ -130,7 +134,7 @@ export default function ImageFramingEditor({ image, onApply, onClose }) {
               <p className="text-xs text-muted-foreground mb-2">Card preview (3:4)</p>
               <div className="w-full max-w-[200px] mx-auto rounded-2xl overflow-hidden border border-border shadow-sm">
                 <div className="relative w-full aspect-[3/4] bg-muted overflow-hidden">
-                  <img src={image.url} alt="" style={previewStyle} className={previewCropped ? '' : 'w-full h-full'} />
+                  <img src={editUrl} alt="" style={previewStyle} className={previewCropped ? '' : 'w-full h-full'} />
                 </div>
               </div>
               <p className="text-[11px] text-muted-foreground mt-2 text-center">
