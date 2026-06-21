@@ -18,6 +18,8 @@ import {
 import { invokeFunction } from './functions.js';
 import { sendEmail } from './email.js';
 import { runSeed } from './seed.js';
+import { getStorage } from './storage.js';
+import { optimizeAndStore, bufferFromBase64 } from './imageOptimize.js';
 
 // Build the verification-code email HTML.
 function otpEmailHtml(code) {
@@ -39,7 +41,11 @@ const PORT = process.env.PORT || 4000;
 initSchema();
 runSeed();
 
-if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+
+// Initialize the storage backend at boot so the chosen backend (R2 vs local
+// disk) is logged once and ready before the first upload.
+getStorage().catch((e) => console.error('[storage] init error:', e.message));
 
 const app = express();
 // Limit is generous so the bulk-import endpoint can accept a base64 spreadsheet
@@ -229,17 +235,28 @@ app.post('/api/functions/:name', async (req, res) => {
 });
 
 // ─── File upload (base64 JSON or raw) ──────────────────────────────────────────
-app.post('/api/upload', (req, res) => {
+// Uploaded images are optimized (sharp → WebP derivatives) and written through
+// the storage adapter (R2 when configured, else local disk). The response keeps
+// the legacy `file_url` key (now the canonical/card derivative) for backward
+// compatibility, and ADDS `variants` (large/card/thumb URLs) + `base_key` so the
+// frontend and ProductForm can persist size-aware sources.
+app.post('/api/upload', async (req, res) => {
   try {
     const user = getUserFromRequest(req);
     if (!user) return res.status(401).json({ error: 'Not authenticated' });
     const { filename, content_base64 } = req.body || {};
     if (!content_base64) return res.status(400).json({ error: 'content_base64 required' });
-    const base = (filename || 'upload').replace(/[^a-zA-Z0-9._-]/g, '_');
-    const name = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}-${base}`;
-    const data = content_base64.includes(',') ? content_base64.split(',')[1] : content_base64;
-    fs.writeFileSync(path.join(UPLOAD_DIR, name), Buffer.from(data, 'base64'));
-    res.json({ file_url: `/uploads/${name}` });
+    const buffer = bufferFromBase64(content_base64);
+    const result = await optimizeAndStore(buffer, filename || 'upload');
+    res.json({
+      file_url: result.url,
+      url: result.url,
+      variants: result.variants,
+      base_key: result.base,
+      optimized: result.optimized,
+      width: result.width,
+      height: result.height,
+    });
   } catch (e) { handleError(res, e); }
 });
 

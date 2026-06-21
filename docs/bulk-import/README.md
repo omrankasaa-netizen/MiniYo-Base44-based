@@ -142,3 +142,11 @@ run more than once (idempotent).
   rows (same SKUs) and re-import — it updates, never duplicates.
 - To temporarily hide a product without deleting it, set `is_active` to `false`.
 - Prices are **per single piece** in USD.
+
+## Image storage & optimization
+
+Photos from the zip are automatically **optimized** (resized + compressed to
+WebP, with `large`/`card`/`thumb` derivatives) and stored via the configured
+backend. With **Cloudflare R2** configured they persist across Railway redeploys;
+with no R2 vars set they fall back to the local `/uploads` disk. See
+[../IMAGES.md](../IMAGES.md) for the full setup and env vars.
