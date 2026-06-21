@@ -9,7 +9,7 @@ import { ShoppingBag, ArrowLeft, ChevronLeft, ChevronRight } from 'lucide-react'
 import WishlistHeart from '@/components/storefront/WishlistHeart';
 import { ReviewList, ReviewForm } from '@/components/storefront/ReviewCard';
 import { useQueryClient } from '@tanstack/react-query';
-import { normalizeImages, focalImageStyle } from '@/lib/imageFraming';
+import { normalizeImages, focalImageStyle, imageSrc, handleImageError } from '@/lib/imageFraming';
 
 export default function ProductPage() {
   const { slug } = useParams();
@@ -138,7 +138,8 @@ export default function ProductPage() {
           <div className="space-y-3">
             <div className="relative aspect-square bg-muted rounded-3xl overflow-hidden">
               {displayImages.length > 0 ? (
-                <img src={displayImages[imgIdx]?.url} alt={name} className="w-full h-full"
+                <img src={imageSrc(displayImages[imgIdx], 'large')} alt={name} className="w-full h-full"
+                  decoding="async" onError={handleImageError}
                   style={focalImageStyle(displayImages[imgIdx]?.focal)} />
               ) : (
                 <div className="w-full h-full flex items-center justify-center">
@@ -164,7 +165,8 @@ export default function ProductPage() {
                 {displayImages.map((img, i) => (
                   <button key={i} onClick={() => setImgIdx(i)}
                     className={`w-14 h-14 rounded-xl overflow-hidden shrink-0 border-2 transition-colors ${i === imgIdx ? 'border-primary' : 'border-transparent'}`}>
-                    <img src={img.url} alt="" className="w-full h-full object-cover" />
+                    <img src={imageSrc(img, 'thumb')} alt="" loading="lazy" decoding="async"
+                      onError={handleImageError} className="w-full h-full object-cover" />
                   </button>
                 ))}
               </div>

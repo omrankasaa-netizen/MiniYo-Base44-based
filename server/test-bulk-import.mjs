@@ -52,7 +52,7 @@ const rowsV1 = [
 ];
 
 // DRY RUN
-let r = bulkImportProducts({ spreadsheet: { base64: makeSheet(rowsV1), filename: 'p.xlsx' }, imagesZip: { base64: zipB64, filename: 'i.zip' }, dryRun: true });
+let r = await bulkImportProducts({ spreadsheet: { base64: makeSheet(rowsV1), filename: 'p.xlsx' }, imagesZip: { base64: zipB64, filename: 'i.zip' }, dryRun: true });
 console.log('\n[dry-run]', JSON.stringify(r.summary));
 assert(r.summary.toCreate === 1, 'dry-run: 1 to create');
 assert(r.summary.toUpdate === 1, 'dry-run: 1 to update (MANUAL-1)');
@@ -60,7 +60,7 @@ assert(r.summary.errorRows === 1, 'dry-run: 1 error row');
 assert(countRecords('Product') === 3, 'dry-run wrote nothing (still 3 products)');
 
 // COMMIT
-r = bulkImportProducts({ spreadsheet: { base64: makeSheet(rowsV1), filename: 'p.xlsx' }, imagesZip: { base64: zipB64, filename: 'i.zip' } });
+r = await bulkImportProducts({ spreadsheet: { base64: makeSheet(rowsV1), filename: 'p.xlsx' }, imagesZip: { base64: zipB64, filename: 'i.zip' } });
 console.log('[commit]', JSON.stringify(r.summary));
 assert(r.summary.created === 1, 'commit: 1 created');
 assert(r.summary.updated === 1, 'commit: 1 updated');
@@ -84,7 +84,7 @@ const rowsV2 = [
   ['NEW1','bunny','Bunny Bodysuit','بدلة أرنب','desc','وصف','short','قصير','Bodysuits','','Girls','Newborn','10.50','','5','yes','no','no','yes','','cotton','0-3M:2, 3-6M:1','NEW1_1.jpg'],
 ];
 const before = countRecords('Product');
-r = bulkImportProducts({ spreadsheet: { base64: makeSheet(rowsV2), filename: 'p.xlsx' }, imagesZip: { base64: zipB64, filename: 'i.zip' } });
+r = await bulkImportProducts({ spreadsheet: { base64: makeSheet(rowsV2), filename: 'p.xlsx' }, imagesZip: { base64: zipB64, filename: 'i.zip' } });
 console.log('[re-import]', JSON.stringify(r.summary));
 assert(countRecords('Product') === before, 're-import did NOT duplicate (count unchanged)');
 const reNew = queryRecords('Product', { query: { sku: 'NEW1' } })[0];
@@ -96,7 +96,7 @@ assert(reImgs.length === 1, 're-import replaced images (now 1)');
 
 // Blank-images preservation: re-import NEW1 with blank images keeps the 1 image.
 const rowsBlank = [['NEW1','bunny','Bunny Bodysuit','','','','','','Bodysuits','','Girls','Newborn','10.50','','','','','','yes','','','0-3M:2','']];
-bulkImportProducts({ spreadsheet: { base64: makeSheet(rowsBlank), filename: 'p.xlsx' } });
+await bulkImportProducts({ spreadsheet: { base64: makeSheet(rowsBlank), filename: 'p.xlsx' } });
 assert(queryRecords('ProductImage', { query: { product_id: reNew.id } }).length === 1, 'blank images column preserved existing images');
 
 // CLEANUP — only seed products go; manual + imported survive.
