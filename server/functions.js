@@ -1,5 +1,6 @@
 import { createRecord, getRecord, updateRecord, queryRecords, bulkCreate, nowIso } from './db.js';
 import { sendEmail } from './email.js';
+import { bulkImportProducts as runBulkImport, cleanupSeedProducts as runSeedCleanup } from './bulkImport.js';
 
 // ─── Resend Automation event constants ──────────────────────────────────────
 // Public site base used for links inside automated emails.
@@ -584,6 +585,21 @@ async function onOrderDelivered(body, user) {
   return { ok: true, stock: stock_result, tier: tier_result, email: email_result };
 }
 
+// ─── Bulk product import / seed cleanup (admin-only) ────────────────────────
+function isAdmin(user) {
+  return !!user && (user.role === 'admin' || user.role === 'super_admin');
+}
+
+function bulkImportProducts(body, user) {
+  if (!isAdmin(user)) return { _status: 403, error: 'Forbidden: admin access required' };
+  return runBulkImport(body);
+}
+
+function cleanupSeedProducts(body, user) {
+  if (!isAdmin(user)) return { _status: 403, error: 'Forbidden: admin access required' };
+  return runSeedCleanup(body);
+}
+
 const REGISTRY = {
   inventoryEngine,
   membershipEngine,
@@ -593,6 +609,8 @@ const REGISTRY = {
   sendOrderStatusUpdate,
   sendWelcomeEmailNew,
   onOrderDelivered,
+  bulkImportProducts,
+  cleanupSeedProducts,
 };
 
 export async function invokeFunction(name, body, user) {

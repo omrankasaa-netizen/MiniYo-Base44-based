@@ -42,8 +42,10 @@ runSeed();
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 const app = express();
-app.use(express.json({ limit: '25mb' }));
-app.use(express.urlencoded({ extended: true, limit: '25mb' }));
+// Limit is generous so the bulk-import endpoint can accept a base64 spreadsheet
+// plus a base64 images zip in a single JSON body.
+app.use(express.json({ limit: '150mb' }));
+app.use(express.urlencoded({ extended: true, limit: '150mb' }));
 app.use(cookieParser());
 
 // ─── helpers ────────────────────────────────────────────────────────────────
