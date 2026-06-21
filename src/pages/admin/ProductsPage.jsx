@@ -289,6 +289,11 @@ export default function ProductsPage() {
             qc.invalidateQueries({ queryKey: ['admin-products'] });
             qc.invalidateQueries({ queryKey: ['admin-variants-all'] });
             qc.invalidateQueries({ queryKey: ['admin-product-images'] });
+            // Storefront/detail read images from their own caches; invalidate them
+            // so deletions and framing edits reflect without a hard reload.
+            qc.invalidateQueries({ queryKey: ['shop-product-images'] });
+            qc.invalidateQueries({ queryKey: ['product-images'] });
+            qc.invalidateQueries({ queryKey: ['form-images'] });
             setShowForm(false);
             setEditProduct(null);
           }}

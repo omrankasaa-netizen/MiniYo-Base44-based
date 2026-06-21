@@ -115,6 +115,7 @@ export default function ProductForm({ product, categories, onClose, onSaved }) {
   const [colors, setColors] = useState([]);
   const [variantGrid, setVariantGrid] = useState({});
   const [images, setImages] = useState([]); // { url, is_primary, sort_order, id?, isNew? }
+  const [removedImageIds, setRemovedImageIds] = useState([]); // persisted ProductImage ids removed in this session
   const [uploading, setUploading] = useState(false);
   const [framingIdx, setFramingIdx] = useState(null); // index of image being framed
   const [saving, setSaving] = useState(false);
@@ -191,11 +192,31 @@ export default function ProductForm({ product, categories, onClose, onSaved }) {
   }
 
   function removeImage(idx) {
-    setImages(imgs => imgs.filter((_, i) => i !== idx));
+    setImages(imgs => {
+      const target = imgs[idx];
+      // Remember persisted records so they get DELETEd from the backend on save;
+      // without this the entity survives and the image reappears after reload.
+      if (target?.id && !target.isNew) {
+        setRemovedImageIds(ids => ids.includes(target.id) ? ids : [...ids, target.id]);
+      }
+      const next = imgs.filter((_, i) => i !== idx);
+      // If we removed the primary, promote the first remaining image so the card
+      // and the legacy image_url stay valid.
+      if (target?.is_primary && next.length > 0 && !next.some(i => i.is_primary)) {
+        next[0] = { ...next[0], is_primary: true };
+      }
+      return next;
+    });
   }
 
   function applyFraming(idx, { focal, crop }) {
-    setImages(imgs => imgs.map((img, i) => i === idx ? { ...img, focal, crop } : img));
+    // Convert any non-object (legacy string-URL) entry into a framing-capable
+    // object so focal/crop have somewhere to live.
+    setImages(imgs => imgs.map((img, i) => {
+      if (i !== idx) return img;
+      const base = typeof img === 'string' ? { url: img } : img;
+      return { ...base, focal, crop };
+    }));
   }
 
   async function handleSave() {
@@ -204,6 +225,10 @@ export default function ProductForm({ product, categories, onClose, onSaved }) {
     setError('');
     try {
       const slug = form.slug || form.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+      // Keep the legacy single image_url in sync with the current primary image
+      // (falling back to the first image) so consumers that read product.image_url
+      // don't show a deleted/stale photo.
+      const primaryForSave = images.find(i => i.is_primary) || images[0];
       const payload = {
         ...form,
         slug,
@@ -211,6 +236,7 @@ export default function ProductForm({ product, categories, onClose, onSaved }) {
         compare_at_price_usd: form.compare_at_price_usd ? Number(form.compare_at_price_usd) : null,
         cost_usd: form.cost_usd ? Number(form.cost_usd) : null,
         stock_quantity: form.has_variants ? 0 : Number(form.stock_quantity || 0),
+        image_url: primaryForSave?.url || '',
       };
 
       let productId;
@@ -244,7 +270,16 @@ export default function ProductForm({ product, categories, onClose, onSaved }) {
         }
       }
 
-      // Save images
+      // Delete any persisted images the admin removed in this session. Without
+      // this the ProductImage records survive and reappear on the next reload.
+      for (const removedId of removedImageIds) {
+        // Skip ids that were re-added (e.g. removed then re-uploaded same record).
+        if (images.some(img => img.id === removedId)) continue;
+        await base44.entities.ProductImage.delete(removedId);
+      }
+
+      // Save images. focal/crop are always written (object or null) so clearing
+      // framing replaces the stored value rather than leaving the old metadata.
       for (let i = 0; i < images.length; i++) {
         const img = images[i];
         const imgPayload = {
@@ -258,6 +293,7 @@ export default function ProductForm({ product, categories, onClose, onSaved }) {
           await base44.entities.ProductImage.create(imgPayload);
         }
       }
+      setRemovedImageIds([]);
 
       await logAction({ action: isNew ? 'created' : 'updated', entity: 'Product', entityId: productId, userName: currentUser?.email });
       onSaved();
