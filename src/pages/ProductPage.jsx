@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useLang } from '@/contexts/LanguageContext';
 import { useCart } from '@/contexts/CartContext';
@@ -9,6 +9,7 @@ import { ShoppingBag, ArrowLeft, ChevronLeft, ChevronRight } from 'lucide-react'
 import WishlistHeart from '@/components/storefront/WishlistHeart';
 import { ReviewList, ReviewForm } from '@/components/storefront/ReviewCard';
 import { useQueryClient } from '@tanstack/react-query';
+import { normalizeImages } from '@/lib/imageFraming';
 
 export default function ProductPage() {
   const { slug } = useParams();
@@ -47,6 +48,25 @@ export default function ProductPage() {
     enabled: !!product?.id,
   });
 
+  // Default-select the first in-stock size/color once variants load, so a
+  // single-dimension product is immediately addable. Kept above the early
+  // return below to satisfy the Rules of Hooks (consistent hook order).
+  useEffect(() => {
+    if (!product?.has_variants || variants.length === 0) return;
+    const vSizes = [...new Set(variants.map(v => v.size).filter(Boolean))];
+    const vColors = [...new Set(variants.map(v => v.color).filter(Boolean))];
+    const stockFor = (size, color) => variants
+      .filter(v => (!vSizes.length || v.size === size) && (!vColors.length || v.color === color))
+      .reduce((s, v) => s + (v.qty_on_hand || 0), 0);
+    if (vSizes.length && !selectedSize) {
+      setSelectedSize(vSizes.find(s => stockFor(s, vColors.length ? selectedColor : undefined) > 0) || vSizes[0]);
+    }
+    if (vColors.length && !selectedColor) {
+      setSelectedColor(vColors.find(c => stockFor(vSizes.length ? selectedSize : undefined, c) > 0) || vColors[0]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [product?.id, variants.length]);
+
   if (!product) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -64,18 +84,42 @@ export default function ProductPage() {
   const displayPrice = discountedPrice ?? product.price_usd;
   const originalPrice = discountedPrice ? product.price_usd : (hasCompareDiscount ? product.compare_at_price_usd : null);
   const badgeLabel = autoDiscount ? (lang === 'ar' ? (autoDiscount.badge_label_ar || autoDiscount.badge_label) : autoDiscount.badge_label) : null;
-  const colors = product.colors ? product.colors.split('|').filter(Boolean) : [];
-  const sizes  = product.sizes  ? product.sizes.split('|').filter(Boolean)  : [];
-  const displayImages = images.length > 0 ? images : [];
+  // Variants are the source of truth for sized/colored products (admin saves
+  // them as ProductVariant records and does NOT populate product.sizes/colors).
+  // Derive the selectable sizes/colors from the variants first, falling back to
+  // the legacy pipe-delimited strings for non-variant or bulk-imported products.
+  const variantSizes = [...new Set(variants.map(v => v.size).filter(Boolean))];
+  const variantColors = [...new Set(variants.map(v => v.color).filter(Boolean))];
+  const stringSizes = product.sizes ? product.sizes.split('|').map(s => s.trim()).filter(Boolean) : [];
+  const stringColors = product.colors ? product.colors.split('|').map(c => c.trim()).filter(Boolean) : [];
+  const sizes  = variantSizes.length  > 0 ? variantSizes  : stringSizes;
+  const colors = variantColors.length > 0 ? variantColors : stringColors;
+  const displayImages = normalizeImages(images);
 
-  const selectedVariant = product.has_variants && variants.length > 0
-    ? variants.find(v => (!selectedSize || v.size === selectedSize) && (!selectedColor || v.color === selectedColor))
+  // Which selection dimensions this product actually uses.
+  const usesVariants = product.has_variants && variants.length > 0;
+  const needsSize = usesVariants && sizes.length > 0;
+  const needsColor = usesVariants && colors.length > 0;
+
+  // Stock for a given size/color combination (sums matching variants).
+  function variantStockFor({ size, color } = {}) {
+    return variants
+      .filter(v => (!needsSize || v.size === size) && (!needsColor || v.color === color))
+      .reduce((s, v) => s + (v.qty_on_hand || 0), 0);
+  }
+
+  // Resolve the chosen variant only once every required dimension is picked.
+  const selectedVariant = usesVariants && (!needsSize || selectedSize) && (!needsColor || selectedColor)
+    ? variants.find(v => (!needsSize || v.size === selectedSize) && (!needsColor || v.color === selectedColor)) || null
     : null;
 
-  const stockQty = selectedVariant ? (selectedVariant.qty_on_hand || 0) : (product.stock_quantity || 0);
-  const canAdd = product.has_variants ? !!selectedVariant && stockQty > 0 : stockQty > 0;
+  const stockQty = usesVariants
+    ? (selectedVariant ? (selectedVariant.qty_on_hand || 0) : 0)
+    : (product.stock_quantity || 0);
+  const canAdd = usesVariants ? !!selectedVariant && stockQty > 0 : stockQty > 0;
 
   function handleAdd() {
+    if (!canAdd) return;
     addItem(product, selectedVariant || null, 1);
     setAdded(true);
     setIsOpen(true);
@@ -84,7 +128,7 @@ export default function ProductPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <div className="max-w-5xl mx-auto px-4 py-8">
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-5 sm:py-8">
         <Link to="/shop" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-6">
           <ArrowLeft className="w-4 h-4" /> {t('Back to Shop', 'العودة للمتجر')}
         </Link>
@@ -146,12 +190,16 @@ export default function ProductPage() {
               <div>
                 <p className="text-sm font-medium text-foreground mb-2">{t('Color', 'اللون')}: <span className="text-muted-foreground">{selectedColor}</span></p>
                 <div className="flex flex-wrap gap-2">
-                  {colors.map(c => (
-                    <button key={c} onClick={() => setSelectedColor(c)}
-                      className={`px-3 py-1.5 rounded-lg border text-sm transition-colors ${selectedColor === c ? 'border-primary bg-primary/10 text-primary font-semibold' : 'border-border text-muted-foreground hover:border-foreground'}`}>
-                      {c}
-                    </button>
-                  ))}
+                  {colors.map(c => {
+                    const outOfStock = usesVariants && variantStockFor({ color: c, size: needsSize ? selectedSize : undefined }) <= 0;
+                    return (
+                      <button key={c} onClick={() => !outOfStock && setSelectedColor(c)} disabled={outOfStock}
+                        className={`min-h-[44px] px-4 py-2 rounded-lg border text-sm transition-colors
+                          ${outOfStock ? 'border-border text-muted-foreground/40 line-through cursor-not-allowed' : selectedColor === c ? 'border-primary bg-primary/10 text-primary font-semibold' : 'border-border text-muted-foreground hover:border-foreground'}`}>
+                        {c}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -162,18 +210,24 @@ export default function ProductPage() {
                 <p className="text-sm font-medium text-foreground mb-2">{t('Size', 'المقاس')}: <span className="text-muted-foreground">{selectedSize}</span></p>
                 <div className="flex flex-wrap gap-2">
                   {sizes.map(s => {
-                    const v = variants.find(vv => vv.size === s && (!selectedColor || vv.color === selectedColor));
-                    const outOfStock = product.has_variants && v && (v.qty_on_hand || 0) <= 0;
+                    const outOfStock = usesVariants && variantStockFor({ size: s, color: needsColor ? selectedColor : undefined }) <= 0;
                     return (
-                      <button key={s} onClick={() => !outOfStock && setSelectedSize(s)}
-                        className={`w-12 h-12 rounded-xl border text-sm font-semibold transition-colors
-                          ${outOfStock ? 'border-border text-border line-through cursor-not-allowed' : selectedSize === s ? 'border-primary bg-primary text-primary-foreground' : 'border-border text-foreground hover:border-primary'}`}>
+                      <button key={s} onClick={() => !outOfStock && setSelectedSize(s)} disabled={outOfStock}
+                        className={`min-w-[48px] h-12 px-3 rounded-xl border text-sm font-semibold transition-colors
+                          ${outOfStock ? 'border-border text-muted-foreground/40 line-through cursor-not-allowed' : selectedSize === s ? 'border-primary bg-primary text-primary-foreground' : 'border-border text-foreground hover:border-primary'}`}>
                         {s}
                       </button>
                     );
                   })}
                 </div>
               </div>
+            )}
+
+            {/* Prompt to choose required options */}
+            {usesVariants && ((needsSize && !selectedSize) || (needsColor && !selectedColor)) && (
+              <p className="text-xs text-muted-foreground">
+                {t('Please select', 'يرجى اختيار')} {[needsSize && !selectedSize ? t('a size', 'مقاساً') : null, needsColor && !selectedColor ? t('a color', 'لوناً') : null].filter(Boolean).join(t(' and ', ' و '))}.
+              </p>
             )}
 
             {/* Stock status */}
