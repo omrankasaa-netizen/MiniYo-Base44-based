@@ -6,7 +6,7 @@ import { useCart } from '@/contexts/CartContext';
 import { useDiscounts } from '@/contexts/DiscountContext';
 import { motion } from 'framer-motion';
 import WishlistHeart from './WishlistHeart';
-import { framingStyle } from '@/lib/imageFraming';
+import { framingStyle, normalizeImages } from '@/lib/imageFraming';
 
 // Renders one framed image inside the 3:4 box, honoring its focal/crop metadata.
 // Cropped images are absolutely sized via `style`; focal-only images fill the box.
@@ -19,7 +19,7 @@ function FramedImage({ image, alt, eager }) {
       loading={eager ? 'eager' : 'lazy'}
       draggable={false}
       style={style}
-      className={`${cropped ? '' : 'w-full h-full'} group-hover:scale-105 transition-transform duration-500`}
+      className={`${cropped ? '' : 'w-full h-full'} ${cropped ? '' : 'group-hover:scale-105'} transition-transform duration-300 will-change-transform`}
     />
   );
 }
@@ -102,9 +102,13 @@ export default function ProductCard({ product }) {
   // Build the carousel image list. Prefer the full images array (with per-image
   // focal/crop metadata) when a consumer provides it; otherwise fall back to the
   // single derived primaryImage so callers that don't load all images still work.
-  const cardImages = Array.isArray(product.images) && product.images.length > 0
+  // normalizeImages tolerates string|object|missing entries, repairs relative
+  // upload URLs, and drops any entry without a usable URL so the carousel never
+  // shows a blank slide.
+  const rawImages = Array.isArray(product.images) && product.images.length > 0
     ? product.images
-    : (product.primaryImage ? [{ url: product.primaryImage }] : []);
+    : (product.primaryImage ? [product.primaryImage] : [product.image_url]);
+  const cardImages = normalizeImages(rawImages);
 
   function handleAdd(e) {
     e.preventDefault();

@@ -10,6 +10,49 @@
 
 export const DEFAULT_FOCAL = { x: 0.5, y: 0.5 };
 
+// ── Image source normalization ──────────────────────────────────────────────
+// A ProductImage entry can arrive in several shapes depending on when/how it was
+// created: a plain string URL (legacy / bulk import), an object with a `.url`
+// field plus optional focal/crop metadata (admin uploads), or an object that
+// uses a different key for the URL (`image_url`, `file_url`, `src`). It can also
+// be missing or carry a blank URL. This helper collapses all of those into a
+// single consistent { url, focal, crop } object, or returns null when there is
+// no usable image so callers can render a placeholder instead of a blank <img>.
+
+function pickUrl(image) {
+  if (typeof image === 'string') return image;
+  if (!image || typeof image !== 'object') return '';
+  return image.url || image.image_url || image.file_url || image.src || '';
+}
+
+// Resolve a stored URL into something the browser can load. Uploaded files are
+// stored as site-relative paths (e.g. "/uploads/abc.jpg"); absolute http(s) and
+// data: URLs are returned untouched. A relative path that lost its leading slash
+// is repaired so it still resolves from the site root.
+export function resolveImageUrl(rawUrl) {
+  const url = (rawUrl || '').trim();
+  if (!url) return '';
+  if (/^(https?:|data:|blob:)/i.test(url)) return url;
+  if (url.startsWith('/')) return url;
+  if (url.startsWith('uploads/')) return `/${url}`;
+  return url;
+}
+
+// Normalize one image entry of any shape into { url, focal, crop } or null.
+export function normalizeImage(image) {
+  const url = resolveImageUrl(pickUrl(image));
+  if (!url) return null;
+  const { focal, crop } = readImageFraming(typeof image === 'object' ? image : null);
+  return { url, focal, crop, is_primary: !!(image && image.is_primary), sort_order: (image && image.sort_order) || 0 };
+}
+
+// Normalize a mixed list, dropping any entry without a usable URL so a carousel
+// never renders a blank slide.
+export function normalizeImages(images) {
+  if (!Array.isArray(images)) return [];
+  return images.map(normalizeImage).filter(Boolean);
+}
+
 function clamp01(n) {
   if (typeof n !== 'number' || Number.isNaN(n)) return 0.5;
   return Math.min(1, Math.max(0, n));
