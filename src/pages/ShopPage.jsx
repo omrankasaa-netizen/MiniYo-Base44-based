@@ -156,7 +156,10 @@ export default function ShopPage() {
   // Build lookup maps: primary url + full ordered image list (with focal/crop)
   const imgMap = useMemo(() => {
     const m = {};
-    for (const img of images) { if (!m[img.product_id] || img.is_primary) m[img.product_id] = img.url; }
+    for (const img of images) {
+      if (!img.url) continue;
+      if (!m[img.product_id] || img.is_primary) m[img.product_id] = img.url;
+    }
     return m;
   }, [images]);
 
@@ -526,7 +529,7 @@ export default function ShopPage() {
       {mobileFilterOpen && (
         <>
           <div className="fixed inset-0 bg-black/40 z-40 lg:hidden" onClick={() => setMobileFilterOpen(false)} />
-          <div className="fixed inset-y-0 right-0 z-50 w-80 max-w-full bg-card border-l border-border flex flex-col lg:hidden shadow-2xl">
+          <div className={`fixed inset-y-0 z-50 w-80 max-w-[85vw] bg-card flex flex-col lg:hidden shadow-2xl ${lang === 'ar' ? 'left-0 border-r border-border' : 'right-0 border-l border-border'}`}>
             <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
               <h2 className="font-heading font-semibold text-foreground">{t('Filters', 'الفلاتر')}</h2>
               <button onClick={() => setMobileFilterOpen(false)} className="p-2 rounded-xl hover:bg-muted"><X className="w-4 h-4" /></button>

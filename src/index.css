@@ -116,6 +116,12 @@
     @apply border-border outline-ring/50;
   }
 
+  html, body {
+    /* Guard against accidental horizontal scroll on small viewports caused by
+       decorative off-canvas elements or wide children. */
+    overflow-x: hidden;
+  }
+
   body {
     @apply bg-background text-foreground font-body antialiased;
     font-size: 16px;
@@ -127,8 +133,20 @@
   }
 }
 
-/* Smooth transitions for RTL toggle */
-* {
-  transition-property: direction, text-align;
-  transition-duration: 0ms;
+/* Keep GPU-friendly transforms/opacity smooth; never animate layout-affecting
+   properties globally. The previous universal `* { transition: direction… }`
+   rule attached a transition to every node and caused perceptible jank,
+   especially on mobile. */
+
+/* Respect users who prefer reduced motion: collapse animations to near-instant
+   instead of stripping them entirely, so interactive feedback still works. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

@@ -123,8 +123,9 @@ export default function CartDrawer() {
     <>
       {/* Backdrop */}
       <div className="fixed inset-0 bg-black/40 z-50 animate-in fade-in duration-200" onClick={() => setIsOpen(false)} />
-      {/* Drawer */}
-      <div className="fixed right-0 top-0 bottom-0 w-full max-w-sm bg-card border-l border-border z-50 flex flex-col shadow-2xl animate-in slide-in-from-right duration-300">
+      {/* Drawer — slides in from the inline-end edge (right in LTR, left in RTL) */}
+      <div className={`fixed top-0 bottom-0 w-full max-w-sm bg-card z-50 flex flex-col shadow-2xl duration-300
+        ${lang === 'ar' ? 'left-0 border-r border-border animate-in slide-in-from-left' : 'right-0 border-l border-border animate-in slide-in-from-right'}`}>
         {/* Free shipping progress */}
         <div className="px-5 pt-3 pb-2">
           {remaining === 0 ? (
