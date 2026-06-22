@@ -8,6 +8,7 @@ import { useQuery } from '@tanstack/react-query';
 import { ShoppingBag, ArrowLeft, ChevronLeft, ChevronRight } from 'lucide-react';
 import WishlistHeart from '@/components/storefront/WishlistHeart';
 import { ReviewList, ReviewForm } from '@/components/storefront/ReviewCard';
+import RelatedProducts from '@/components/storefront/RelatedProducts';
 import { useQueryClient } from '@tanstack/react-query';
 import { normalizeImages, focalImageStyle, imageSrc, handleImageError } from '@/lib/imageFraming';
 
@@ -21,6 +22,15 @@ export default function ProductPage() {
   const [imgIdx, setImgIdx] = useState(0);
   const [added, setAdded] = useState(false);
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
+
+  // Reset the image carousel and selected options when navigating to a
+  // different product (e.g. via the "You might also like" cards, which only
+  // change the :slug param without remounting this page).
+  useEffect(() => {
+    setImgIdx(0);
+    setSelectedColor('');
+    setSelectedSize('');
+  }, [slug]);
 
   const { getProductDiscount, getDiscountedPrice } = useDiscounts();
 
@@ -279,6 +289,9 @@ export default function ProductPage() {
             />
           </div>
         </div>
+
+        {/* You might also like */}
+        <RelatedProducts product={product} limit={4} />
       </div>
     </div>
   );
