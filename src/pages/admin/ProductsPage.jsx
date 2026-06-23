@@ -6,8 +6,9 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { logAction } from '@/lib/auditLog';
 import AccessDenied from './AccessDenied';
 import ProductForm from '@/components/admin/ProductForm';
-import { Plus, Search, Filter, Pencil, Trash2, Eye, EyeOff, Star } from 'lucide-react';
+import { Plus, Search, Filter, Pencil, Trash2, Eye, EyeOff, Star, Download, Printer } from 'lucide-react';
 import { stockStatus } from '@/lib/inventory';
+import { downloadCsv, printTable } from '@/lib/adminExport';
 
 const STATUS_COLORS = { Active: 'bg-green-50 text-green-700', Hidden: 'bg-muted text-muted-foreground' };
 
@@ -25,6 +26,8 @@ export default function ProductsPage() {
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [editProduct, setEditProduct] = useState(null); // null=closed, {} = new, product=edit
   const [showForm, setShowForm] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportErr, setExportErr] = useState('');
 
   const { data: products = [], isLoading } = useQuery({
     queryKey: ['admin-products'],
@@ -122,6 +125,36 @@ export default function ProductsPage() {
   }
 
   const catMap = Object.fromEntries(categories.map(c => [c.id, c.name]));
+  const showMoney = canAccess('view_finances'); // super-admin only
+
+  async function handleExport() {
+    setExporting(true);
+    setExportErr('');
+    try {
+      await downloadCsv('exportProductsCsv');
+    } catch (err) {
+      setExportErr(err?.data?.data?.error || err?.message || 'Export failed');
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  // Print the current (filtered) table. Cost is a financial column, so it is
+  // only included for super-admins — matching the server-side CSV gating.
+  function handlePrint() {
+    const columns = ['SKU', 'Name', 'Category', 'Price (USD)', 'Stock', 'Status'];
+    if (showMoney) columns.push('Cost (USD)');
+    const rows = filtered.map(p => {
+      const qty = getQty(p, variantsByProduct[p.id] || []);
+      const row = [
+        p.sku || '', p.name || '', catMap[p.category_id] || '',
+        Number(p.price_usd || 0).toFixed(2), qty, p.status || '',
+      ];
+      if (showMoney) row.push(Number(p.cost_usd || 0).toFixed(2));
+      return row;
+    });
+    printTable({ title: 'Products', columns, rows, meta: showMoney ? 'Financial' : 'Operational' });
+  }
 
   if (!canAccess('view_products')) return <AdminLayout><AccessDenied /></AdminLayout>;
 
@@ -134,15 +167,28 @@ export default function ProductsPage() {
             <h1 className="text-2xl font-heading font-bold text-foreground">Products</h1>
             <p className="text-sm text-muted-foreground">{products.length} total</p>
           </div>
-          {canAccess('edit_products') && (
-            <button
-              onClick={() => { setEditProduct({}); setShowForm(true); }}
-              className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2.5 rounded-xl text-sm font-semibold shadow-sm hover:bg-primary/90 transition-colors"
-            >
-              <Plus className="w-4 h-4" /> Add Product
+          <div className="flex items-center gap-2">
+            <button onClick={handleExport} disabled={exporting}
+              className="flex items-center gap-2 border border-border text-foreground px-4 py-2.5 rounded-xl text-sm font-semibold hover:bg-muted transition-colors disabled:opacity-50">
+              <Download className="w-4 h-4" /> {exporting ? 'Exporting…' : 'Export CSV'}
             </button>
-          )}
+            <button onClick={handlePrint}
+              className="flex items-center gap-2 border border-border text-foreground px-4 py-2.5 rounded-xl text-sm font-semibold hover:bg-muted transition-colors">
+              <Printer className="w-4 h-4" /> Print
+            </button>
+            {canAccess('edit_products') && (
+              <button
+                onClick={() => { setEditProduct({}); setShowForm(true); }}
+                className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2.5 rounded-xl text-sm font-semibold shadow-sm hover:bg-primary/90 transition-colors"
+              >
+                <Plus className="w-4 h-4" /> Add Product
+              </button>
+            )}
+          </div>
         </div>
+        {exportErr && (
+          <p className="text-sm px-3 py-2 rounded-lg bg-destructive/10 text-destructive">{exportErr}</p>
+        )}
 
         {/* Filters */}
         <div className="flex flex-wrap gap-2 bg-card border border-border rounded-2xl p-3">

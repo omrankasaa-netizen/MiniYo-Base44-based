@@ -344,8 +344,28 @@ app.get('/api/entities/:entity/:id', ensureEntity, (req, res) => {
   } catch (e) { handleError(res, e); }
 });
 
+// Reject order creation from a customer that an admin has blocked. Matches by
+// customer_id, falling back to a case-insensitive email match for guests.
+function blockedCustomerFor(body) {
+  const id = body?.customer_id;
+  if (id) {
+    const c = getRecord('Customer', id);
+    if (c?.is_blocked) return c;
+  }
+  const email = (body?.customer_email || '').toLowerCase();
+  if (email) {
+    const match = queryRecords('Customer', { limit: 5000 })
+      .find((c) => (c.email || '').toLowerCase() === email && c.is_blocked);
+    if (match) return match;
+  }
+  return null;
+}
+
 app.post('/api/entities/:entity', ensureEntity, authorizeWrite('create'), (req, res) => {
   try {
+    if (req.params.entity === 'Order' && blockedCustomerFor(req.body || {})) {
+      return res.status(403).json({ error: 'This account is blocked from placing orders. Please contact support.' });
+    }
     const record = createRecord(req.params.entity, req.body || {});
     maybeInvalidateDashboard(req.params.entity);
     res.json(sanitize(req.params.entity, record));
