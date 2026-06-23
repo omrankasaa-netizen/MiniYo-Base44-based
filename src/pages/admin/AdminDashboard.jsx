@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 import { useAuthUser } from '@/contexts/AuthUserContext';
 import AdminLayout from '@/components/admin/AdminLayout';
 import { base44 } from '@/api/base44Client';
@@ -7,6 +7,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import {
   Package, ShoppingBag, TrendingUp, TrendingDown, AlertTriangle, XCircle, BarChart2,
   ArrowRight, Tag, Percent, Megaphone, FolderTree, Users, Boxes, DollarSign, Wallet, Award,
+  Download, CalendarRange,
 } from 'lucide-react';
 import { stockStatus } from '@/lib/inventory';
 import { isDiscountLive, isCampaignLive } from '@/lib/discounts';
@@ -20,9 +21,6 @@ const STATUS_COLORS = {
   Cancelled:          'bg-destructive/10 text-destructive',
 };
 
-const REVENUE_STATUSES = ['Confirmed', 'Packed', 'Out for Delivery', 'Delivered'];
-const OPEN_STATUSES = ['New', 'Confirmed', 'Packed', 'Out for Delivery'];
-
 // The global QueryClient disables refetchOnWindowFocus and sets no staleTime,
 // so dashboard data is kept fresh with per-query live options (see PR #26).
 const LIVE = {
@@ -33,12 +31,30 @@ const LIVE = {
 };
 
 const ms = (days) => days * 24 * 60 * 60 * 1000;
-const orderTime = (o) => new Date(o.order_date || o.created_date).getTime();
 
 // Percent change vs the previous equal-length window. null when there's no base.
 function trend(curr, prev) {
   if (!prev) return curr > 0 ? 100 : null;
   return ((curr - prev) / prev) * 100;
+}
+
+// Resolve a preset/custom selection into an ISO [from,to] window for the metrics
+// query and CSV export. Returns null for "all" (no range block / full CSV).
+function resolveRange(preset, customFrom, customTo) {
+  const now = new Date();
+  const endOfToday = new Date(now); endOfToday.setHours(23, 59, 59, 999);
+  const startToday = new Date(now); startToday.setHours(0, 0, 0, 0);
+  if (preset === 'today') return { from: startToday, to: endOfToday };
+  if (preset === '7d') return { from: new Date(now.getTime() - ms(7)), to: endOfToday };
+  if (preset === '30d') return { from: new Date(now.getTime() - ms(30)), to: endOfToday };
+  if (preset === 'custom') {
+    if (!customFrom || !customTo) return null;
+    const from = new Date(customFrom + 'T00:00:00');
+    const to = new Date(customTo + 'T23:59:59');
+    if (isNaN(from) || isNaN(to) || to < from) return null;
+    return { from, to };
+  }
+  return null;
 }
 
 function Sparkline({ values, color = '#2F5D57', height = 32 }) {
@@ -87,174 +103,81 @@ function KpiCard({ icon: Icon, label, value, sub, color, loading, trendPct, spar
   );
 }
 
+const PRESETS = [
+  { id: 'today', label: 'Today' },
+  { id: '7d', label: '7 days' },
+  { id: '30d', label: '30 days' },
+  { id: 'custom', label: 'Custom' },
+];
+
 export default function AdminDashboard() {
-  const { currentUser, canAccess } = useAuthUser();
+  const { currentUser } = useAuthUser();
   const navigate = useNavigate();
-  // Financial figures (revenue, cost, profit) are owner-only; view_finances is
-  // restricted to super_admin, so this also gates the dashboard money KPIs.
-  const showMoney = canAccess('view_finances');
 
-  const { data: orders = [], isLoading: loadingOrders } = useQuery({
-    queryKey: ['dash-orders'],
-    queryFn: () => base44.entities.Order.list('-created_date', 500),
+  const [preset, setPreset] = useState('30d');
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo] = useState('');
+  const [exporting, setExporting] = useState(false);
+  const [exportErr, setExportErr] = useState('');
+
+  const range = useMemo(
+    () => resolveRange(preset, customFrom, customTo),
+    [preset, customFrom, customTo],
+  );
+  const rangeOpts = range
+    ? { from: range.from.toISOString(), to: range.to.toISOString() }
+    : {};
+
+  // Single role-aware metrics endpoint. The server strips ALL monetary fields
+  // for non-super-admins, so money never reaches this browser (Task 7). Money
+  // KPIs render only when the server says show_money.
+  const { data: metrics, isLoading } = useQuery({
+    queryKey: ['dash-metrics', rangeOpts.from || null, rangeOpts.to || null],
+    queryFn: async () => (await base44.functions.invoke('getDashboardMetrics', rangeOpts)).data,
     ...LIVE,
   });
 
-  const { data: products = [], isLoading: loadingProducts } = useQuery({
-    queryKey: ['dash-products'],
-    queryFn: () => base44.entities.Product.list('-created_date', 500),
-    ...LIVE,
-  });
+  const showMoney = !!metrics?.show_money;
+  const o = metrics?.orders || {};
+  const p = metrics?.products || {};
+  const cust = metrics?.customers || {};
+  const topProducts = metrics?.top_products || [];
+  const statusCounts = o.status_counts || {};
+  const recentOrders = o.recent || [];
+  const lowStockProducts = p.low_stock_list || [];
+  const rangeBlock = metrics?.range || null;
 
-  const { data: variants = [] } = useQuery({
-    queryKey: ['dash-variants'],
-    queryFn: () => base44.entities.ProductVariant.list('-created_date', 1000),
-    ...LIVE,
-  });
+  const today = o.today || { count: 0 };
+  const yesterday = o.yesterday || { count: 0 };
+  const last7 = o.last7 || { count: 0 };
+  const prev7 = o.prev7 || { count: 0 };
+  const last30 = o.last30 || { count: 0 };
+  const prev30 = o.prev30 || { count: 0 };
+  const sparkOrders = o.spark?.orders || [];
+  const sparkRevenue = o.spark?.revenue || [];
 
-  const { data: categories = [] } = useQuery({
-    queryKey: ['dash-categories'],
-    queryFn: () => base44.entities.Category.list('-created_date', 500),
-    ...LIVE,
-  });
+  const maxTopQty = topProducts.length ? topProducts[0].qty : 0;
+  const money = (n) => `$${(n || 0).toFixed(2)}`;
 
-  const { data: customers = [] } = useQuery({
-    queryKey: ['dash-customers'],
-    queryFn: () => base44.entities.Customer.list('-created_date', 1000),
-    ...LIVE,
-  });
-
-  const { data: orderItems = [] } = useQuery({
-    queryKey: ['dash-order-items'],
-    queryFn: () => base44.entities.OrderItem.list('-created_date', 2000),
-    ...LIVE,
-  });
-
+  // Active promotions — promo *config* (not financial-performance figures) and
+  // visible to any admin, so still computed client-side from entity reads.
   const { data: promoCodes = [] } = useQuery({
     queryKey: ['dash-promo-codes'],
     queryFn: () => base44.entities.PromoCode.filter({ is_active: true }, '-created_date', 20),
     ...LIVE,
   });
-
   const { data: discounts = [] } = useQuery({
     queryKey: ['dash-discounts'],
     queryFn: () => base44.entities.Discount.filter({ is_active: true }, '-created_date', 20),
     ...LIVE,
   });
-
   const { data: campaigns = [] } = useQuery({
     queryKey: ['dash-campaigns'],
     queryFn: () => base44.entities.Campaign.filter({ is_active: true }, '-starts_at', 20),
     ...LIVE,
   });
 
-  // ── Time-windowed order metrics ──────────────────────────────────────────────
   const now = Date.now();
-  const startToday = new Date(); startToday.setHours(0, 0, 0, 0);
-  const todayMs = startToday.getTime();
-
-  const revenueOrders = orders.filter(o => REVENUE_STATUSES.includes(o.order_status));
-
-  // Count + revenue inside [from, to)
-  function windowStats(fromMs, toMs) {
-    let count = 0, revenue = 0;
-    for (const o of revenueOrders) {
-      const t = orderTime(o);
-      if (t >= fromMs && t < toMs) { count++; revenue += (o.grand_total_usd || 0); }
-    }
-    return { count, revenue };
-  }
-
-  const today = windowStats(todayMs, now + 1);
-  const yesterday = windowStats(todayMs - ms(1), todayMs);
-  const last7 = windowStats(now - ms(7), now + 1);
-  const prev7 = windowStats(now - ms(14), now - ms(7));
-  const last30 = windowStats(now - ms(30), now + 1);
-  const prev30 = windowStats(now - ms(60), now - ms(30));
-
-  const aov30 = last30.count > 0 ? last30.revenue / last30.count : 0;
-  const aovPrev = prev30.count > 0 ? prev30.revenue / prev30.count : 0;
-
-  // 14-day sparkline buckets (oldest → newest)
-  const spark = { orders: [], revenue: [] };
-  for (let i = 13; i >= 0; i--) {
-    const from = todayMs - ms(i);
-    const to = from + ms(1);
-    const s = windowStats(from, to);
-    spark.orders.push(s.count);
-    spark.revenue.push(s.revenue);
-  }
-
-  // ── Orders by status (open pipeline) ─────────────────────────────────────────
-  const statusCounts = {};
-  for (const o of orders) statusCounts[o.order_status] = (statusCounts[o.order_status] || 0) + 1;
-  const openCount = OPEN_STATUSES.reduce((s, st) => s + (statusCounts[st] || 0), 0);
-
-  // ── Inventory ────────────────────────────────────────────────────────────────
-  const variantsByProduct = {};
-  for (const v of variants) {
-    (variantsByProduct[v.product_id] ||= []).push(v);
-  }
-  const stockOf = (p) => {
-    const pvs = variantsByProduct[p.id] || [];
-    return (p.has_variants && pvs.length > 0)
-      ? pvs.reduce((s, v) => s + (v.qty_on_hand || 0), 0)
-      : (p.stock_quantity || 0);
-  };
-
-  let totalStock = 0, lowStockCount = 0, outOfStockCount = 0, inventoryCost = 0, potentialRevenue = 0;
-  for (const p of products) {
-    const reorder = p.reorder_level || 3;
-    const pvs = variantsByProduct[p.id] || [];
-    const units = stockOf(p);
-    totalStock += units;
-    inventoryCost += (p.cost_usd || 0) * units;
-    potentialRevenue += (p.price_usd || 0) * units;
-    if (p.has_variants && pvs.length > 0) {
-      for (const v of pvs) {
-        const q = v.qty_on_hand || 0;
-        if (q <= 0) outOfStockCount++;
-        else if (q <= reorder) lowStockCount++;
-      }
-    } else {
-      const q = p.stock_quantity || 0;
-      if (q <= 0) outOfStockCount++;
-      else if (q <= reorder) lowStockCount++;
-    }
-  }
-
-  const activeProducts = products.filter(p => (p.status || 'Active') === 'Active').length;
-  const activeCategories = categories.filter(c => c.is_active !== false).length;
-
-  const lowStockProducts = products.filter(p => {
-    const pvs = variantsByProduct[p.id] || [];
-    if (p.has_variants && pvs.length > 0) return pvs.some(v => (v.qty_on_hand || 0) <= (p.reorder_level || 3));
-    return (p.stock_quantity || 0) <= (p.reorder_level || 3);
-  }).slice(0, 6);
-
-  // ── New / repeat customers ───────────────────────────────────────────────────
-  const newCustomers30 = customers.filter(c => new Date(c.created_date).getTime() >= now - ms(30)).length;
-  const repeatCustomers = customers.filter(c => (c.total_orders || 0) > 1).length;
-
-  // ── Top-selling products (30d, by units) ─────────────────────────────────────
-  const recentRevenueOrderIds = new Set(
-    revenueOrders.filter(o => orderTime(o) >= now - ms(30)).map(o => o.id)
-  );
-  const sales = {};
-  for (const it of orderItems) {
-    if (!recentRevenueOrderIds.has(it.order_id)) continue;
-    const key = it.product_name || it.product_id || 'Unknown';
-    if (!sales[key]) sales[key] = { name: key, qty: 0, revenue: 0 };
-    sales[key].qty += (it.quantity || 0);
-    sales[key].revenue += (it.line_total_usd || 0);
-  }
-  const topProducts = Object.values(sales).sort((a, b) => b.qty - a.qty).slice(0, 5);
-  const maxTopQty = topProducts.length ? topProducts[0].qty : 0;
-
-  const recentOrders = [...orders]
-    .sort((a, b) => new Date(b.created_date) - new Date(a.created_date)).slice(0, 8);
-
-  // Active promotions
   const activePromoCodes = promoCodes.filter(c => {
     if (!c.is_active) return false;
     if (c.valid_from && new Date(c.valid_from).getTime() > now) return false;
@@ -266,7 +189,31 @@ export default function AdminDashboard() {
   const liveCampaigns = campaigns.filter(isCampaignLive);
   const hasActivePromos = activePromoCodes.length > 0 || liveDiscounts.length > 0 || liveCampaigns.length > 0;
 
-  const money = (n) => `$${(n || 0).toFixed(2)}`;
+  async function handleExportCsv() {
+    setExporting(true);
+    setExportErr('');
+    try {
+      const res = await base44.functions.invoke('exportOrdersCsv', rangeOpts);
+      const { filename, csv } = res.data || {};
+      const blob = new Blob([csv || ''], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename || 'miniyo-orders.csv';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setExportErr(err?.data?.data?.error || err?.message || 'Export failed');
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  const rangeLabel = range
+    ? `${range.from.toLocaleDateString()} → ${range.to.toLocaleDateString()}`
+    : 'All time';
 
   return (
     <AdminLayout>
@@ -279,61 +226,105 @@ export default function AdminDashboard() {
           <p className="text-sm text-muted-foreground mt-1">Here's what's happening at MiniYo today.</p>
         </div>
 
+        {/* Date range filter + CSV export */}
+        <div className="bg-card border border-border rounded-2xl p-4 shadow-sm flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <CalendarRange className="w-4 h-4" /> Period
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {PRESETS.map(pr => (
+              <button key={pr.id} onClick={() => setPreset(pr.id)}
+                className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-colors ${preset === pr.id ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/70'}`}>
+                {pr.label}
+              </button>
+            ))}
+          </div>
+          {preset === 'custom' && (
+            <div className="flex items-center gap-2">
+              <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
+                className="text-xs px-2 py-1.5 rounded-lg border border-input bg-background" />
+              <span className="text-xs text-muted-foreground">to</span>
+              <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)}
+                className="text-xs px-2 py-1.5 rounded-lg border border-input bg-background" />
+            </div>
+          )}
+          <span className="text-xs text-muted-foreground hidden sm:inline">{rangeLabel}</span>
+          <button onClick={handleExportCsv} disabled={exporting}
+            className="ml-auto flex items-center gap-1.5 text-xs font-semibold bg-secondary/20 text-foreground px-3 py-1.5 rounded-lg hover:bg-secondary/30 transition-colors disabled:opacity-50">
+            <Download className="w-3.5 h-3.5" /> {exporting ? 'Exporting…' : 'Export CSV'}
+          </button>
+        </div>
+        {exportErr && (
+          <p className="text-sm px-3 py-2 rounded-lg bg-destructive/10 text-destructive">{exportErr}</p>
+        )}
+
+        {/* Selected-period summary */}
+        {rangeBlock && (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
+            <KpiCard icon={ShoppingBag} label="Orders in period" value={rangeBlock.count}
+              sub={rangeLabel} color="bg-blue-50 text-blue-600" loading={isLoading} />
+            {showMoney && (
+              <KpiCard icon={DollarSign} label="Revenue in period" value={money(rangeBlock.revenue)}
+                sub={rangeLabel} color="bg-green-50 text-green-700" loading={isLoading} />
+            )}
+          </div>
+        )}
+
         {/* Operational KPIs */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
           <KpiCard icon={ShoppingBag} label="Orders Today" value={today.count}
             trendPct={trend(today.count, yesterday.count)} sub="vs yesterday"
-            color="bg-blue-50 text-blue-600" loading={loadingOrders}
-            spark={spark.orders} sparkColor="#2F5D57" />
+            color="bg-blue-50 text-blue-600" loading={isLoading}
+            spark={sparkOrders} sparkColor="#2F5D57" />
           <KpiCard icon={ShoppingBag} label="Orders (7d)" value={last7.count}
             trendPct={trend(last7.count, prev7.count)} sub="vs prior 7 days"
-            color="bg-indigo-50 text-indigo-600" loading={loadingOrders} />
+            color="bg-indigo-50 text-indigo-600" loading={isLoading} />
           <KpiCard icon={ShoppingBag} label="Orders (30d)" value={last30.count}
             trendPct={trend(last30.count, prev30.count)} sub="vs prior 30 days"
-            color="bg-violet-50 text-violet-600" loading={loadingOrders} />
-          <KpiCard icon={Boxes} label="Open Orders" value={openCount}
-            sub="awaiting fulfilment" color="bg-amber-50 text-amber-600" loading={loadingOrders} />
+            color="bg-violet-50 text-violet-600" loading={isLoading} />
+          <KpiCard icon={Boxes} label="Open Orders" value={o.open_count || 0}
+            sub="awaiting fulfilment" color="bg-amber-50 text-amber-600" loading={isLoading} />
 
-          <KpiCard icon={Package} label="Active Products" value={activeProducts}
-            sub={`${products.length} total`} color="bg-primary/10 text-primary" loading={loadingProducts} />
-          <KpiCard icon={FolderTree} label="Categories" value={activeCategories}
-            color="bg-secondary/20 text-secondary" loading={loadingProducts} />
-          <KpiCard icon={Boxes} label="Units in Stock" value={totalStock}
-            color="bg-teal-50 text-teal-700" loading={loadingProducts} />
-          <KpiCard icon={Users} label="New Customers (30d)" value={newCustomers30}
-            sub={`${repeatCustomers} repeat buyers`} color="bg-pink-50 text-pink-600" />
+          <KpiCard icon={Package} label="Active Products" value={p.active || 0}
+            sub={`${p.total || 0} total`} color="bg-primary/10 text-primary" loading={isLoading} />
+          <KpiCard icon={FolderTree} label="Categories" value={p.categories_active || 0}
+            color="bg-secondary/20 text-secondary" loading={isLoading} />
+          <KpiCard icon={Boxes} label="Units in Stock" value={p.total_stock || 0}
+            color="bg-teal-50 text-teal-700" loading={isLoading} />
+          <KpiCard icon={Users} label="New Customers (30d)" value={cust.new30 || 0}
+            sub={`${cust.repeat || 0} repeat buyers`} color="bg-pink-50 text-pink-600" loading={isLoading} />
 
-          <KpiCard icon={AlertTriangle} label="Low Stock" value={lowStockCount}
-            color="bg-amber-50 text-amber-600" loading={loadingProducts} />
-          <KpiCard icon={XCircle} label="Out of Stock" value={outOfStockCount}
-            color="bg-destructive/10 text-destructive" loading={loadingProducts} />
+          <KpiCard icon={AlertTriangle} label="Low Stock" value={p.low_stock_count || 0}
+            color="bg-amber-50 text-amber-600" loading={isLoading} />
+          <KpiCard icon={XCircle} label="Out of Stock" value={p.out_of_stock_count || 0}
+            color="bg-destructive/10 text-destructive" loading={isLoading} />
         </div>
 
-        {/* Financial KPIs — super admin only */}
+        {/* Financial KPIs — super admin only (server strips money for others) */}
         {showMoney && (
           <div>
             <h2 className="text-sm font-heading font-semibold text-muted-foreground uppercase tracking-wide mb-3">Financial overview</h2>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
               <KpiCard icon={DollarSign} label="Revenue Today" value={money(today.revenue)}
                 trendPct={trend(today.revenue, yesterday.revenue)} sub="vs yesterday"
-                color="bg-green-50 text-green-700" loading={loadingOrders}
-                spark={spark.revenue} sparkColor="#2F5D57" />
+                color="bg-green-50 text-green-700" loading={isLoading}
+                spark={sparkRevenue} sparkColor="#2F5D57" />
               <KpiCard icon={DollarSign} label="Revenue (7d)" value={money(last7.revenue)}
                 trendPct={trend(last7.revenue, prev7.revenue)} sub="vs prior 7 days"
-                color="bg-green-50 text-green-700" loading={loadingOrders} />
+                color="bg-green-50 text-green-700" loading={isLoading} />
               <KpiCard icon={DollarSign} label="Revenue (30d)" value={money(last30.revenue)}
                 trendPct={trend(last30.revenue, prev30.revenue)} sub="vs prior 30 days"
-                color="bg-green-50 text-green-700" loading={loadingOrders} />
-              <KpiCard icon={Award} label="Avg Order Value" value={money(aov30)}
-                trendPct={trend(aov30, aovPrev)} sub="last 30 days"
-                color="bg-violet-50 text-violet-700" loading={loadingOrders} />
-              <KpiCard icon={Wallet} label="Inventory Value (COGS)" value={money(inventoryCost)}
-                sub="cost of current stock" color="bg-orange-50 text-orange-700" loading={loadingProducts} />
-              <KpiCard icon={BarChart2} label="Potential Revenue" value={money(potentialRevenue)}
-                sub="stock at retail price" color="bg-emerald-50 text-emerald-700" loading={loadingProducts} />
+                color="bg-green-50 text-green-700" loading={isLoading} />
+              <KpiCard icon={Award} label="Avg Order Value" value={money(o.aov30)}
+                trendPct={trend(o.aov30, o.aovPrev)} sub="last 30 days"
+                color="bg-violet-50 text-violet-700" loading={isLoading} />
+              <KpiCard icon={Wallet} label="Inventory Value (COGS)" value={money(p.inventory_cost)}
+                sub="cost of current stock" color="bg-orange-50 text-orange-700" loading={isLoading} />
+              <KpiCard icon={BarChart2} label="Potential Revenue" value={money(p.potential_revenue)}
+                sub="stock at retail price" color="bg-emerald-50 text-emerald-700" loading={isLoading} />
               <KpiCard icon={TrendingUp} label="Gross Margin (stock)"
-                value={potentialRevenue > 0 ? `${(((potentialRevenue - inventoryCost) / potentialRevenue) * 100).toFixed(0)}%` : '—'}
-                sub="potential vs cost" color="bg-sky-50 text-sky-700" loading={loadingProducts} />
+                value={p.gross_margin_pct != null ? `${p.gross_margin_pct.toFixed(0)}%` : '—'}
+                sub="potential vs cost" color="bg-sky-50 text-sky-700" loading={isLoading} />
               <Link to="/admin/finances" className="bg-card border border-border rounded-2xl p-5 flex items-center justify-center gap-2 shadow-sm text-sm font-semibold text-primary hover:bg-muted/40 transition-colors">
                 Full financials <ArrowRight className="w-4 h-4" />
               </Link>
@@ -410,16 +401,16 @@ export default function AdminDashboard() {
                 {topProducts.length === 0 && (
                   <p className="px-5 py-6 text-sm text-muted-foreground text-center">No sales in the last 30 days yet.</p>
                 )}
-                {topProducts.map((p, i) => (
-                  <div key={p.name} className="px-5 py-3">
+                {topProducts.map((tp, i) => (
+                  <div key={tp.name} className="px-5 py-3">
                     <div className="flex items-center justify-between gap-3 mb-1.5">
                       <p className="text-sm font-medium text-foreground truncate">
-                        <span className="text-muted-foreground mr-2">{i + 1}.</span>{p.name}
+                        <span className="text-muted-foreground mr-2">{i + 1}.</span>{tp.name}
                       </p>
-                      <span className="text-sm font-semibold text-foreground shrink-0">{p.qty} sold</span>
+                      <span className="text-sm font-semibold text-foreground shrink-0">{tp.qty} sold</span>
                     </div>
                     <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-                      <div className="h-full rounded-full" style={{ width: `${maxTopQty ? (p.qty / maxTopQty) * 100 : 0}%`, backgroundColor: '#7FA99B' }} />
+                      <div className="h-full rounded-full" style={{ width: `${maxTopQty ? (tp.qty / maxTopQty) * 100 : 0}%`, backgroundColor: '#7FA99B' }} />
                     </div>
                   </div>
                 ))}
@@ -445,7 +436,7 @@ export default function AdminDashboard() {
                   <div key={order.id} className="flex items-center gap-3 px-5 py-3 hover:bg-muted/30 transition-colors">
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-foreground truncate">
-                        {order.order_number || order.id.slice(0, 8)}
+                        {order.order_number || String(order.id).slice(0, 8)}
                       </p>
                       <p className="text-xs text-muted-foreground">{order.customer_name}</p>
                     </div>
@@ -472,16 +463,15 @@ export default function AdminDashboard() {
                 {lowStockProducts.length === 0 && (
                   <p className="px-5 py-6 text-sm text-muted-foreground text-center">All products are well stocked ✓</p>
                 )}
-                {lowStockProducts.map(p => {
-                  const qty = stockOf(p);
-                  const st = stockStatus(qty, p.reorder_level);
+                {lowStockProducts.map(lp => {
+                  const st = stockStatus(lp.qty, lp.reorder_level);
                   return (
-                    <div key={p.id} className="flex items-center gap-3 px-5 py-3 hover:bg-muted/30 transition-colors">
+                    <div key={lp.id} className="flex items-center gap-3 px-5 py-3 hover:bg-muted/30 transition-colors">
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-foreground truncate">{p.name}</p>
-                        <p className="text-xs text-muted-foreground">{p.sku}</p>
+                        <p className="text-sm font-medium text-foreground truncate">{lp.name}</p>
+                        <p className="text-xs text-muted-foreground">{lp.sku}</p>
                       </div>
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${st.color} shrink-0`}>{qty} left</span>
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${st.color} shrink-0`}>{lp.qty} left</span>
                       <button
                         onClick={() => navigate('/admin/inventory')}
                         className="text-xs text-primary font-medium hover:underline shrink-0"

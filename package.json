@@ -12,6 +12,7 @@
     "lint": "eslint . --quiet",
     "lint:fix": "eslint . --fix",
     "typecheck": "tsc -p ./jsconfig.json",
+    "test": "node --test tests/",
     "preview": "vite preview"
   },
   "dependencies": {
