@@ -5,7 +5,7 @@ import { base44 } from '@/api/base44Client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { logAction } from '@/lib/auditLog';
 import AccessDenied from './AccessDenied';
-import { Plus, Pencil, Trash2, Upload, ChevronRight, Eye, EyeOff, GripVertical } from 'lucide-react';
+import { Plus, Pencil, Trash2, Upload, ChevronRight, Eye, EyeOff, GripVertical, Wand2, ArrowRight } from 'lucide-react';
 
 function Toggle({ value, onChange }) {
   return (
@@ -148,6 +148,9 @@ export default function CategoriesPage() {
   const [editCat, setEditCat] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(null);
+  const [cleanup, setCleanup] = useState(null); // dry-run preview payload
+  const [cleanupLoading, setCleanupLoading] = useState(false);
+  const [cleanupApplying, setCleanupApplying] = useState(false);
 
   const { data: allCategories = [], isLoading } = useQuery({
     queryKey: ['admin-categories-full'],
@@ -192,6 +195,37 @@ export default function CategoriesPage() {
     await logAction({ action: 'deleted', entity: 'Category', entityId: id, userName: currentUser?.email });
     qc.invalidateQueries({ queryKey: ['admin-categories-full'] });
     setConfirmDelete(null);
+  }
+
+  // Derive the clean canonical category list: merge casing/whitespace duplicates
+  // and remove orphans. Always previews (dry-run) before applying.
+  async function runCleanupPreview() {
+    setCleanupLoading(true);
+    try {
+      const { data } = await base44.functions.invoke('cleanupCategories', { apply: false });
+      setCleanup(data);
+    } catch (e) {
+      alert(`Could not analyze categories: ${e.message || e}`);
+    } finally {
+      setCleanupLoading(false);
+    }
+  }
+
+  async function applyCleanup() {
+    setCleanupApplying(true);
+    try {
+      const { data } = await base44.functions.invoke('cleanupCategories', { apply: true });
+      await logAction({ action: 'cleanup_categories', entity: 'Category', userName: currentUser?.email });
+      qc.invalidateQueries({ queryKey: ['admin-categories-full'] });
+      qc.invalidateQueries({ queryKey: ['categories'] });
+      qc.invalidateQueries({ queryKey: ['categories-active'] });
+      setCleanup(null);
+      alert(`Done — merged ${data?.groups_merged || 0} duplicate group(s), removed ${data?.categories_removed || 0} category record(s), and remapped ${data?.products_remapped || 0} product(s).`);
+    } catch (e) {
+      alert(`Could not apply cleanup: ${e.message || e}`);
+    } finally {
+      setCleanupApplying(false);
+    }
   }
 
   function openNew(parentId = '') {
@@ -253,10 +287,17 @@ export default function CategoriesPage() {
             <h1 className="text-2xl font-heading font-bold text-foreground">Categories</h1>
             <p className="text-sm text-muted-foreground">{allCategories.length} total · Nest subcategories with the + button</p>
           </div>
-          <button onClick={() => openNew('')}
-            className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2.5 rounded-xl text-sm font-semibold shadow-sm hover:bg-primary/90 transition-colors">
-            <Plus className="w-4 h-4" /> Add Category
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={runCleanupPreview} disabled={cleanupLoading}
+              title="Merge duplicate/casing/whitespace variants and remove empty categories"
+              className="flex items-center gap-2 bg-secondary/15 text-foreground border border-border px-4 py-2.5 rounded-xl text-sm font-semibold hover:bg-secondary/25 transition-colors disabled:opacity-60">
+              <Wand2 className="w-4 h-4" /> {cleanupLoading ? 'Analyzing…' : 'Clean Up'}
+            </button>
+            <button onClick={() => openNew('')}
+              className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2.5 rounded-xl text-sm font-semibold shadow-sm hover:bg-primary/90 transition-colors">
+              <Plus className="w-4 h-4" /> Add Category
+            </button>
+          </div>
         </div>
 
         <div className="bg-card border border-border rounded-2xl shadow-sm overflow-hidden">
@@ -306,6 +347,94 @@ export default function CategoriesPage() {
             <div className="flex gap-2">
               <button onClick={() => setConfirmDelete(null)} className="flex-1 py-2 rounded-xl border border-border text-sm hover:bg-muted">Cancel</button>
               <button onClick={() => doDelete(confirmDelete)} className="flex-1 py-2 rounded-xl bg-destructive text-destructive-foreground text-sm font-semibold">Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {cleanup && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-card border border-border rounded-2xl w-full max-w-2xl shadow-2xl flex flex-col max-h-[85vh]">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+              <div className="flex items-center gap-2">
+                <Wand2 className="w-5 h-5 text-primary" />
+                <h2 className="font-heading font-bold text-foreground">Category Cleanup — Preview</h2>
+              </div>
+              <button onClick={() => setCleanup(null)} className="p-2 rounded-xl hover:bg-muted text-muted-foreground">✕</button>
+            </div>
+
+            <div className="p-6 space-y-5 overflow-y-auto">
+              <div className="grid grid-cols-3 gap-3 text-center">
+                <div className="bg-muted/50 rounded-xl py-3">
+                  <p className="text-xl font-bold text-foreground">{cleanup.groups_merged || 0}</p>
+                  <p className="text-xs text-muted-foreground">duplicate groups</p>
+                </div>
+                <div className="bg-muted/50 rounded-xl py-3">
+                  <p className="text-xl font-bold text-foreground">{cleanup.categories_removed || 0}</p>
+                  <p className="text-xs text-muted-foreground">categories removed</p>
+                </div>
+                <div className="bg-muted/50 rounded-xl py-3">
+                  <p className="text-xl font-bold text-foreground">{cleanup.products_remapped || 0}</p>
+                  <p className="text-xs text-muted-foreground">products remapped</p>
+                </div>
+              </div>
+
+              {(cleanup.merges || []).length > 0 && (
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">Merges</p>
+                  <div className="space-y-2">
+                    {cleanup.merges.map((m, i) => (
+                      <div key={i} className="border border-border rounded-xl px-3 py-2 text-sm">
+                        {m.merged.map((src, j) => (
+                          <div key={j} className="flex items-center gap-2 flex-wrap text-foreground">
+                            <span className="line-through text-muted-foreground">{src.name}</span>
+                            <span className="text-[10px] text-muted-foreground">({src.products} products)</span>
+                            <ArrowRight className="w-3.5 h-3.5 text-primary" />
+                            <span className="font-semibold">{m.canonical.name}</span>
+                            {m.manual && <span className="text-[10px] bg-secondary/20 text-foreground px-1.5 py-0.5 rounded-full">manual</span>}
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {(cleanup.orphans || []).length > 0 && (
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">Orphans to remove (no products)</p>
+                  <div className="flex flex-wrap gap-2">
+                    {cleanup.orphans.map((o) => (
+                      <span key={o.id} className="text-xs bg-destructive/10 text-destructive px-2 py-1 rounded-full">{o.name}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">
+                  Canonical list after cleanup ({(cleanup.canonical_categories || []).length})
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {(cleanup.canonical_categories || []).map((c) => (
+                    <span key={c.id} className="text-xs bg-muted px-2 py-1 rounded-full text-foreground">
+                      {c.name} <span className="text-muted-foreground">· {c.products}</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              {(cleanup.groups_merged || 0) === 0 && (cleanup.categories_removed || 0) === 0 && (
+                <p className="text-sm text-muted-foreground text-center py-2">Nothing to clean up — the category list is already canonical.</p>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-3 px-6 py-4 border-t border-border">
+              <button onClick={() => setCleanup(null)} className="px-4 py-2 rounded-xl border border-border text-sm hover:bg-muted">Cancel</button>
+              <button onClick={applyCleanup} disabled={cleanupApplying || ((cleanup.groups_merged || 0) === 0 && (cleanup.categories_removed || 0) === 0)}
+                className="px-5 py-2 rounded-xl bg-primary text-primary-foreground text-sm font-semibold disabled:opacity-50">
+                {cleanupApplying ? 'Applying…' : 'Apply Cleanup'}
+              </button>
             </div>
           </div>
         </div>
