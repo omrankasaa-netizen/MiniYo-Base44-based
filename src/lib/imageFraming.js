@@ -74,6 +74,45 @@ export function normalizeImage(image) {
 //   size: 'large' | 'card' | 'thumb' (default 'card')
 // Falls back through sensible neighbors, then the canonical single URL, so
 // legacy images (no variants) and partially-generated sets always resolve.
+// ── Cloudflare on-the-fly image resizing ─────────────────────────────────────
+// Our product images live on Cloudflare R2 behind images.miniyokids.com. Rather
+// than ship a single multi-MB original to every context (a 3MB blanket photo
+// shown at 200px on the grid), we route the URL through Cloudflare's image
+// resizing endpoint (/cdn-cgi/image/<opts>/<original>). Cloudflare resizes once,
+// re-encodes to the best modern format the browser accepts (AVIF/WebP), and
+// edge-caches each size. The original file is never modified or re-uploaded.
+//
+// Requires "Image Resizing" to be enabled on the Cloudflare zone. If it is off,
+// the resizing path 404s — so this is guarded: we only rewrite URLs on our own
+// R2 host, and a CF_IMAGE_RESIZE flag lets us instantly fall back to originals.
+// Keep FALSE until "Image Resizing" is enabled on the Cloudflare zone. While
+// off, images serve as full-size originals (current behavior, zero risk). Flip
+// to true once the dashboard toggle is on — every image instantly gets resized.
+const CF_IMAGE_RESIZE = false;
+
+// Hosts whose images can be safely routed through Cloudflare resizing.
+const CF_RESIZE_HOSTS = new Set(['images.miniyokids.com']);
+
+// Target widths (CSS px) per logical size. Cloudflare caps the height to keep
+// aspect ratio; quality 80 is visually lossless for photos at these sizes.
+const CF_SIZE_WIDTH = { thumb: 320, card: 600, large: 1200 };
+
+// Wrap an absolute R2 URL with a Cloudflare resizing transform. Returns the URL
+// unchanged when resizing is disabled, the host isn't ours, the URL is already
+// transformed, or it's not a plain http(s) image (data:/blob:/relative upload).
+function cfResize(url, size) {
+  if (!CF_IMAGE_RESIZE || !url) return url;
+  if (!/^https?:\/\//i.test(url)) return url;            // skip data:/blob:/relative
+  if (url.includes('/cdn-cgi/image/')) return url;        // already transformed
+  let u;
+  try { u = new URL(url); } catch { return url; }
+  if (!CF_RESIZE_HOSTS.has(u.host)) return url;           // only our R2 host
+  const width = CF_SIZE_WIDTH[size] || CF_SIZE_WIDTH.card;
+  const opts = `width=${width},quality=80,format=auto,fit=scale-down`;
+  // /cdn-cgi/image/<opts>/<path-with-leading-slash>
+  return `${u.origin}/cdn-cgi/image/${opts}${u.pathname}${u.search}`;
+}
+
 export function imageSrc(normalized, size = 'card') {
   if (!normalized) return '';
   const v = normalized.variants;
@@ -85,7 +124,8 @@ export function imageSrc(normalized, size = 'card') {
     }[size] || ['card', 'large', 'thumb'];
     for (const k of order) if (v[k]) return v[k];
   }
-  return normalized.url;
+  // Single-URL image (e.g. bulk-imported originals): resize on the fly.
+  return cfResize(normalized.url, size);
 }
 
 // Normalize a mixed list, dropping any entry without a usable URL so a carousel
