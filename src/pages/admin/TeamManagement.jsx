@@ -39,10 +39,13 @@ export default function TeamManagement() {
   const [showMatrix, setShowMatrix] = useState(false);
   const [roleFilter, setRoleFilter] = useState('');
 
-  const { data: users = [] } = useQuery({
+  // Users are loaded via the super-admin-guarded listUsers function (not the
+  // generic entity CRUD), so only a super admin can enumerate accounts.
+  const { data: users = [], error: usersError } = useQuery({
     queryKey: ['admin-users'],
-    queryFn: () => base44.entities.User.list(),
+    queryFn: async () => (await base44.functions.invoke('listUsers')).data?.users || [],
   });
+  const [roleError, setRoleError] = useState('');
 
   const isSuperAdmin = currentUser?.role === ROLES.SUPER_ADMIN;
 
@@ -74,11 +77,28 @@ export default function TeamManagement() {
     }
   }
 
-  async function changeRole(userId, newRole) {
-    if (!isSuperAdmin && newRole !== ROLES.STAFF) return;
-    await base44.entities.User.update(userId, { role: newRole });
-    await logAction({ action: 'role_changed', entity: 'User', entityId: userId, userName: currentUser?.full_name || currentUser?.email });
-    qc.invalidateQueries({ queryKey: ['admin-users'] });
+  // Role changes go through the super-admin-guarded setUserRole function, which
+  // validates the role, refuses to remove the last super admin, and writes an
+  // AuditLog entry server-side. Promotion to super_admin asks for confirmation.
+  async function changeRole(userId, newRole, currentRole) {
+    setRoleError('');
+    if (!isSuperAdmin) return;
+    if (newRole === currentRole) return;
+    if (newRole === ROLES.SUPER_ADMIN) {
+      const u = users.find(x => x.id === userId);
+      const ok = window.confirm(
+        `Grant SUPER ADMIN to ${u?.email || 'this user'}?\n\n`
+        + 'Super admins have full access including finances and team management. Continue?'
+      );
+      if (!ok) { qc.invalidateQueries({ queryKey: ['admin-users'] }); return; }
+    }
+    try {
+      await base44.functions.invoke('setUserRole', { user_id: userId, role: newRole });
+      qc.invalidateQueries({ queryKey: ['admin-users'] });
+    } catch (err) {
+      setRoleError(err?.data?.data?.error || err?.message || 'Failed to change role');
+      qc.invalidateQueries({ queryKey: ['admin-users'] });
+    }
   }
 
   return (
@@ -117,6 +137,12 @@ export default function TeamManagement() {
           )}
         </div>
 
+        {(roleError || usersError) && (
+          <p className="text-sm px-3 py-2 rounded-lg bg-destructive/10 text-destructive">
+            {roleError || (usersError && 'Failed to load users: ' + (usersError.message || 'unknown error'))}
+          </p>
+        )}
+
         {/* Members table */}
         <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
           <div className="flex items-center justify-between px-5 py-3 border-b border-border">
@@ -143,7 +169,7 @@ export default function TeamManagement() {
                     <p className="text-xs text-muted-foreground truncate">{u.email}</p>
                   </div>
                   {canChangeThisUser ? (
-                    <select value={u.role} onChange={e => changeRole(u.id, e.target.value)}
+                    <select value={u.role} onChange={e => changeRole(u.id, e.target.value, u.role)}
                       className={`text-xs px-2.5 py-1 rounded-lg border-0 font-medium cursor-pointer ${ROLE_COLORS[u.role] || 'bg-muted'}`}>
                       {[ROLES.STAFF, ROLES.ADMIN, ROLES.SUPER_ADMIN].map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
                     </select>

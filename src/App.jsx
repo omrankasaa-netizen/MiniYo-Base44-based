@@ -124,7 +124,7 @@ const AuthenticatedApp = () => {
 
       {/* Admin panel — guarded */}
       <Route path="/admin" element={<AdminGuard><AdminDashboard /></AdminGuard>} />
-      <Route path="/admin/team" element={<AdminGuard><TeamManagement /></AdminGuard>} />
+      <Route path="/admin/team" element={<AdminGuard requireSuperAdmin><TeamManagement /></AdminGuard>} />
       <Route path="/admin/settings" element={<AdminGuard><AdminSettings /></AdminGuard>} />
       <Route path="/admin/audit" element={<AdminGuard><AuditLogPage /></AdminGuard>} />
       <Route path="/admin/inventory" element={<AdminGuard><InventoryPage /></AdminGuard>} />

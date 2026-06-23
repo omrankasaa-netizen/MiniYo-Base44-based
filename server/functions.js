@@ -1,6 +1,7 @@
 import { createRecord, getRecord, updateRecord, deleteRecord, queryRecords, bulkCreate, nowIso, kvGet, kvSet } from './db.js';
 import { sendEmail } from './email.js';
 import { bulkImportProducts as runBulkImport, cleanupSeedProducts as runSeedCleanup } from './bulkImport.js';
+import { getDashboardMetrics as computeDashboardMetrics, buildOrdersCsv, invalidateDashboardCache } from './dashboard.js';
 
 // ─── Resend Automation event constants ──────────────────────────────────────
 // Public site base used for links inside automated emails.
@@ -204,7 +205,6 @@ function manualAdjust({ product_id, variant_sku, new_qty, movement_type, reason 
 }
 
 function inventoryEngine(body, user) {
-  if (!user) return { _status: 401, error: 'Unauthorized' };
   const { action } = body;
   if (action === 'check_stock') return checkStock(body);
   if (action === 'commit_stock') return commitStock(body, user);
@@ -345,9 +345,6 @@ export const DEFAULT_SHIPPING_ZONES = [
 ];
 
 function seedShippingZones(body, user) {
-  if (user && user.role !== 'admin' && user.role !== 'super_admin') {
-    return { _status: 403, error: 'Forbidden: Admin access required' };
-  }
   const existing = queryRecords('ShippingZone', { sort: 'sort_order', limit: 100 });
   if (existing.length > 0) return { message: 'Zones already exist', count: existing.length };
   const created = bulkCreate('ShippingZone', DEFAULT_SHIPPING_ZONES);
@@ -595,13 +592,11 @@ function isSuperAdmin(user) {
   return !!user && user.role === 'super_admin';
 }
 
-function bulkImportProducts(body, user) {
-  if (!isAdmin(user)) return { _status: 403, error: 'Forbidden: admin access required' };
+function bulkImportProducts(body) {
   return runBulkImport(body);
 }
 
-function cleanupSeedProducts(body, user) {
-  if (!isAdmin(user)) return { _status: 403, error: 'Forbidden: admin access required' };
+function cleanupSeedProducts(body) {
   return runSeedCleanup(body);
 }
 
@@ -615,8 +610,7 @@ function cleanupSeedProducts(body, user) {
 //      has at least one real, named variant
 // Runs as a DRY RUN by default — pass { apply: true } to actually delete.
 // Returns a per-product report of what was (or would be) removed.
-async function cleanupOrphanVariants(body = {}, user) {
-  if (!isAdmin(user)) return { _status: 403, error: 'Forbidden: admin access required' };
+async function cleanupOrphanVariants(body = {}) {
   const apply = body.apply === true;
   const norm = (s) => String(s == null ? '' : s).trim().toLowerCase();
 
@@ -688,8 +682,7 @@ async function cleanupOrphanVariants(body = {}, user) {
 // Optional body.merges:[{from,to}] (category ids OR names) force-merges
 // near-duplicates the admin spotted in the preview.
 // DRY RUN by default — pass { apply: true } to actually apply.
-async function cleanupCategories(body = {}, user) {
-  if (!isAdmin(user)) return { _status: 403, error: 'Forbidden: admin access required' };
+async function cleanupCategories(body = {}) {
   const apply = body.apply === true;
   const removeOrphans = body.removeOrphans !== false;
   const tidy = (s) => String(s == null ? '' : s).trim().replace(/\s+/g, ' ');
@@ -871,8 +864,7 @@ function defaultFinancialsConfig() {
   return { currency_label: 'USD', overhead_rows: DEFAULT_OVERHEAD_ROWS };
 }
 
-function getFinancialsConfig(body, user) {
-  if (!isSuperAdmin(user)) return { _status: 403, error: 'Forbidden: super admin access required' };
+function getFinancialsConfig() {
   const raw = kvGet(FIN_CONFIG_KEY);
   if (!raw) return defaultFinancialsConfig();
   try {
@@ -886,8 +878,7 @@ function getFinancialsConfig(body, user) {
   }
 }
 
-function saveFinancialsConfig(body, user) {
-  if (!isSuperAdmin(user)) return { _status: 403, error: 'Forbidden: super admin access required' };
+function saveFinancialsConfig(body) {
   const rows = Array.isArray(body?.overhead_rows) ? body.overhead_rows : [];
   const clean = {
     currency_label: String(body?.currency_label || 'USD').slice(0, 16) || 'USD',
@@ -899,6 +890,86 @@ function saveFinancialsConfig(body, user) {
   };
   kvSet(FIN_CONFIG_KEY, JSON.stringify(clean));
   return { ok: true, ...clean };
+}
+
+// ─── User & role management (super-admin only via central guard) ─────────────
+const VALID_ROLES = ['customer', 'staff', 'admin', 'super_admin'];
+
+// Strip credential-bearing fields before returning a user over the API.
+function publicUserRecord(u) {
+  if (!u) return null;
+  const { password_hash, otp_hash, otp_expires_at, otp_attempts, ...rest } = u;
+  return rest;
+}
+
+function listUsers() {
+  const users = queryRecords('User', { sort: '-created_date', limit: 2000 });
+  return { users: users.map(publicUserRecord) };
+}
+
+// Write an AuditLog row for a sensitive admin action. Reuses the existing
+// AuditLog entity shape used by the storefront audit helper (action, entity,
+// entity_id, user_name, created_at, details).
+function writeAudit({ action, entity, entityId, actor, details }) {
+  try {
+    createRecord('AuditLog', {
+      action,
+      entity,
+      entity_id: entityId || '',
+      user_name: actor || 'system',
+      created_at: nowIso(),
+      details: details || '',
+    });
+  } catch (e) {
+    console.error('[audit] failed to write entry:', e?.message);
+  }
+}
+
+// Promote/demote a user's role. Super-admin only (central guard). Validates the
+// target role, refuses to remove the LAST super admin (so the store always has
+// at least one owner), and records an AuditLog entry capturing old → new role.
+function setUserRole(body, user) {
+  const { user_id, role } = body || {};
+  if (!user_id || !role) return { _status: 400, error: 'user_id and role are required' };
+  if (!VALID_ROLES.includes(role)) {
+    return { _status: 400, error: `Invalid role. Must be one of: ${VALID_ROLES.join(', ')}` };
+  }
+  const target = getRecord('User', user_id);
+  if (!target) return { _status: 404, error: 'User not found' };
+
+  const oldRole = target.role;
+  if (oldRole === role) {
+    return { ok: true, unchanged: true, user: publicUserRecord(target) };
+  }
+
+  // Guard the last super admin: never let the count drop to zero.
+  if (oldRole === 'super_admin' && role !== 'super_admin') {
+    const superCount = queryRecords('User', { query: { role: 'super_admin' } }).length;
+    if (superCount <= 1) {
+      return { _status: 409, error: 'Cannot remove the last super admin. Promote another user to super admin first.' };
+    }
+  }
+
+  const updated = updateRecord('User', user_id, { role });
+  writeAudit({
+    action: 'role_changed',
+    entity: 'User',
+    entityId: user_id,
+    actor: user?.full_name || user?.email || 'unknown',
+    details: `${target.email || user_id}: ${oldRole || 'none'} → ${role}`,
+  });
+  return { ok: true, user: publicUserRecord(updated), old_role: oldRole, new_role: role };
+}
+
+// ─── Dashboard metrics + CSV export (admin via central guard) ────────────────
+// Financial fields are stripped server-side for non-super-admins inside
+// dashboard.js, so money never reaches a non-super-admin browser.
+function getDashboardMetrics(body, user) {
+  return computeDashboardMetrics(user, body || {});
+}
+
+function exportOrdersCsv(body, user) {
+  return buildOrdersCsv(user, body || {});
 }
 
 const REGISTRY = {
@@ -916,7 +987,56 @@ const REGISTRY = {
   onOrderDelivered,
   bulkImportProducts,
   cleanupSeedProducts,
+  listUsers,
+  setUserRole,
+  getDashboardMetrics,
+  exportOrdersCsv,
 };
+
+// ─── Centralized authorization ───────────────────────────────────────────────
+// Every admin function declares its required access level in ONE place instead
+// of repeating inline role checks. Levels:
+//   'public'      — no auth required (storefront/checkout-triggered flows)
+//   'auth'        — any authenticated user
+//   'admin'       — admin or super_admin
+//   'super_admin' — super_admin only (finance + user management)
+// Unknown/unlisted functions default to 'admin' (fail-safe, never 'public').
+const GUARDS = {
+  inventoryEngine: 'auth',
+  membershipEngine: 'public',
+  sendOrderConfirmation: 'public',
+  sendOrderNotification: 'public',
+  sendOrderStatusUpdate: 'public',
+  sendWelcomeEmailNew: 'public',
+  onOrderDelivered: 'public',
+  seedShippingZones: 'admin',
+  cleanupOrphanVariants: 'admin',
+  cleanupCategories: 'admin',
+  bulkImportProducts: 'admin',
+  cleanupSeedProducts: 'admin',
+  getDashboardMetrics: 'admin',
+  exportOrdersCsv: 'admin',
+  getFinancialsConfig: 'super_admin',
+  saveFinancialsConfig: 'super_admin',
+  listUsers: 'super_admin',
+  setUserRole: 'super_admin',
+};
+
+// Returns a 401/403 error object when the user fails the level, else null.
+export function authorizeFunction(level, user) {
+  if (level === 'public') return null;
+  if (!user) return { _status: 401, error: 'Authentication required' };
+  if (level === 'auth') return null;
+  if (level === 'admin') {
+    return isAdmin(user) ? null : { _status: 403, error: 'Forbidden: admin access required' };
+  }
+  if (level === 'super_admin') {
+    return isSuperAdmin(user) ? null : { _status: 403, error: 'Forbidden: super admin access required' };
+  }
+  return { _status: 403, error: 'Forbidden' };
+}
+
+export { invalidateDashboardCache };
 
 export async function invokeFunction(name, body, user) {
   const fn = REGISTRY[name];
@@ -925,5 +1045,7 @@ export async function invokeFunction(name, body, user) {
     err.status = 404;
     throw err;
   }
+  const denied = authorizeFunction(GUARDS[name] || 'admin', user);
+  if (denied) return denied;
   return await fn(body || {}, user);
 }
