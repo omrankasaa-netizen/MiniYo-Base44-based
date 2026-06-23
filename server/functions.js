@@ -1,4 +1,4 @@
-import { createRecord, getRecord, updateRecord, deleteRecord, queryRecords, bulkCreate, nowIso } from './db.js';
+import { createRecord, getRecord, updateRecord, deleteRecord, queryRecords, bulkCreate, nowIso, kvGet, kvSet } from './db.js';
 import { sendEmail } from './email.js';
 import { bulkImportProducts as runBulkImport, cleanupSeedProducts as runSeedCleanup } from './bulkImport.js';
 
@@ -843,8 +843,63 @@ async function cleanupCategories(body = {}, user) {
   };
 }
 
+// ─── Financials: Projected Revenue overhead config (admin-only) ─────────────
+// Persists the editable overhead line items + currency label for the Finances
+// "Projected Revenue" tab. Stored as a single JSON blob in the kv table so it
+// survives reloads/redeploys without a new entity/table.
+const FIN_CONFIG_KEY = 'financials_projection_config';
+
+const DEFAULT_OVERHEAD_ROWS = [
+  { label: 'Printing — cards', qty: 0, unit_price: 0 },
+  { label: 'Printing — stickers', qty: 0, unit_price: 0 },
+  { label: 'Printing — labels/tags', qty: 0, unit_price: 0 },
+  { label: 'Shopping bags', qty: 0, unit_price: 0 },
+  { label: 'Packaging / boxes / tissue', qty: 0, unit_price: 0 },
+  { label: 'Tape / fillers / misc packaging', qty: 0, unit_price: 0 },
+  { label: 'Marketing / ads', qty: 1, unit_price: 0 },
+  { label: 'Shipping/delivery overhead', qty: 1, unit_price: 0 },
+  { label: 'Platform / hosting / software', qty: 1, unit_price: 0 },
+  { label: 'Other', qty: 1, unit_price: 0 },
+];
+
+function defaultFinancialsConfig() {
+  return { currency_label: 'USD', overhead_rows: DEFAULT_OVERHEAD_ROWS };
+}
+
+function getFinancialsConfig(body, user) {
+  if (!isAdmin(user)) return { _status: 403, error: 'Forbidden: admin access required' };
+  const raw = kvGet(FIN_CONFIG_KEY);
+  if (!raw) return defaultFinancialsConfig();
+  try {
+    const parsed = JSON.parse(raw);
+    return {
+      currency_label: parsed.currency_label || 'USD',
+      overhead_rows: Array.isArray(parsed.overhead_rows) ? parsed.overhead_rows : DEFAULT_OVERHEAD_ROWS,
+    };
+  } catch {
+    return defaultFinancialsConfig();
+  }
+}
+
+function saveFinancialsConfig(body, user) {
+  if (!isAdmin(user)) return { _status: 403, error: 'Forbidden: admin access required' };
+  const rows = Array.isArray(body?.overhead_rows) ? body.overhead_rows : [];
+  const clean = {
+    currency_label: String(body?.currency_label || 'USD').slice(0, 16) || 'USD',
+    overhead_rows: rows.map((r) => ({
+      label: String(r?.label ?? '').slice(0, 120),
+      qty: Number(r?.qty) || 0,
+      unit_price: Number(r?.unit_price) || 0,
+    })),
+  };
+  kvSet(FIN_CONFIG_KEY, JSON.stringify(clean));
+  return { ok: true, ...clean };
+}
+
 const REGISTRY = {
   inventoryEngine,
+  getFinancialsConfig,
+  saveFinancialsConfig,
   cleanupOrphanVariants,
   cleanupCategories,
   membershipEngine,

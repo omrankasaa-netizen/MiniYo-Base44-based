@@ -7,6 +7,7 @@ import {
 } from './db.js';
 import { registerUser, findUserByEmail } from './auth.js';
 import { DEFAULT_SHIPPING_ZONES } from './functions.js';
+import { LEGAL_SECTIONS, FAQS } from './seedContent.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CATALOG = path.join(__dirname, 'data', 'catalog.csv');
@@ -231,20 +232,39 @@ function seedCatalog() {
   console.log(`[seed] catalog: ${categories.size} categories, ${products.length} products, ${variants.length} variants`);
 }
 
-export function runSeed() {
-  if (kvGet('seed_version') === SEED_VERSION) {
-    // Still ensure admin/settings idempotently in case of partial state.
-    seedAdmin();
-    seedMembershipSettings();
-    seedSiteSettings();
-    seedShippingZones();
-    return;
+// Create the storefront legal/about CmsSection rows if they are missing, so the
+// public Legal/About pages are backed by editable DB content (the pages also have
+// hard-coded fallback copy, but seeding makes the copy editable from the admin CMS).
+// Each row is created only when no CmsSection with that section_key already exists,
+// so an admin's later edits are never overwritten.
+function seedLegalPages() {
+  for (const s of LEGAL_SECTIONS) {
+    const existing = queryRecords('CmsSection', { query: { section_key: s.section_key }, limit: 1 });
+    if (existing.length > 0) continue;
+    createRecord('CmsSection', { ...s, is_active: true, sort_order: 0 });
   }
+}
+
+// Seed the storefront FAQ list when no Faq rows exist yet. The FAQ page has no
+// hard-coded fallback, so without this the page renders empty on a fresh install.
+function seedFaqs() {
+  if (countRecords('Faq') > 0) return;
+  bulkCreate('Faq', FAQS.map((f, i) => ({ ...f, is_active: true, sort_order: i })));
+}
+
+export function runSeed() {
+  const fresh = kvGet('seed_version') !== SEED_VERSION;
+  // Idempotent seeders run every boot so missing admin/settings/content is
+  // backfilled even on existing databases.
   seedAdmin();
   seedMembershipSettings();
   seedSiteSettings();
   seedShippingZones();
-  seedCatalog();
-  kvSet('seed_version', SEED_VERSION);
-  console.log('[seed] complete');
+  seedLegalPages();
+  seedFaqs();
+  if (fresh) {
+    seedCatalog();
+    kvSet('seed_version', SEED_VERSION);
+    console.log('[seed] complete');
+  }
 }

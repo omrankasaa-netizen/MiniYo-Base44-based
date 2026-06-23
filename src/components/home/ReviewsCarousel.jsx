@@ -25,8 +25,24 @@ export default function ReviewsCarousel() {
     staleTime: 60_000,
   });
 
+  const { data: sections = [] } = useQuery({
+    queryKey: ['cms-section', 'home_reviews'],
+    queryFn: () => base44.entities.CmsSection.filter({ section_key: 'home_reviews' }, 'sort_order', 1),
+    staleTime: 60_000,
+  });
+  const section = sections[0];
+
   const shown = reviews.filter(r => r.body);
   const total = shown.length;
+
+  if (section && section.is_active === false) return null;
+
+  const heading = section
+    ? (lang === 'ar' ? (section.title_ar || section.title) : section.title) || t('Loved by parents', 'يحبه الأهالي')
+    : t('Loved by parents', 'يحبه الأهالي');
+  const emptyMsg = section && (lang === 'ar' ? (section.body_ar || section.body) : section.body)
+    ? (lang === 'ar' ? (section.body_ar || section.body) : section.body)
+    : t('Real reviews coming soon — be our first 🤍', 'تقييمات حقيقية قريبًا — كن أول من يقيّم 🤍');
 
   function prev() { setIdx(i => (i - 1 + total) % total); }
   function next() { setIdx(i => (i + 1) % total); }
@@ -41,7 +57,7 @@ export default function ReviewsCarousel() {
           transition={{ duration: 0.5 }}
           className="text-2xl sm:text-3xl font-heading font-bold text-foreground text-center mb-10"
         >
-          {t('Loved by parents', 'يحبه الأهالي')}
+          {heading}
         </motion.h2>
 
         {total === 0 ? (
@@ -54,7 +70,7 @@ export default function ReviewsCarousel() {
             <div className="w-16 h-16 bg-accent/30 rounded-full flex items-center justify-center">
               <Heart className="w-7 h-7 text-primary" />
             </div>
-            <p className="text-muted-foreground text-sm">{t('Real reviews coming soon — be our first 🤍', 'تقييمات حقيقية قريبًا — كن أول من يقيّم 🤍')}</p>
+            <p className="text-muted-foreground text-sm">{emptyMsg}</p>
           </motion.div>
         ) : (
           <div className="relative max-w-2xl mx-auto">
