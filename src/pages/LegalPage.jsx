@@ -77,18 +77,22 @@ By using the MiniYo website you agree to these terms.
 - We reserve the right to cancel orders that cannot be fulfilled.
 
 ### 2. Payment
-We accept Cash on Delivery and Whish Money.
+We accept Cash on Delivery and Whish Money. Prices are displayed in USD; the equivalent in LBP may be collected at the current exchange rate.
 
 ### 3. Delivery
-- Inside Tripoli: $2–3 / 1–2 business days
-- Outside Tripoli: $5 / 2–5 business days
-- Free delivery on orders above $50
+We deliver across Lebanon. Delivery times and fees vary by area and are confirmed at checkout; a free-delivery threshold may apply. Please see our Shipping Policy for current details.
 
 ### 4. Returns & Exchanges
-See our Returns Policy page.
+We offer **exchanges only** (no cash refunds). You must notify us within 24 hours of delivery, and the exchange may be completed within 14 days. Exact stock is not guaranteed. See our Returns & Exchanges Policy for full terms.
 
 ### 5. Intellectual Property
 All content on this site belongs to MiniYo and may not be reproduced without permission.
+
+### 6. Limitation of Liability
+MiniYo is not liable for indirect or consequential losses arising from the use of this website or our products, to the extent permitted by law.
+
+### 7. Governing Law
+These Terms are governed by the laws of **Lebanon**, and any disputes shall be subject to the jurisdiction of the Lebanese courts.
 `,
     default_ar: `## الشروط والأحكام
 
@@ -102,18 +106,22 @@ All content on this site belongs to MiniYo and may not be reproduced without per
 - نحتفظ بالحق في إلغاء الطلبات التي لا يمكن تنفيذها.
 
 ### 2. الدفع
-نقبل الدفع عند الاستلام وتطبيق Whish.
+نقبل الدفع عند الاستلام وتطبيق Whish. تُعرض الأسعار بالدولار الأمريكي، وقد يُحصّل ما يعادلها بالليرة اللبنانية وفق سعر الصرف الحالي.
 
 ### 3. التوصيل
-- داخل طرابلس: 2-3 دولار / 1-2 أيام عمل
-- خارج طرابلس: 5 دولار / 2-5 أيام عمل
-- توصيل مجاني للطلبات فوق 50 دولار
+نوصّل إلى جميع مناطق لبنان. تختلف مواعيد ورسوم التوصيل حسب المنطقة وتُؤكَّد عند إتمام الطلب، وقد ينطبق حد للتوصيل المجاني. يُرجى مراجعة سياسة الشحن لمعرفة التفاصيل الحالية.
 
 ### 4. الإرجاع والاستبدال
-راجع صفحة سياسة الإرجاع.
+نقدّم **الاستبدال فقط** (لا استرداد نقدي). يجب إبلاغنا خلال 24 ساعة من التسليم، ويمكن إتمام الاستبدال خلال 14 يوماً. لا يمكن ضمان توفّر المخزون بالضبط. راجع سياسة الإرجاع والاستبدال للاطلاع على الشروط الكاملة.
 
 ### 5. الملكية الفكرية
 جميع محتويات الموقع ملك لـ MiniYo ولا يجوز إعادة إنتاجها دون إذن.
+
+### 6. حدود المسؤولية
+لا تتحمّل MiniYo المسؤولية عن أي خسائر غير مباشرة أو تبعية ناتجة عن استخدام هذا الموقع أو منتجاتنا، بالقدر الذي يسمح به القانون.
+
+### 7. القانون الحاكم
+تخضع هذه الشروط لقوانين **لبنان**، وتكون أي نزاعات خاضعة لاختصاص المحاكم اللبنانية.
 `
   },
   shipping: {
@@ -125,44 +133,38 @@ All content on this site belongs to MiniYo and may not be reproduced without per
 **Last updated: June 2026**
 
 ### Delivery Areas
-We deliver to all areas in Lebanon.
+We deliver nationwide across Lebanon.
 
-### Delivery Fees
-| Zone | Fee | Estimated Time |
-|------|-----|----------------|
-| Inside Tripoli | $2 | Same day / Next day |
-| Outside Tripoli | $5 | 2–5 business days |
+### Delivery Fees & Times
+Delivery fees and estimated times vary by area and are **confirmed at checkout**. As a general guide, deliveries within the Tripoli area are usually faster, while other regions may take a few business days. (Exact rates are configurable and shown at checkout.)
 
 ### Free Shipping
-Orders over **$50** qualify for free shipping.
+A free-shipping threshold may apply to larger orders — the current threshold, if any, is shown at checkout.
 
 ### Order Processing
-Orders are processed within 1 business day. You will receive a WhatsApp confirmation once your order is dispatched.
+Orders are typically processed within 1 business day. You will receive a WhatsApp confirmation once your order is dispatched.
 
 ### Cash on Delivery
-Payment is collected upon delivery in USD or the equivalent in LBP at the current exchange rate.
+Cash on Delivery is available. Payment is collected upon delivery in USD or the equivalent in LBP at the current exchange rate.
 `,
     default_ar: `## سياسة الشحن
 
 **آخر تحديث: يونيو 2026**
 
 ### مناطق التوصيل
-نوصّل إلى جميع مناطق لبنان.
+نوصّل إلى جميع المناطق في لبنان.
 
-### رسوم التوصيل
-| المنطقة | الرسوم | الوقت المتوقع |
-|---------|---------|----------------|
-| داخل طرابلس | 2 دولار | نفس اليوم / اليوم التالي |
-| خارج طرابلس | 5 دولار | 2–5 أيام عمل |
+### رسوم ومواعيد التوصيل
+تختلف رسوم ومواعيد التوصيل حسب المنطقة وتُؤكَّد **عند إتمام الطلب**. بشكل عام، يكون التوصيل داخل منطقة طرابلس أسرع، بينما قد تستغرق المناطق الأخرى بضعة أيام عمل. (الأسعار قابلة للتعديل وتظهر عند الدفع.)
 
 ### الشحن المجاني
-الطلبات التي تتجاوز **50 دولار** تحصل على شحن مجاني.
+قد ينطبق حد للشحن المجاني على الطلبات الأكبر — يظهر الحد الحالي، إن وُجد، عند الدفع.
 
 ### معالجة الطلبات
-تُعالَج الطلبات خلال يوم عمل واحد. ستتلقى تأكيداً عبر واتساب بمجرد إرسال طلبك.
+تُعالَج الطلبات عادةً خلال يوم عمل واحد. ستتلقى تأكيداً عبر واتساب بمجرد إرسال طلبك.
 
 ### الدفع عند الاستلام
-يُحصّل المبلغ عند التسليم بالدولار الأمريكي أو ما يعادله بالليرة اللبنانية.
+الدفع عند الاستلام متاح. يُحصّل المبلغ عند التسليم بالدولار الأمريكي أو ما يعادله بالليرة اللبنانية وفق سعر الصرف الحالي.
 `
   },
   returns: {
@@ -173,45 +175,71 @@ Payment is collected upon delivery in USD or the equivalent in LBP at the curren
 
 **Last updated: June 2026**
 
-### 14-Day Return Window
-You may return unworn, unwashed items in original packaging within **14 days** of delivery.
+At MiniYo we want you and your little one to love every order. Please read our exchange policy carefully.
 
-### Eligible Items
-- Items must be in original condition with tags attached
-- Sale items are final sale (no returns)
+### Exchange Only — No Cash Refunds
+We offer **exchanges only**. We do not provide cash refunds. If something isn't right, we'll help you exchange it under the terms below.
 
-### How to Return
-1. WhatsApp us your order number and reason for return
-2. We will arrange a pickup or drop-off point
-3. Refunds are processed within 5 business days after we receive the item
+### 24-Hour Notification + 14-Day Window
+- You must **notify us within 24 hours of delivery** if you wish to exchange an item.
+- Once you have notified us in time, the exchange can be completed **within 14 days** of delivery.
+- Requests made after the first 24 hours unfortunately cannot be accepted.
 
-### Exchanges
-We're happy to exchange for a different size or color, subject to availability.
+### Condition of Items
+To be eligible for exchange, items must be:
+- **Unworn and unwashed**, in their original condition
+- With **all original tags attached** and in their **original packaging**
 
-### Damaged / Wrong Items
-If you received a damaged or incorrect item, contact us within 48 hours of delivery and we will replace it at no cost.
+### Stock Availability
+- **Exact stock cannot be guaranteed.** The specific item, size, or colour you'd like in exchange may no longer be available.
+- If the **same item is not available**, you may choose an **alternative item**, and the **same discounts** applied to your original purchase will be honoured on the replacement.
+- If the **price of the replacement item is higher** than the item being exchanged, you will **pay the difference**. If it is lower, the difference is not refunded (exchange only).
+
+### Non-Exchangeable Items
+For hygiene reasons, the following cannot be exchanged: socks, underwear, bibs, pacifiers, and similar intimate or single-use items — unless they arrive faulty.
+
+### How to Request an Exchange
+1. **Message us on WhatsApp within 24 hours of delivery** with your order number and the reason.
+2. We'll confirm your exchange and arrange the next steps.
+3. The customer is responsible for delivering the item back to us or covering return delivery; the replacement is then sent to you.
+
+### Damaged or Incorrect Items
+If you received a damaged or incorrect item, contact us **within 24 hours of delivery** and we will arrange a replacement at no extra cost.
 `,
     default_ar: `## سياسة الإرجاع والاستبدال
 
 **آخر تحديث: يونيو 2026**
 
-### فترة الإرجاع 14 يوماً
-يمكنك إرجاع المنتجات غير المرتداة وغير المغسولة في تغليفها الأصلي خلال **14 يوماً** من التسليم.
+في MiniYo نريدك أنت وصغيرك أن تحبّا كل طلب. يُرجى قراءة سياسة الاستبدال بعناية.
 
-### المنتجات المؤهلة
-- يجب أن تكون المنتجات بحالتها الأصلية مع الوسوم مرفقة
-- منتجات التخفيضات نهائية (لا إرجاع)
+### استبدال فقط — لا استرداد نقدي
+نقدّم **الاستبدال فقط**، ولا نقدّم استرداداً نقدياً. إذا لم يكن المنتج مناسباً، سنساعدك على استبداله وفق الشروط أدناه.
 
-### كيفية الإرجاع
-1. راسلنا عبر واتساب برقم طلبك وسبب الإرجاع
-2. سنرتب لاستلامه أو نقطة إسقاط
-3. تُعالَج المبالغ المستردة خلال 5 أيام عمل بعد استلام المنتج
+### إشعار خلال 24 ساعة + فترة 14 يوماً
+- يجب **إبلاغنا خلال 24 ساعة من استلام الطلب** إذا رغبت في استبدال منتج.
+- بعد إبلاغنا ضمن المهلة، يمكن إتمام الاستبدال **خلال 14 يوماً** من التسليم.
+- لا يمكننا للأسف قبول الطلبات بعد مرور أول 24 ساعة.
 
-### الاستبدال
-يسعدنا استبدال المقاس أو اللون حسب التوافر.
+### حالة المنتجات
+لتكون مؤهلة للاستبدال، يجب أن تكون المنتجات:
+- **غير مرتداة وغير مغسولة** وبحالتها الأصلية
+- مع **جميع الوسوم الأصلية مرفقة** وفي **تغليفها الأصلي**
+
+### توفّر المخزون
+- **لا يمكن ضمان توفّر المخزون بالضبط.** قد لا يكون المنتج أو المقاس أو اللون المطلوب للاستبدال متوفراً.
+- إذا لم يكن **المنتج نفسه متوفراً**، يمكنك اختيار **منتج بديل**، وستُطبَّق **نفس الخصومات** التي كانت على طلبك الأصلي على المنتج البديل.
+- إذا كان **سعر المنتج البديل أعلى** من المنتج المُستبدَل، فستدفع **الفرق**. وإذا كان أقل، لا يُسترد الفرق (استبدال فقط).
+
+### منتجات غير قابلة للاستبدال
+لأسباب صحية، لا يمكن استبدال: الجوارب، الملابس الداخلية، المرايل، اللهايات، والمنتجات المشابهة ذات الاستخدام الشخصي أو الواحد — إلا إذا وصلت معيبة.
+
+### كيفية طلب الاستبدال
+1. **راسلنا عبر واتساب خلال 24 ساعة من الاستلام** برقم الطلب والسبب.
+2. سنؤكد الاستبدال ونرتّب الخطوات التالية.
+3. يتحمّل العميل مسؤولية إيصال المنتج إلينا أو تغطية تكلفة إعادته، ثم يُرسَل المنتج البديل إليك.
 
 ### المنتجات التالفة أو الخاطئة
-إذا استلمت منتجاً تالفاً أو غير صحيح، تواصل معنا خلال 48 ساعة من التسليم وسنستبدله بدون تكلفة.
+إذا استلمت منتجاً تالفاً أو غير صحيح، تواصل معنا **خلال 24 ساعة من التسليم** وسنرتّب الاستبدال دون أي تكلفة إضافية.
 `
   }
 };

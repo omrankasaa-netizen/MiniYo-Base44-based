@@ -667,9 +667,157 @@ async function cleanupOrphanVariants(body = {}, user) {
   };
 }
 
+// ─── Cleanup: normalize & de-duplicate Category records ─────────────────────
+// Categories are auto-created from product imports (matched by name), so over
+// time the list accumulates casing/whitespace/punctuation variants of the same
+// category (" TRIKO " / "triko" / "Triko") plus orphans left behind by deleted
+// products. This derives the clean canonical list from the products that exist
+// now and proposes a mapping old -> canonical:
+//   1. Group categories by a normalized key (trimmed, collapsed whitespace,
+//      lowercased, punctuation stripped). Each group collapses to ONE canonical
+//      record — the one with an icon, else the most products, else the oldest.
+//   2. Remap every product.category_id / subcategory_id from a merged-away
+//      category to its canonical id.
+//   3. Flag categories referenced by NO product and parenting NO other category
+//      as orphans to remove (skip with { removeOrphans: false }).
+// Optional body.merges:[{from,to}] (category ids OR names) force-merges
+// near-duplicates the admin spotted in the preview.
+// DRY RUN by default — pass { apply: true } to actually apply.
+async function cleanupCategories(body = {}, user) {
+  if (!isAdmin(user)) return { _status: 403, error: 'Forbidden: admin access required' };
+  const apply = body.apply === true;
+  const removeOrphans = body.removeOrphans !== false;
+  const tidy = (s) => String(s == null ? '' : s).trim().replace(/\s+/g, ' ');
+  const normKey = (s) => tidy(s).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').replace(/\s+/g, ' ').trim();
+
+  const categories = queryRecords('Category', {});
+  const products = queryRecords('Product', {});
+
+  const byId = new Map(categories.map((c) => [c.id, c]));
+  const byNameLower = new Map();
+  for (const c of categories) if (c.name) byNameLower.set(tidy(c.name).toLowerCase(), c);
+  const parentIds = new Set(categories.map((c) => c.parent_id).filter(Boolean));
+
+  // Raw product counts per category id (category + subcategory references).
+  const counts = {};
+  for (const p of products) {
+    if (p.category_id) counts[p.category_id] = (counts[p.category_id] || 0) + 1;
+    if (p.subcategory_id) counts[p.subcategory_id] = (counts[p.subcategory_id] || 0) + 1;
+  }
+
+  const remap = {}; // oldId -> canonicalId
+  const mergeReport = [];
+
+  const pickCanonical = (list) => [...list].sort((a, b) => {
+    const ai = a.image_url ? 1 : 0; const bi = b.image_url ? 1 : 0;
+    if (ai !== bi) return bi - ai;
+    const ac = counts[a.id] || 0; const bc = counts[b.id] || 0;
+    if (ac !== bc) return bc - ac;
+    return String(a.created_date || '').localeCompare(String(b.created_date || ''));
+  })[0];
+
+  // 1. Auto-group by normalized key.
+  const groups = new Map();
+  for (const c of categories) {
+    const key = normKey(c.name);
+    if (!key) continue;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(c);
+  }
+  for (const list of groups.values()) {
+    if (list.length < 2) continue;
+    const canonical = pickCanonical(list);
+    const merged = list.filter((c) => c.id !== canonical.id);
+    for (const m of merged) remap[m.id] = canonical.id;
+    mergeReport.push({
+      canonical: { id: canonical.id, name: tidy(canonical.name), slug: canonical.slug },
+      merged: merged.map((m) => ({ id: m.id, name: m.name, slug: m.slug, products: counts[m.id] || 0 })),
+    });
+  }
+
+  // 2. Explicit admin merges (by id or name).
+  const resolveRef = (ref) => (ref && byId.has(ref) ? byId.get(ref) : byNameLower.get(tidy(ref).toLowerCase()) || null);
+  for (const m of Array.isArray(body.merges) ? body.merges : []) {
+    const from = resolveRef(m.from); const to = resolveRef(m.to);
+    if (!from || !to || from.id === to.id) continue;
+    remap[from.id] = to.id;
+    for (const k of Object.keys(remap)) if (remap[k] === from.id) remap[k] = to.id;
+    mergeReport.push({
+      canonical: { id: to.id, name: tidy(to.name), slug: to.slug },
+      merged: [{ id: from.id, name: from.name, slug: from.slug, products: counts[from.id] || 0 }],
+      manual: true,
+    });
+  }
+
+  const finalTarget = (id) => { let t = id; let g = 0; while (remap[t] && g++ < 50) t = remap[t]; return t; };
+
+  // Product remaps required to point at canonical ids.
+  const productUpdates = [];
+  for (const p of products) {
+    const patch = {};
+    if (p.category_id && remap[p.category_id]) patch.category_id = finalTarget(p.category_id);
+    if (p.subcategory_id && remap[p.subcategory_id]) patch.subcategory_id = finalTarget(p.subcategory_id);
+    if (Object.keys(patch).length) productUpdates.push({ id: p.id, patch });
+  }
+
+  // Post-remap counts (merged children's products now count toward canonical).
+  const finalCounts = {};
+  for (const p of products) {
+    const cat = p.category_id ? finalTarget(p.category_id) : null;
+    const sub = p.subcategory_id ? finalTarget(p.subcategory_id) : null;
+    if (cat) finalCounts[cat] = (finalCounts[cat] || 0) + 1;
+    if (sub) finalCounts[sub] = (finalCounts[sub] || 0) + 1;
+  }
+
+  // 3. Orphans: 0 products, parents nothing, and not already being merged away.
+  const removedIds = new Set(Object.keys(remap));
+  const orphans = [];
+  for (const c of categories) {
+    if (removedIds.has(c.id)) continue;
+    if ((finalCounts[c.id] || 0) === 0 && !parentIds.has(c.id)) {
+      orphans.push({ id: c.id, name: c.name, slug: c.slug });
+    }
+  }
+
+  // Clean canonical list that survives the cleanup.
+  const surviving = new Set(categories.map((c) => c.id));
+  for (const id of removedIds) surviving.delete(id);
+  if (removeOrphans) for (const o of orphans) surviving.delete(o.id);
+  const canonicalList = [...surviving].map((id) => {
+    const c = byId.get(id);
+    return { id, name: tidy(c.name), slug: c.slug, products: finalCounts[id] || 0, parent_id: c.parent_id || null };
+  }).sort((a, b) => a.name.localeCompare(b.name));
+
+  if (apply) {
+    for (const u of productUpdates) updateRecord('Product', u.id, u.patch);
+    // Tidy surviving canonical display names (trim stray casing/whitespace).
+    for (const id of surviving) {
+      const c = byId.get(id);
+      const clean = tidy(c.name);
+      if (c.name !== clean) updateRecord('Category', id, { name: clean });
+    }
+    for (const id of removedIds) deleteRecord('Category', id);
+    if (removeOrphans) for (const o of orphans) deleteRecord('Category', o.id);
+  }
+
+  return {
+    mode: apply ? 'applied' : 'dry-run',
+    groups_merged: mergeReport.length,
+    categories_removed: removedIds.size + (removeOrphans ? orphans.length : 0),
+    products_remapped: productUpdates.length,
+    merges: mergeReport,
+    orphans,
+    canonical_categories: canonicalList,
+    note: apply
+      ? 'Categories normalized, duplicates merged, and orphans removed.'
+      : 'No changes made. Review the proposed mapping, then re-run with { "apply": true }.',
+  };
+}
+
 const REGISTRY = {
   inventoryEngine,
   cleanupOrphanVariants,
+  cleanupCategories,
   membershipEngine,
   seedShippingZones,
   sendOrderConfirmation,
