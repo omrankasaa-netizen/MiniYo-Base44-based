@@ -5,6 +5,7 @@ import { useLang } from '@/contexts/LanguageContext';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowRight } from 'lucide-react';
+import { cmsImageSrc } from '@/lib/imageFraming';
 
 export default function HeroSection() {
   const { lang, t } = useLang();
@@ -77,7 +78,7 @@ export default function HeroSection() {
               className="flex-1 w-full max-w-md lg:max-w-lg"
             >
               <div className="relative rounded-3xl overflow-hidden shadow-2xl aspect-[4/5]">
-                <img src={imgUrl} alt={title} className="w-full h-full object-cover" />
+                <img src={cmsImageSrc(imgUrl, 'large')} alt={title} loading="eager" decoding="async" className="w-full h-full object-cover" />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/10 to-transparent" />
               </div>
             </motion.div>
