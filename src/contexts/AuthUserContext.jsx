@@ -47,6 +47,10 @@ export function AuthUserProvider({ children }) {
     return hasRole(ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.STAFF);
   }
 
+  function isSuperAdmin() {
+    return hasRole(ROLES.SUPER_ADMIN);
+  }
+
   function canAccess(permission) {
     if (!currentUser) return false;
     const role = currentUser.role;
@@ -59,8 +63,9 @@ export function AuthUserProvider({ children }) {
       edit_orders: [ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.STAFF],
       // Inventory
       manage_inventory: [ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.STAFF],
-      // Finances / Promo / Discounts
-      view_finances: [ROLES.SUPER_ADMIN, ROLES.ADMIN],
+      // Finances — super admin only (revenue/cost/profit data is owner-only)
+      view_finances: [ROLES.SUPER_ADMIN],
+      // Promo / Discounts
       manage_promos: [ROLES.SUPER_ADMIN, ROLES.ADMIN],
       manage_discounts: [ROLES.SUPER_ADMIN, ROLES.ADMIN],
       // CMS
@@ -76,7 +81,7 @@ export function AuthUserProvider({ children }) {
   }
 
   return (
-    <AuthUserContext.Provider value={{ currentUser, loading, logout, hasRole, isAdminUser, canAccess, refreshUser: loadUser }}>
+    <AuthUserContext.Provider value={{ currentUser, loading, logout, hasRole, isAdminUser, isSuperAdmin, canAccess, refreshUser: loadUser }}>
       {children}
     </AuthUserContext.Provider>
   );
