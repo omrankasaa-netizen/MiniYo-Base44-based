@@ -112,6 +112,29 @@ function cfResize(url, size) {
   return `${u.origin}/cdn-cgi/image/${opts}${u.pathname}${u.search}`;
 }
 
+// CMS sections (hero, banners, category icons) store only a single canonical
+// `image_url` string — the 600px "card" derivative produced by optimizeAndStore
+// (key path …/<base>/card.webp). They have no variants map, so a raw <img> would
+// render the 600px image even for a full-bleed hero (soft on large screens) and
+// download a too-big icon for a 144px category tile.
+//
+// cmsImageSrc() right-sizes such a URL by:
+//   1) if it points at a generated derivative (…/card.webp), swapping to the
+//      sibling derivative for the requested size (…/large.webp | …/thumb.webp) —
+//      these were pre-generated at upload, so it's free and pixel-crisp; then
+//   2) routing the result through Cloudflare resizing as a final tightener
+//      (e.g. a 1600px large served to a 400px icon slot is shrunk on the edge).
+// Anything not on our R2 host, or not a derivative path, is passed through
+// cfResize() unchanged-or-resized as appropriate.
+export function cmsImageSrc(rawUrl, size = 'large') {
+  const url = resolveImageUrl(rawUrl);
+  if (!url) return '';
+  // Swap the derivative segment when this is one of our generated variants.
+  const swapped = url.replace(/\/(large|card|thumb)\.webp(\?.*)?$/i,
+    (_m, _old, q) => `/${size}.webp${q || ''}`);
+  return cfResize(swapped, size);
+}
+
 export function imageSrc(normalized, size = 'card') {
   if (!normalized) return '';
   const v = normalized.variants;

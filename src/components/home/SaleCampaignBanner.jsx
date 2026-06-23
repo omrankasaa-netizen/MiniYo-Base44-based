@@ -5,6 +5,7 @@ import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import { ArrowRight } from 'lucide-react';
+import { cmsImageSrc } from '@/lib/imageFraming';
 
 export default function SaleCampaignBanner() {
   const { lang } = useLang();
@@ -38,7 +39,7 @@ export default function SaleCampaignBanner() {
       className="relative rounded-3xl overflow-hidden shadow-lg group cursor-pointer max-w-7xl mx-auto">
       <div className="aspect-[16/4] sm:aspect-[16/3] w-full bg-muted">
         {section.image_url
-          ? <img src={section.image_url} alt={title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+          ? <img src={cmsImageSrc(section.image_url, 'large')} alt={title} loading="lazy" decoding="async" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
           : <div className="w-full h-full bg-gradient-to-r from-destructive/20 to-accent/30" />}
       </div>
       <div className="absolute inset-0 bg-black/45 flex flex-col items-center justify-center text-white text-center px-6">
