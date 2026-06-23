@@ -5,7 +5,7 @@ import { base44 } from '@/api/base44Client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { manualStockAdjust, stockStatus } from '@/lib/inventory';
 import { logAction } from '@/lib/auditLog';
-import { Warehouse, ChevronDown, ChevronUp, Plus, Minus, PackagePlus, Filter, Search } from 'lucide-react';
+import { Warehouse, ChevronDown, ChevronUp, Plus, Minus, PackagePlus, Filter, Search, Wrench } from 'lucide-react';
 import AccessDenied from './AccessDenied';
 
 const MOVEMENT_TYPES = ['Received', 'Correction', 'Damaged'];
@@ -276,6 +276,39 @@ export default function InventoryPage() {
   const [showReceive, setShowReceive] = useState(false);
   const [tab, setTab] = useState('stock');
   const [movFilter, setMovFilter] = useState({ product: '', type: '', dateFrom: '', dateTo: '' });
+  const [fixingStock, setFixingStock] = useState(false);
+
+  // Remove orphan/duplicate variants that inflate stock totals. Runs a dry-run
+  // first, shows what would change, then applies on confirm.
+  async function handleFixStock() {
+    setFixingStock(true);
+    try {
+      const preview = await base44.functions.invoke('cleanupOrphanVariants', { apply: false });
+      const affected = preview?.products_affected || 0;
+      const removed = preview?.variants_removed || 0;
+      if (affected === 0) {
+        alert('No orphan or duplicate variants found — all stock counts look correct.');
+        return;
+      }
+      const sample = (preview.report || []).slice(0, 8)
+        .map(r => `• ${r.sku || r.name}: ${r.stock_before} → ${r.stock_after}`).join('\n');
+      const ok = window.confirm(
+        `Found ${removed} stale variant(s) across ${affected} product(s) that inflate stock totals.\n\n` +
+        `${sample}${(preview.report || []).length > 8 ? '\n…and more' : ''}\n\n` +
+        `Remove them now and correct the counts?`
+      );
+      if (!ok) return;
+      const result = await base44.functions.invoke('cleanupOrphanVariants', { apply: true });
+      await logAction({ action: 'cleanup_orphan_variants', entity: 'Inventory', userName: currentUser?.email });
+      qc.invalidateQueries({ queryKey: ['inventory-variants'] });
+      qc.invalidateQueries({ queryKey: ['inventory-products'] });
+      alert(`Done — removed ${result?.variants_removed || 0} stale variant(s) across ${result?.products_affected || 0} product(s). Stock counts corrected.`);
+    } catch (e) {
+      alert(`Could not fix stock counts: ${e.message || e}`);
+    } finally {
+      setFixingStock(false);
+    }
+  }
 
   const { data: products = [] } = useQuery({
     queryKey: ['inventory-products'],
@@ -338,10 +371,17 @@ export default function InventoryPage() {
               <p className="text-sm text-muted-foreground">{products.length} products</p>
             </div>
           </div>
-          <button onClick={() => setShowReceive(true)}
-            className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2.5 rounded-xl text-sm font-semibold shadow-sm hover:bg-primary/90 transition-colors">
-            <PackagePlus className="w-4 h-4" /> Receive Shipment
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={handleFixStock} disabled={fixingStock}
+              title="Remove leftover/duplicate variants that inflate stock totals"
+              className="flex items-center gap-2 bg-secondary/15 text-foreground border border-border px-4 py-2.5 rounded-xl text-sm font-semibold hover:bg-secondary/25 transition-colors disabled:opacity-60">
+              <Wrench className="w-4 h-4" /> {fixingStock ? 'Checking…' : 'Fix Stock Counts'}
+            </button>
+            <button onClick={() => setShowReceive(true)}
+              className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2.5 rounded-xl text-sm font-semibold shadow-sm hover:bg-primary/90 transition-colors">
+              <PackagePlus className="w-4 h-4" /> Receive Shipment
+            </button>
+          </div>
         </div>
 
         {/* Low-stock alert banner */}

@@ -1,4 +1,4 @@
-import { createRecord, getRecord, updateRecord, queryRecords, bulkCreate, nowIso } from './db.js';
+import { createRecord, getRecord, updateRecord, deleteRecord, queryRecords, bulkCreate, nowIso } from './db.js';
 import { sendEmail } from './email.js';
 import { bulkImportProducts as runBulkImport, cleanupSeedProducts as runSeedCleanup } from './bulkImport.js';
 
@@ -600,8 +600,76 @@ function cleanupSeedProducts(body, user) {
   return runSeedCleanup(body);
 }
 
+// ─── Cleanup: remove orphan / duplicate ProductVariant rows ─────────────────
+// Over time, re-imports could leave stale variants behind (the importer used to
+// keep variants not present in the sheet). Those inflate a product's stock
+// total (e.g. a leftover blank-size variant adding +1). This scans every
+// product and removes:
+//   1. exact duplicate variants (same size+color)  → keep the first, delete rest
+//   2. "phantom" blank variants (no size AND no color) when the product also
+//      has at least one real, named variant
+// Runs as a DRY RUN by default — pass { apply: true } to actually delete.
+// Returns a per-product report of what was (or would be) removed.
+async function cleanupOrphanVariants(body = {}, user) {
+  if (!isAdmin(user)) return { _status: 403, error: 'Forbidden: admin access required' };
+  const apply = body.apply === true;
+  const norm = (s) => String(s == null ? '' : s).trim().toLowerCase();
+
+  const products = queryRecords('Product', {});
+  const report = [];
+  let totalRemoved = 0;
+
+  for (const p of products) {
+    const variants = queryRecords('ProductVariant', { query: { product_id: p.id } });
+    if (variants.length === 0) continue;
+
+    const toDelete = [];
+    const seen = new Map(); // size|color -> first variant kept
+    const hasNamed = variants.some((v) => norm(v.size) !== '' || norm(v.color) !== '');
+
+    for (const v of variants) {
+      const blank = norm(v.size) === '' && norm(v.color) === '';
+      // Rule 2: phantom blank variant alongside real ones.
+      if (blank && hasNamed) {
+        toDelete.push({ id: v.id, reason: 'blank phantom', qty: v.qty_on_hand || 0, size: v.size, color: v.color });
+        continue;
+      }
+      // Rule 1: exact duplicate (size+color already seen).
+      const key = `${norm(v.size)}|${norm(v.color)}`;
+      if (seen.has(key)) {
+        toDelete.push({ id: v.id, reason: 'duplicate', qty: v.qty_on_hand || 0, size: v.size, color: v.color });
+      } else {
+        seen.set(key, v);
+      }
+    }
+
+    if (toDelete.length > 0) {
+      const before = variants.reduce((s, v) => s + (v.qty_on_hand || 0), 0);
+      const removedQty = toDelete.reduce((s, d) => s + (d.qty || 0), 0);
+      report.push({
+        product_id: p.id, sku: p.sku, name: p.name,
+        stock_before: before, stock_after: before - removedQty,
+        removed: toDelete,
+      });
+      if (apply) {
+        for (const d of toDelete) deleteRecord('ProductVariant', d.id);
+      }
+      totalRemoved += toDelete.length;
+    }
+  }
+
+  return {
+    mode: apply ? 'applied' : 'dry-run',
+    products_affected: report.length,
+    variants_removed: totalRemoved,
+    note: apply ? 'Orphan/duplicate variants deleted.' : 'No changes made. Re-run with { "apply": true } to delete.',
+    report,
+  };
+}
+
 const REGISTRY = {
   inventoryEngine,
+  cleanupOrphanVariants,
   membershipEngine,
   seedShippingZones,
   sendOrderConfirmation,
