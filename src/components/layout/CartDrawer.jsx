@@ -6,6 +6,7 @@ import { base44 } from '@/api/base44Client';
 import { Link } from 'react-router-dom';
 import { X, Minus, Plus, ShoppingBag, Truck } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
+import { cmsImageSrc } from '@/lib/imageFraming';
 
 export default function CartDrawer() {
   const { isOpen, setIsOpen, items, updateQty, removeItem, subtotal: total, totalQty: count, addItem } = useCart();
@@ -171,7 +172,7 @@ export default function CartDrawer() {
              >
                <div className="w-14 h-14 rounded-xl overflow-hidden shrink-0 bg-muted flex items-center justify-center">
                  {(item.product.primaryImage || item.product.image_url) ? (
-                   <img src={item.product.primaryImage || item.product.image_url} alt="" className="w-full h-full object-cover" />
+                   <img src={cmsImageSrc(item.product.primaryImage || item.product.image_url, 'thumb')} alt="" loading="lazy" decoding="async" className="w-full h-full object-cover" />
                  ) : (
                    <ShoppingBag className="w-5 h-5 text-muted-foreground" />
                  )}
@@ -208,7 +209,7 @@ export default function CartDrawer() {
                      >
                        <div className="aspect-square bg-muted overflow-hidden flex items-center justify-center">
                          {(img || product.image_url)
-                           ? <img src={img || product.image_url} alt={name} className="w-full h-full object-cover" />
+                           ? <img src={cmsImageSrc(img || product.image_url, 'thumb')} alt={name} loading="lazy" decoding="async" className="w-full h-full object-cover" />
                            : <ShoppingBag className="w-6 h-6 text-muted-foreground" />}
                        </div>
                        <div className="p-2">
