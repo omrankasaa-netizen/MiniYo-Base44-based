@@ -176,13 +176,25 @@ export default function CategoriesPage() {
   }, [allCategories]);
 
   const productCountMap = useMemo(() => {
-    const m = {};
+    const direct = {};
     for (const p of products) {
-      if (p.category_id) m[p.category_id] = (m[p.category_id] || 0) + 1;
-      if (p.subcategory_id) m[p.subcategory_id] = (m[p.subcategory_id] || 0) + 1;
+      if (p.category_id) direct[p.category_id] = (direct[p.category_id] || 0) + 1;
+      if (p.subcategory_id) direct[p.subcategory_id] = (direct[p.subcategory_id] || 0) + 1;
+    }
+    // Roll subcategory counts up into their parent so a parent whose products
+    // all live under subcategories isn't misreported as "0 products".
+    const childrenOf = {};
+    for (const c of allCategories) {
+      if (c.parent_id) (childrenOf[c.parent_id] || (childrenOf[c.parent_id] = [])).push(c.id);
+    }
+    const m = {};
+    for (const c of allCategories) {
+      let n = direct[c.id] || 0;
+      for (const childId of childrenOf[c.id] || []) n += direct[childId] || 0;
+      m[c.id] = n;
     }
     return m;
-  }, [products]);
+  }, [products, allCategories]);
 
   async function toggleActive(cat) {
     await base44.entities.Category.update(cat.id, { is_active: !cat.is_active });
@@ -220,7 +232,7 @@ export default function CategoriesPage() {
       qc.invalidateQueries({ queryKey: ['categories'] });
       qc.invalidateQueries({ queryKey: ['categories-active'] });
       setCleanup(null);
-      alert(`Done — merged ${data?.groups_merged || 0} duplicate group(s), removed ${data?.categories_removed || 0} category record(s), and remapped ${data?.products_remapped || 0} product(s).`);
+      alert(`Done — merged ${data?.groups_merged || 0} duplicate group(s), removed ${data?.categories_removed || 0} category record(s), remapped ${data?.products_remapped || 0} product(s), and preserved ${data?.icons_preserved || 0} uploaded icon(s).`);
     } catch (e) {
       alert(`Could not apply cleanup: ${e.message || e}`);
     } finally {
@@ -391,6 +403,7 @@ export default function CategoriesPage() {
                             <span className="text-[10px] text-muted-foreground">({src.products} products)</span>
                             <ArrowRight className="w-3.5 h-3.5 text-primary" />
                             <span className="font-semibold">{m.canonical.name}</span>
+                            {m.canonical.has_icon && <span className="text-[10px] bg-primary/15 text-primary px-1.5 py-0.5 rounded-full">icon kept</span>}
                             {m.manual && <span className="text-[10px] bg-secondary/20 text-foreground px-1.5 py-0.5 rounded-full">manual</span>}
                           </div>
                         ))}

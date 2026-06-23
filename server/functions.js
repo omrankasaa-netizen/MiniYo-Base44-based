@@ -779,22 +779,50 @@ async function cleanupCategories(body = {}, user) {
     }
   }
 
+  // Carry the owner's uploaded icon (and AR name) onto the survivor when the
+  // survivor itself lacks one but a merged-away duplicate has it. Guarantees an
+  // admin's uploaded category image is never lost to a merge — even when the
+  // canonical pick, or a forced manual { from, to } merge, landed on the record
+  // without the icon (e.g. merging the icon-bearing manual 'Socks' INTO the
+  // import-created 'Socks' that holds the products).
+  const inherit = {}; // survivorId -> { image_url?, name_ar? }
+  for (const oldId of removedIds) {
+    const survivor = byId.get(finalTarget(oldId));
+    const src = byId.get(oldId);
+    if (!survivor || !src) continue;
+    const slot = inherit[survivor.id] || (inherit[survivor.id] = {});
+    if (!survivor.image_url && !slot.image_url && src.image_url) slot.image_url = src.image_url;
+    if (!survivor.name_ar && !slot.name_ar && src.name_ar) slot.name_ar = src.name_ar;
+  }
+  let icons_preserved = 0;
+  for (const m of mergeReport) {
+    const survivor = byId.get(m.canonical.id);
+    const willHaveIcon = !!((survivor && survivor.image_url) || inherit[m.canonical.id]?.image_url);
+    m.canonical.has_icon = willHaveIcon;
+    if (willHaveIcon && !(survivor && survivor.image_url)) icons_preserved += 1;
+  }
+
   // Clean canonical list that survives the cleanup.
   const surviving = new Set(categories.map((c) => c.id));
   for (const id of removedIds) surviving.delete(id);
   if (removeOrphans) for (const o of orphans) surviving.delete(o.id);
   const canonicalList = [...surviving].map((id) => {
     const c = byId.get(id);
-    return { id, name: tidy(c.name), slug: c.slug, products: finalCounts[id] || 0, parent_id: c.parent_id || null };
+    const image_url = c.image_url || inherit[id]?.image_url || null;
+    return { id, name: tidy(c.name), slug: c.slug, products: finalCounts[id] || 0, parent_id: c.parent_id || null, has_icon: !!image_url };
   }).sort((a, b) => a.name.localeCompare(b.name));
 
   if (apply) {
     for (const u of productUpdates) updateRecord('Product', u.id, u.patch);
-    // Tidy surviving canonical display names (trim stray casing/whitespace).
+    // Tidy surviving canonical display names + inherit icon/AR name when missing.
     for (const id of surviving) {
       const c = byId.get(id);
+      const patch = {};
       const clean = tidy(c.name);
-      if (c.name !== clean) updateRecord('Category', id, { name: clean });
+      if (c.name !== clean) patch.name = clean;
+      if (!c.image_url && inherit[id]?.image_url) patch.image_url = inherit[id].image_url;
+      if (!c.name_ar && inherit[id]?.name_ar) patch.name_ar = inherit[id].name_ar;
+      if (Object.keys(patch).length) updateRecord('Category', id, patch);
     }
     for (const id of removedIds) deleteRecord('Category', id);
     if (removeOrphans) for (const o of orphans) deleteRecord('Category', o.id);
@@ -805,6 +833,7 @@ async function cleanupCategories(body = {}, user) {
     groups_merged: mergeReport.length,
     categories_removed: removedIds.size + (removeOrphans ? orphans.length : 0),
     products_remapped: productUpdates.length,
+    icons_preserved,
     merges: mergeReport,
     orphans,
     canonical_categories: canonicalList,

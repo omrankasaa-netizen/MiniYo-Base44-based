@@ -141,22 +141,37 @@ function readSheet({ base64, filename }) {
   return records;
 }
 
-// Build a lowercase name/slug -> category record index.
+// Normalized matching key: lowercase, trim, collapse whitespace, and strip
+// punctuation so "Knee-high Socks", "knee high socks" and "Knee  High  Socks"
+// all resolve to one category. Keeps imports from spawning case/punctuation
+// duplicates of a category the owner already created.
+function normName(s) {
+  return String(s == null ? '' : s).toLowerCase().trim()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ').replace(/\s+/g, ' ').trim();
+}
+
+// Build name/slug/normalized -> category record indexes.
 function categoryIndex() {
   const cats = queryRecords('Category', {});
   const byName = new Map();
   const bySlug = new Map();
+  const byNorm = new Map();
   for (const c of cats) {
-    if (c.name) byName.set(String(c.name).toLowerCase(), c);
+    if (c.name) {
+      byName.set(String(c.name).toLowerCase(), c);
+      const k = normName(c.name);
+      if (k && !byNorm.has(k)) byNorm.set(k, c);
+    }
     if (c.slug) bySlug.set(String(c.slug).toLowerCase(), c);
   }
-  return { cats, byName, bySlug };
+  return { cats, byName, bySlug, byNorm };
 }
 
 function findCategory(idx, value) {
   const v = cleanStr(value).toLowerCase();
   if (!v) return null;
-  return idx.byName.get(v) || idx.bySlug.get(v) || idx.bySlug.get(slugify(value)) || null;
+  return idx.byName.get(v) || idx.bySlug.get(v) || idx.bySlug.get(slugify(value))
+    || idx.byNorm.get(normName(value)) || null;
 }
 
 // Existing-product index by sku and slug (both lowercased).
@@ -372,17 +387,20 @@ function reconcileVariants(productId, sku, variants, removeMissing) {
 
 // Create the categories a set of normalized rows asked for, then re-resolve.
 function ensureCategories(normalizedRows, categoryIdx) {
-  const wanted = new Map(); // slug -> {name, parentName}
+  const wanted = new Map(); // normName -> {name, parentName}
   for (const n of normalizedRows) {
-    if (n.createCategory) wanted.set(slugify(n.createCategory), { name: n.createCategory, parentName: null });
+    if (n.createCategory) wanted.set(normName(n.createCategory), { name: n.createCategory, parentName: null });
   }
   // Subcategories after parents so parent_id can be linked.
   for (const n of normalizedRows) {
-    if (n.createSubcategory) wanted.set(slugify(n.createSubcategory), { name: n.createSubcategory, parentName: n.categoryName || null });
+    if (n.createSubcategory) wanted.set(normName(n.createSubcategory), { name: n.createSubcategory, parentName: n.categoryName || null });
   }
   let sortBase = (categoryIdx.cats.length || 0);
-  for (const [slug, info] of wanted) {
-    if (categoryIdx.bySlug.has(slug)) continue;
+  for (const [norm, info] of wanted) {
+    const slug = slugify(info.name);
+    // Reuse an existing category that matches by name, slug, or normalized key —
+    // never create a case/punctuation duplicate of one that already exists.
+    if (!norm || categoryIdx.byNorm.has(norm) || categoryIdx.bySlug.has(slug)) continue;
     const parent = info.parentName ? findCategory(categoryIdx, info.parentName) : null;
     const rec = createRecord('Category', {
       slug, name: info.name, name_ar: info.name,
@@ -390,6 +408,7 @@ function ensureCategories(normalizedRows, categoryIdx) {
     });
     categoryIdx.bySlug.set(slug, rec);
     categoryIdx.byName.set(String(info.name).toLowerCase(), rec);
+    categoryIdx.byNorm.set(norm, rec);
     categoryIdx.cats.push(rec);
   }
 }
