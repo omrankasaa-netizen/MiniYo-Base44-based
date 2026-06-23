@@ -274,6 +274,7 @@ function normalizeRow(raw, ctx) {
       tags: cleanStr(raw.tags),
     },
     variants: sizeParsed.variants,
+    sizesProvided: (raw.sizes != null && cleanStr(raw.sizes) !== ''),
     images: { files: imgParsed.files, urls: imgParsed.urls, provided: imagesProvided },
     categoryName,
     subName,
@@ -404,7 +405,11 @@ function ensureCategories(normalizedRows, categoryIdx) {
 export async function bulkImportProducts(payload = {}) {
   const dryRun = !!payload.dryRun;
   const createCategoriesFlag = payload.createCategories !== false;
-  const removeMissingVariants = !!payload.removeMissingVariants;
+  // Default ON: a re-import syncs each product's variants to exactly match the
+  // sheet, deleting any stale/orphan variants left over from a previous import.
+  // This prevents inflated stock totals (e.g. an old blank-size variant adding
+  // +1). Pass removeMissingVariants:false explicitly to keep old variants.
+  const removeMissingVariants = payload.removeMissingVariants !== false;
 
   if (!payload.spreadsheet || !payload.spreadsheet.base64) {
     return { _status: 400, error: 'spreadsheet file (base64) is required' };
@@ -520,8 +525,13 @@ export async function bulkImportProducts(payload = {}) {
         productId = rec.id;
       }
 
-      // Variants: update/add (+ optional removal).
-      const variantStats = reconcileVariants(productId, n.fields.sku, n.variants, removeMissingVariants);
+      // Variants: update/add, and remove stale ones so stock matches the sheet.
+      // Only prune when this row actually provided a sizes column — a blank
+      // sizes cell must never wipe a product's existing variants.
+      const variantStats = reconcileVariants(
+        productId, n.fields.sku, n.variants,
+        removeMissingVariants && n.sizesProvided
+      );
 
       // Images: only touch when the column was provided. Blank => preserve.
       let imageStats = { count: 0, primaryUrl: null, skipped: true };
