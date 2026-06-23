@@ -1,8 +1,8 @@
 import React from 'react';
-import { useAuthUser, ADMIN_ROLES } from '@/contexts/AuthUserContext';
+import { useAuthUser, ADMIN_ROLES, ROLES } from '@/contexts/AuthUserContext';
 import AccessDenied from './AccessDenied';
 
-export default function AdminGuard({ children }) {
+export default function AdminGuard({ children, requireSuperAdmin = false }) {
   const { currentUser, loading } = useAuthUser();
 
   if (loading) {
@@ -14,6 +14,10 @@ export default function AdminGuard({ children }) {
   }
 
   if (!currentUser || !ADMIN_ROLES.includes(currentUser.role)) {
+    return <AccessDenied />;
+  }
+
+  if (requireSuperAdmin && currentUser.role !== ROLES.SUPER_ADMIN) {
     return <AccessDenied />;
   }
 

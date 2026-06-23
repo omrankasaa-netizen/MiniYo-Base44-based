@@ -1,14 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuthUser } from '@/contexts/AuthUserContext';
 import { useLang } from '@/contexts/LanguageContext';
 import {
   LayoutDashboard, Package, ShoppingBag, BarChart2, Tag, Settings,
-  Users, FileText, LogOut, Menu, X, ChevronRight,
-  Warehouse, Languages, ExternalLink, Upload, Percent, Megaphone, FolderTree, User, Crown, Mail, Truck,
-  FileSpreadsheet,
+  Users, FileText, LogOut, Menu, X, ChevronRight, ChevronDown,
+  Warehouse, Languages, ExternalLink, Percent, Megaphone, FolderTree, User, Crown, Mail, Truck,
+  FileSpreadsheet, SlidersHorizontal,
 } from 'lucide-react';
 
+// Flat, top-level nav entries (rendered above the Settings group).
 const navItems = [
   { label: 'Dashboard', icon: LayoutDashboard, path: '/admin', permission: null },
   { label: 'Products',  icon: Package,         path: '/admin/products',    permission: 'view_products' },
@@ -22,17 +23,22 @@ const navItems = [
   { label: 'Promo Codes', icon: Tag,           path: '/admin/promo-codes',  permission: 'manage_discounts' },
   { label: 'Discounts',   icon: Percent,       path: '/admin/discounts',    permission: 'manage_discounts' },
   { label: 'Campaigns',   icon: Megaphone,     path: '/admin/campaigns',    permission: 'manage_discounts' },
-  { label: 'Bulk Upload', icon: Upload,        path: '/admin/bulk-upload',  permission: 'edit_products' },
   { label: 'Bulk Import', icon: FileSpreadsheet, path: '/admin/bulk-import', permission: 'edit_products' },
-  { label: 'CMS',         icon: FileText,      path: '/admin/cms',          permission: 'manage_cms' },
   { label: 'Team',        icon: Users,         path: '/admin/team',         permission: 'manage_team' },
-  { label: 'Audit Log',   icon: FileText,      path: '/admin/audit',        permission: 'view_audit_log'  },
-  { label: 'Email Log',   icon: Mail,          path: '/admin/email-log',    permission: 'manage_settings' },
-
-  { label: 'Settings',    icon: Settings,      path: '/admin/site-settings',permission: 'manage_settings' },
-  { label: 'Shipping',    icon: Truck,         path: '/admin/site-settings/shipping', permission: 'manage_settings' },
-  { label: 'Launch',      icon: ExternalLink,  path: '/admin/launch',       permission: 'manage_settings' },
 ];
+
+// Collapsible "Settings" group — store config + content/operational logs live here.
+const settingsGroup = {
+  label: 'Settings',
+  icon: Settings,
+  children: [
+    { label: 'Site Settings', icon: SlidersHorizontal, path: '/admin/site-settings',          permission: 'manage_settings' },
+    { label: 'CMS',           icon: FileText,           path: '/admin/cms',                    permission: 'manage_cms' },
+    { label: 'Shipping',      icon: Truck,              path: '/admin/site-settings/shipping', permission: 'manage_settings' },
+    { label: 'Email Log',     icon: Mail,               path: '/admin/email-log',              permission: 'manage_settings' },
+    { label: 'Audit Log',     icon: FileText,           path: '/admin/audit',                  permission: 'view_audit_log' },
+  ],
+};
 
 const roleLabel = { super_admin: 'Super Admin', admin: 'Admin', staff: 'Staff' };
 
@@ -45,6 +51,14 @@ export default function AdminLayout({ children }) {
   const visibleNav = navItems.filter(item =>
     item.permission === null || canAccess(item.permission)
   );
+
+  const visibleSettings = settingsGroup.children.filter(item =>
+    item.permission === null || canAccess(item.permission)
+  );
+  const settingsActive = visibleSettings.some(item => location.pathname === item.path);
+  // Keep the Settings group expanded whenever one of its pages is open.
+  const [settingsOpen, setSettingsOpen] = useState(settingsActive);
+  useEffect(() => { if (settingsActive) setSettingsOpen(true); }, [settingsActive]);
 
   const initials = currentUser?.full_name
     ? currentUser.full_name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
@@ -83,6 +97,45 @@ export default function AdminLayout({ children }) {
               </Link>
             );
           })}
+
+          {/* Settings group — collapsible */}
+          {visibleSettings.length > 0 && (
+            <div className="pt-1">
+              <button
+                type="button"
+                onClick={() => setSettingsOpen(o => !o)}
+                aria-expanded={settingsOpen}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
+                  settingsActive && !settingsOpen ? 'bg-muted text-foreground' : 'text-foreground hover:bg-muted'
+                }`}
+              >
+                <settingsGroup.icon className="w-4 h-4 shrink-0" />
+                <span className="flex-1 text-left">{settingsGroup.label}</span>
+                <ChevronDown className={`w-3.5 h-3.5 opacity-60 transition-transform ${settingsOpen ? 'rotate-180' : ''}`} />
+              </button>
+              {settingsOpen && (
+                <div className="mt-0.5 ml-3 pl-3 border-l border-border space-y-0.5">
+                  {visibleSettings.map(item => {
+                    const active = location.pathname === item.path;
+                    return (
+                      <Link
+                        key={item.path}
+                        to={item.path}
+                        onClick={() => setSidebarOpen(false)}
+                        className={`flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-colors ${
+                          active ? 'bg-primary text-primary-foreground shadow-sm' : 'text-foreground hover:bg-muted'
+                        }`}
+                      >
+                        <item.icon className="w-4 h-4 shrink-0" />
+                        <span className="flex-1">{item.label}</span>
+                        {active && <ChevronRight className="w-3 h-3 opacity-60" />}
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
         </nav>
 
         {/* User footer */}

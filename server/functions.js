@@ -590,6 +590,11 @@ function isAdmin(user) {
   return !!user && (user.role === 'admin' || user.role === 'super_admin');
 }
 
+// Finance/profit data is owner-only — restricted to the super_admin role.
+function isSuperAdmin(user) {
+  return !!user && user.role === 'super_admin';
+}
+
 function bulkImportProducts(body, user) {
   if (!isAdmin(user)) return { _status: 403, error: 'Forbidden: admin access required' };
   return runBulkImport(body);
@@ -867,7 +872,7 @@ function defaultFinancialsConfig() {
 }
 
 function getFinancialsConfig(body, user) {
-  if (!isAdmin(user)) return { _status: 403, error: 'Forbidden: admin access required' };
+  if (!isSuperAdmin(user)) return { _status: 403, error: 'Forbidden: super admin access required' };
   const raw = kvGet(FIN_CONFIG_KEY);
   if (!raw) return defaultFinancialsConfig();
   try {
@@ -882,7 +887,7 @@ function getFinancialsConfig(body, user) {
 }
 
 function saveFinancialsConfig(body, user) {
-  if (!isAdmin(user)) return { _status: 403, error: 'Forbidden: admin access required' };
+  if (!isSuperAdmin(user)) return { _status: 403, error: 'Forbidden: super admin access required' };
   const rows = Array.isArray(body?.overhead_rows) ? body.overhead_rows : [];
   const clean = {
     currency_label: String(body?.currency_label || 'USD').slice(0, 16) || 'USD',
