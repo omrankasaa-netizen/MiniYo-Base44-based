@@ -36,6 +36,18 @@ function KpiCard({ icon: Icon, label, value, sub, color, loading }) {
   );
 }
 
+// The global QueryClient disables refetchOnWindowFocus and sets no staleTime,
+// so once the dashboard's data was cached it never refreshed while the admin
+// kept the SPA open — new orders, stock changes, etc. only appeared after a hard
+// reload. These options make every dashboard query refetch on mount, on window
+// focus, and on a 60s interval so the KPIs always reflect current data.
+const LIVE = {
+  staleTime: 0,
+  refetchOnMount: 'always',
+  refetchOnWindowFocus: true,
+  refetchInterval: 60_000,
+};
+
 export default function AdminDashboard() {
   const { currentUser, canAccess } = useAuthUser();
   const navigate = useNavigate();
@@ -43,31 +55,37 @@ export default function AdminDashboard() {
   const { data: orders = [], isLoading: loadingOrders } = useQuery({
     queryKey: ['dash-orders'],
     queryFn: () => base44.entities.Order.list('-created_date', 500),
+    ...LIVE,
   });
 
   const { data: products = [], isLoading: loadingProducts } = useQuery({
     queryKey: ['dash-products'],
     queryFn: () => base44.entities.Product.list('-created_date', 500),
+    ...LIVE,
   });
 
   const { data: variants = [] } = useQuery({
     queryKey: ['dash-variants'],
     queryFn: () => base44.entities.ProductVariant.list('-created_date', 1000),
+    ...LIVE,
   });
 
   const { data: promoCodes = [] } = useQuery({
     queryKey: ['dash-promo-codes'],
     queryFn: () => base44.entities.PromoCode.filter({ is_active: true }, '-created_date', 20),
+    ...LIVE,
   });
 
   const { data: discounts = [] } = useQuery({
     queryKey: ['dash-discounts'],
     queryFn: () => base44.entities.Discount.filter({ is_active: true }, '-created_date', 20),
+    ...LIVE,
   });
 
   const { data: campaigns = [] } = useQuery({
     queryKey: ['dash-campaigns'],
     queryFn: () => base44.entities.Campaign.filter({ is_active: true }, '-starts_at', 20),
+    ...LIVE,
   });
 
   // ── KPI calculations ─────────────────────────────────────────────────────────

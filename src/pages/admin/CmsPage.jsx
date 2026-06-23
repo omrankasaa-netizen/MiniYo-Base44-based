@@ -5,19 +5,19 @@ import { base44 } from '@/api/base44Client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { logAction } from '@/lib/auditLog';
 import AccessDenied from './AccessDenied';
-import CmsHero from '@/components/admin/cms/CmsHero';
-import CmsAnnouncement from '@/components/admin/cms/CmsAnnouncement';
 import CmsHomepageBanners from '@/components/admin/cms/CmsHomepageBanners';
 import CmsFeatured from '@/components/admin/cms/CmsFeatured';
+import CmsHomeSections from '@/components/admin/cms/CmsHomeSections';
 import CmsMediaLibrary from '@/components/admin/cms/CmsMediaLibrary';
 import CmsFaqs from '@/components/admin/cms/CmsFaqs';
 import CmsLegal from '@/components/admin/cms/CmsLegal';
 import CmsPaymentMethods from '@/components/admin/cms/CmsPaymentMethods';
-import { Layout, Image, Star, FolderOpen, HelpCircle, Scale, CreditCard } from 'lucide-react';
+import { Image, Star, LayoutTemplate, FolderOpen, HelpCircle, Scale, CreditCard } from 'lucide-react';
 
 const TABS = [
   { key: 'banners', label: 'Homepage Banners', icon: Image },
   { key: 'featured', label: 'Featured', icon: Star },
+  { key: 'sections', label: 'Homepage Sections', icon: LayoutTemplate },
   { key: 'media', label: 'Media Library', icon: FolderOpen },
   { key: 'faqs', label: 'FAQs', icon: HelpCircle },
   { key: 'legal', label: 'Legal Pages', icon: Scale },
@@ -114,6 +114,7 @@ export default function CmsPage() {
               />
             )}
             {tab === 'featured' && <CmsFeatured sectionMap={sectionMap} products={products} categories={categories} onSave={upsertSection} />}
+            {tab === 'sections' && <CmsHomeSections sectionMap={sectionMap} onSave={upsertSection} />}
             {tab === 'media' && <CmsMediaLibrary assets={mediaAssets} onRefresh={() => qc.invalidateQueries({ queryKey: ['cms-media'] })} currentUser={currentUser} />}
             {tab === 'faqs' && <CmsFaqs faqs={faqs} onRefresh={() => qc.invalidateQueries({ queryKey: ['cms-faqs'] })} currentUser={currentUser} />}
             {tab === 'legal' && <CmsLegal sectionMap={sectionMap} onSave={upsertSection} />}

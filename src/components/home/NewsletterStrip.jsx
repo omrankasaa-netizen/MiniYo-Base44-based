@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useLang } from '@/contexts/LanguageContext';
 import { useSiteSettings } from '@/hooks/useSiteSettings';
+import { base44 } from '@/api/base44Client';
+import { useQuery } from '@tanstack/react-query';
 import { MessageCircle, Mail, Check } from 'lucide-react';
 
 export default function NewsletterStrip() {
@@ -9,6 +11,16 @@ export default function NewsletterStrip() {
   const settings = useSiteSettings();
   const [email, setEmail] = useState('');
   const [subscribed, setSubscribed] = useState(false);
+
+  const { data: sections = [] } = useQuery({
+    queryKey: ['cms-section', 'home_newsletter'],
+    queryFn: () => base44.entities.CmsSection.filter({ section_key: 'home_newsletter' }, 'sort_order', 1),
+    staleTime: 60_000,
+  });
+  const section = sections[0];
+
+  const heading = (section && (lang === 'ar' ? (section.title_ar || section.title) : section.title)) || t('Join the MiniYo family', 'انضم إلى عائلة ميني يو');
+  const subtext = (section && (lang === 'ar' ? (section.body_ar || section.body) : section.body)) || t('Get new arrivals & exclusive offers. No spam, ever — we promise 🤍', 'احصل على الوصولات الجديدة والعروض الحصرية. بدون رسائل مزعجة أبدًا، وعدنا 🤍');
 
   function handleSubscribe(e) {
     e.preventDefault();
@@ -22,6 +34,8 @@ export default function NewsletterStrip() {
     ? `https://wa.me/${settings.whatsappNumber.replace(/\D/g, '')}?text=${encodeURIComponent(t('Hi MiniYo! I want to know about new arrivals.', 'أهلاً ميني يو! أريد معرفة المنتجات الجديدة.'))}`
     : null;
 
+  if (section && section.is_active === false) return null;
+
   return (
     <section className="py-14 sm:py-20 bg-primary/5 border-y border-border/40" dir={lang === 'ar' ? 'rtl' : 'ltr'}>
       <div className="max-w-2xl mx-auto px-4 sm:px-6 text-center">
@@ -32,10 +46,10 @@ export default function NewsletterStrip() {
           transition={{ duration: 0.6 }}
         >
           <h2 className="text-2xl sm:text-3xl font-heading font-bold text-foreground mb-3">
-            {t('Join the MiniYo family', 'انضم إلى عائلة ميني يو')}
+            {heading}
           </h2>
           <p className="text-muted-foreground text-sm mb-7">
-            {t('Get new arrivals & exclusive offers. No spam, ever — we promise 🤍', 'احصل على الوصولات الجديدة والعروض الحصرية. بدون رسائل مزعجة أبدًا، وعدنا 🤍')}
+            {subtext}
           </p>
 
           {subscribed ? (

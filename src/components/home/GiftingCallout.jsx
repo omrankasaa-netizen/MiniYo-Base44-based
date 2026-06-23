@@ -16,6 +16,7 @@ export default function GiftingCallout() {
     staleTime: 60_000,
   });
   const section = sections[0];
+  if (section && section.is_active === false) return null;
 
   const title  = section ? (lang === 'ar' ? (section.title_ar || section.title) : section.title) : t('The perfect newborn gift.', 'الهدية المثالية للمولود الجديد.');
   const body   = section ? (lang === 'ar' ? (section.body_ar  || section.body)  : section.body)  : t('Curated gift sets for hospital visits, baby showers, and first-day celebrations. Wrapped with love.', 'طقم هدايا مختارة بعناية لزيارة المستشفى، حفلات الاستقبال، والمناسبات الأولى. مغلّفة بحب.');

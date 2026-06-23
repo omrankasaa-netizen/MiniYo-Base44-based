@@ -16,7 +16,6 @@ const navItems = [
   { label: 'Customers', icon: User,            path: '/admin/customers',   permission: 'view_orders' },
   { label: 'Orders',    icon: ShoppingBag,     path: '/admin/orders',      permission: 'view_orders' },
   { label: 'Membership',icon: Crown,           path: '/admin/membership',  permission: 'manage_settings' },
-  { label: 'Email Log', icon: FileText,       path: '/admin/email-log',   permission: 'manage_settings' },
   { label: 'Inventory', icon: Warehouse,       path: '/admin/inventory',   permission: 'manage_inventory' },
   { label: 'Finances',  icon: BarChart2,       path: '/admin/finances',    permission: 'view_finances' },
 
