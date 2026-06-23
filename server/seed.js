@@ -3,7 +3,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import {
-  createRecord, queryRecords, countRecords, kvGet, kvSet, bulkCreate,
+  createRecord, updateRecord, queryRecords, countRecords, kvGet, kvSet, bulkCreate,
 } from './db.js';
 import { registerUser, findUserByEmail } from './auth.js';
 import { DEFAULT_SHIPPING_ZONES } from './functions.js';
@@ -72,6 +72,23 @@ function seedAdmin() {
       full_name: 'MiniYo Super Admin',
       role: 'super_admin',
     });
+  }
+}
+
+// Promote the store owner(s) to super_admin so finance/owner-only features are
+// reachable. Runs every boot and is idempotent — it only upgrades an EXISTING
+// user's role and never downgrades anyone. Owner emails come from
+// MINIYO_SUPER_ADMIN_EMAILS (comma-separated) plus the built-in owner default.
+function seedSuperAdmins() {
+  const fromEnv = String(process.env.MINIYO_SUPER_ADMIN_EMAILS || '')
+    .split(',').map((e) => e.trim().toLowerCase()).filter(Boolean);
+  const emails = new Set([...fromEnv, 'omraniik@gmail.com', 'admin@miniyo.store']);
+  for (const email of emails) {
+    const user = findUserByEmail(email);
+    if (user && user.role !== 'super_admin') {
+      updateRecord('User', user.id, { role: 'super_admin' });
+      console.log(`[seed] promoted ${email} to super_admin`);
+    }
   }
 }
 
@@ -257,6 +274,7 @@ export function runSeed() {
   // Idempotent seeders run every boot so missing admin/settings/content is
   // backfilled even on existing databases.
   seedAdmin();
+  seedSuperAdmins();
   seedMembershipSettings();
   seedSiteSettings();
   seedShippingZones();

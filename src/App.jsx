@@ -53,11 +53,9 @@ import InventoryPage from '@/pages/admin/InventoryPage';
 import ProductsPage from '@/pages/admin/ProductsPage';
 import OrdersPage from '@/pages/admin/OrdersPage';
 import FinancesPage from '@/pages/admin/FinancesPage';
-import BulkUploadPage from '@/pages/admin/BulkUploadPage';
 import BulkImportPage from '@/pages/admin/BulkImportPage';
 import CmsPage from '@/pages/admin/CmsPage';
 import SiteSettingsPage from '@/pages/admin/SiteSettingsPage';
-import LaunchChecklist from '@/pages/admin/LaunchChecklist';
 import PromoCodesPage from '@/pages/admin/PromoCodesPage';
 import DiscountsPage from '@/pages/admin/DiscountsPage';
 import CampaignsPage from '@/pages/admin/CampaignsPage';
@@ -133,12 +131,10 @@ const AuthenticatedApp = () => {
       <Route path="/admin/products" element={<AdminGuard><ProductsPage /></AdminGuard>} />
       <Route path="/admin/categories" element={<AdminGuard><CategoriesPage /></AdminGuard>} />
       <Route path="/admin/orders" element={<AdminGuard><OrdersPage /></AdminGuard>} />
-      <Route path="/admin/finances" element={<AdminGuard><FinancesPage /></AdminGuard>} />
-      <Route path="/admin/bulk-upload" element={<AdminGuard><BulkUploadPage /></AdminGuard>} />
+      <Route path="/admin/finances" element={<AdminGuard requireSuperAdmin><FinancesPage /></AdminGuard>} />
       <Route path="/admin/bulk-import" element={<AdminGuard><BulkImportPage /></AdminGuard>} />
       <Route path="/admin/cms" element={<AdminGuard><CmsPage /></AdminGuard>} />
       <Route path="/admin/site-settings" element={<AdminGuard><SiteSettingsPage /></AdminGuard>} />
-      <Route path="/admin/launch" element={<AdminGuard><LaunchChecklist /></AdminGuard>} />
       <Route path="/admin/promo-codes" element={<AdminGuard><PromoCodesPage /></AdminGuard>} />
       <Route path="/admin/discounts" element={<AdminGuard><DiscountsPage /></AdminGuard>} />
       <Route path="/admin/campaigns" element={<AdminGuard><CampaignsPage /></AdminGuard>} />
