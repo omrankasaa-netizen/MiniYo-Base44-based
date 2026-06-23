@@ -85,10 +85,9 @@ export function normalizeImage(image) {
 // Requires "Image Resizing" to be enabled on the Cloudflare zone. If it is off,
 // the resizing path 404s — so this is guarded: we only rewrite URLs on our own
 // R2 host, and a CF_IMAGE_RESIZE flag lets us instantly fall back to originals.
-// Keep FALSE until "Image Resizing" is enabled on the Cloudflare zone. While
-// off, images serve as full-size originals (current behavior, zero risk). Flip
-// to true once the dashboard toggle is on — every image instantly gets resized.
-const CF_IMAGE_RESIZE = false;
+// Image Transformations are enabled on the miniyokids.com zone (Sources: this
+// zone only). Verified live: a 3.26MB original returns ~11KB at width=320.
+const CF_IMAGE_RESIZE = true;
 
 // Hosts whose images can be safely routed through Cloudflare resizing.
 const CF_RESIZE_HOSTS = new Set(['images.miniyokids.com']);
