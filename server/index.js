@@ -15,7 +15,7 @@ import {
   getUserFromRequest, publicUser, findUserByEmail, setPassword, changePassword, updateUser,
   issueOtp, verifyOtp as verifyOtpCode,
 } from './auth.js';
-import { invokeFunction } from './functions.js';
+import { invokeFunction, invalidateDashboardCache } from './functions.js';
 import { sendEmail } from './email.js';
 import { runSeed } from './seed.js';
 import { getStorage } from './storage.js';
@@ -210,6 +210,11 @@ app.post('/api/users/invite', (req, res) => {
     }
     const { email, role = 'staff' } = req.body || {};
     if (!email) return res.status(400).json({ error: 'email required' });
+    // Only a super admin may grant elevated (admin/super_admin) roles; a regular
+    // admin can invite staff only. Prevents privilege escalation via invite.
+    if (['admin', 'super_admin'].includes(role) && actor.role !== 'super_admin') {
+      return res.status(403).json({ error: 'Forbidden: super admin required to assign admin roles' });
+    }
     let user = findUserByEmail(email);
     if (!user) {
       const tempPassword = crypto.randomUUID();
@@ -304,6 +309,15 @@ function authorizeWrite(op) {
   };
 }
 
+// Entities whose writes change dashboard aggregates — bust the metrics cache so
+// the next poll recomputes fresh (never serves stale data longer than the TTL).
+const DASHBOARD_ENTITIES = new Set([
+  'Order', 'OrderItem', 'Product', 'ProductVariant', 'Category', 'Customer',
+]);
+function maybeInvalidateDashboard(entity) {
+  if (DASHBOARD_ENTITIES.has(entity)) invalidateDashboardCache();
+}
+
 // Never expose User credential-bearing fields through generic CRUD.
 function sanitize(entity, record) {
   if (entity === 'User' && record) {
@@ -333,6 +347,7 @@ app.get('/api/entities/:entity/:id', ensureEntity, (req, res) => {
 app.post('/api/entities/:entity', ensureEntity, authorizeWrite('create'), (req, res) => {
   try {
     const record = createRecord(req.params.entity, req.body || {});
+    maybeInvalidateDashboard(req.params.entity);
     res.json(sanitize(req.params.entity, record));
   } catch (e) { handleError(res, e); }
 });
@@ -340,13 +355,16 @@ app.post('/api/entities/:entity', ensureEntity, authorizeWrite('create'), (req, 
 app.put('/api/entities/:entity/:id', ensureEntity, authorizeWrite('update'), (req, res) => {
   try {
     const record = updateRecord(req.params.entity, req.params.id, req.body || {});
+    maybeInvalidateDashboard(req.params.entity);
     res.json(sanitize(req.params.entity, record));
   } catch (e) { handleError(res, e); }
 });
 
 app.delete('/api/entities/:entity/:id', ensureEntity, authorizeWrite('delete'), (req, res) => {
   try {
-    res.json(deleteRecord(req.params.entity, req.params.id));
+    const result = deleteRecord(req.params.entity, req.params.id);
+    maybeInvalidateDashboard(req.params.entity);
+    res.json(result);
   } catch (e) { handleError(res, e); }
 });
 
