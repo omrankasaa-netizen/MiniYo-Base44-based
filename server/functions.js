@@ -2,6 +2,14 @@ import { createRecord, getRecord, updateRecord, deleteRecord, queryRecords, bulk
 import { sendEmail } from './email.js';
 import { bulkImportProducts as runBulkImport, cleanupSeedProducts as runSeedCleanup } from './bulkImport.js';
 import { getDashboardMetrics as computeDashboardMetrics, buildOrdersCsv, invalidateDashboardCache } from './dashboard.js';
+import {
+  buildProductsCsv,
+  buildInventoryCsv,
+  buildCustomersCsv,
+  buildCustomerEmailsCsv,
+  aggregateCustomers,
+  getCustomerDetail as computeCustomerDetail,
+} from './exports.js';
 
 // ─── Resend Automation event constants ──────────────────────────────────────
 // Public site base used for links inside automated emails.
@@ -972,6 +980,133 @@ function exportOrdersCsv(body, user) {
   return buildOrdersCsv(user, body || {});
 }
 
+// ─── Products / Inventory CSV exports (admin via central guard) ───────────────
+// All money columns (cost, stock value, unit price in inventory) are stripped
+// server-side for non-super-admins inside exports.js.
+function exportProductsCsv(body, user) {
+  return buildProductsCsv(user, body || {});
+}
+
+function exportInventoryCsv(body, user) {
+  return buildInventoryCsv(user, body || {});
+}
+
+// ─── Customers: list / detail / exports (admin via central guard) ────────────
+// Money fields (total_spent, aov, per-order totals) are omitted server-side for
+// non-super-admins in exports.js so a regular admin's browser never sees them.
+function listCustomers(body, user) {
+  return aggregateCustomers(user);
+}
+
+function getCustomerDetail(body, user) {
+  const id = body?.customer_id || body?.id;
+  if (!id) return { _status: 400, error: 'customer_id is required' };
+  return computeCustomerDetail(user, id);
+}
+
+function exportCustomersCsv(body, user) {
+  return buildCustomersCsv(user, body || {});
+}
+
+function exportCustomerEmailsCsv(body, user) {
+  return buildCustomerEmailsCsv(user, body || {});
+}
+
+// ─── Customer mutations: tags, notes, block/flag, add/edit (admin) ───────────
+// Each writes an AuditLog entry. Tags/notes/block are operational (no money).
+function setCustomerTags(body, user) {
+  const { customer_id, tags } = body || {};
+  if (!customer_id) return { _status: 400, error: 'customer_id is required' };
+  if (!Array.isArray(tags)) return { _status: 400, error: 'tags must be an array' };
+  const customer = getRecord('Customer', customer_id);
+  if (!customer) return { _status: 404, error: 'Customer not found' };
+  const clean = [...new Set(tags.map((t) => String(t || '').trim()).filter(Boolean))];
+  const updated = updateRecord('Customer', customer_id, { tags: clean });
+  writeAudit({
+    action: 'customer_tags_updated',
+    entity: 'Customer',
+    entityId: customer_id,
+    actor: user?.full_name || user?.email || 'unknown',
+    details: `${customer.email || customer_id}: tags = [${clean.join(', ')}]`,
+  });
+  return { ok: true, tags: updated.tags || clean };
+}
+
+function setCustomerNotes(body, user) {
+  const { customer_id, notes } = body || {};
+  if (!customer_id) return { _status: 400, error: 'customer_id is required' };
+  const customer = getRecord('Customer', customer_id);
+  if (!customer) return { _status: 404, error: 'Customer not found' };
+  const text = String(notes == null ? '' : notes);
+  updateRecord('Customer', customer_id, { notes: text });
+  writeAudit({
+    action: 'customer_notes_updated',
+    entity: 'Customer',
+    entityId: customer_id,
+    actor: user?.full_name || user?.email || 'unknown',
+    details: `${customer.email || customer_id}: notes updated`,
+  });
+  return { ok: true };
+}
+
+function setCustomerBlock(body, user) {
+  const { customer_id, blocked, reason } = body || {};
+  if (!customer_id) return { _status: 400, error: 'customer_id is required' };
+  const customer = getRecord('Customer', customer_id);
+  if (!customer) return { _status: 404, error: 'Customer not found' };
+  const isBlocked = !!blocked;
+  const updated = updateRecord('Customer', customer_id, {
+    is_blocked: isBlocked,
+    block_reason: isBlocked ? String(reason || '') : '',
+  });
+  writeAudit({
+    action: isBlocked ? 'customer_blocked' : 'customer_unblocked',
+    entity: 'Customer',
+    entityId: customer_id,
+    actor: user?.full_name || user?.email || 'unknown',
+    details: `${customer.email || customer_id}${isBlocked && reason ? `: ${reason}` : ''}`,
+  });
+  return { ok: true, is_blocked: updated.is_blocked, block_reason: updated.block_reason || '' };
+}
+
+// Manual add / edit of a customer record. Pass customer_id to edit, omit to add.
+function upsertCustomer(body, user) {
+  const { customer_id, ...fields } = body || {};
+  const allowed = ['name', 'email', 'phone', 'membership_tier', 'current_tier', 'tags', 'notes'];
+  const patch = {};
+  for (const k of allowed) if (k in fields) patch[k] = fields[k];
+  if (patch.tags && !Array.isArray(patch.tags)) {
+    return { _status: 400, error: 'tags must be an array' };
+  }
+
+  if (customer_id) {
+    const existing = getRecord('Customer', customer_id);
+    if (!existing) return { _status: 404, error: 'Customer not found' };
+    const updated = updateRecord('Customer', customer_id, patch);
+    writeAudit({
+      action: 'customer_updated',
+      entity: 'Customer',
+      entityId: customer_id,
+      actor: user?.full_name || user?.email || 'unknown',
+      details: `${updated.email || customer_id} edited`,
+    });
+    return { ok: true, customer: updated };
+  }
+
+  if (!patch.name && !patch.email) {
+    return { _status: 400, error: 'name or email is required to create a customer' };
+  }
+  const created = createRecord('Customer', patch);
+  writeAudit({
+    action: 'customer_created',
+    entity: 'Customer',
+    entityId: created.id,
+    actor: user?.full_name || user?.email || 'unknown',
+    details: `${created.email || created.name || created.id} created`,
+  });
+  return { ok: true, customer: created };
+}
+
 const REGISTRY = {
   inventoryEngine,
   getFinancialsConfig,
@@ -991,6 +1126,16 @@ const REGISTRY = {
   setUserRole,
   getDashboardMetrics,
   exportOrdersCsv,
+  exportProductsCsv,
+  exportInventoryCsv,
+  listCustomers,
+  getCustomerDetail,
+  exportCustomersCsv,
+  exportCustomerEmailsCsv,
+  setCustomerTags,
+  setCustomerNotes,
+  setCustomerBlock,
+  upsertCustomer,
 };
 
 // ─── Centralized authorization ───────────────────────────────────────────────
@@ -1016,6 +1161,16 @@ const GUARDS = {
   cleanupSeedProducts: 'admin',
   getDashboardMetrics: 'admin',
   exportOrdersCsv: 'admin',
+  exportProductsCsv: 'admin',
+  exportInventoryCsv: 'admin',
+  listCustomers: 'admin',
+  getCustomerDetail: 'admin',
+  exportCustomersCsv: 'admin',
+  exportCustomerEmailsCsv: 'admin',
+  setCustomerTags: 'admin',
+  setCustomerNotes: 'admin',
+  setCustomerBlock: 'admin',
+  upsertCustomer: 'admin',
   getFinancialsConfig: 'super_admin',
   saveFinancialsConfig: 'super_admin',
   listUsers: 'super_admin',

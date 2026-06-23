@@ -5,8 +5,9 @@ import { base44 } from '@/api/base44Client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { manualStockAdjust, stockStatus } from '@/lib/inventory';
 import { logAction } from '@/lib/auditLog';
-import { Warehouse, ChevronDown, ChevronUp, Plus, Minus, PackagePlus, Filter, Search, Wrench } from 'lucide-react';
+import { Warehouse, ChevronDown, ChevronUp, Plus, Minus, PackagePlus, Filter, Search, Wrench, Download, Printer } from 'lucide-react';
 import AccessDenied from './AccessDenied';
+import { downloadCsv, printTable } from '@/lib/adminExport';
 
 const MOVEMENT_TYPES = ['Received', 'Correction', 'Damaged'];
 const MOVEMENT_COLORS = {
@@ -277,6 +278,8 @@ export default function InventoryPage() {
   const [tab, setTab] = useState('stock');
   const [movFilter, setMovFilter] = useState({ product: '', type: '', dateFrom: '', dateTo: '' });
   const [fixingStock, setFixingStock] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportErr, setExportErr] = useState('');
 
   // Remove orphan/duplicate variants that inflate stock totals. Runs a dry-run
   // first, shows what would change, then applies on confirm.
@@ -337,6 +340,47 @@ export default function InventoryPage() {
     return (p.stock_quantity || 0) <= (p.reorder_level || 3);
   });
 
+  const showMoney = canAccess('view_finances'); // super-admin only
+
+  async function handleExport() {
+    setExporting(true);
+    setExportErr('');
+    try {
+      await downloadCsv('exportInventoryCsv');
+    } catch (err) {
+      setExportErr(err?.data?.data?.error || err?.message || 'Export failed');
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  // Print the stock table (one row per variant, or per product if none). Cost
+  // and stock value are financial — only super-admins see them.
+  function handlePrint() {
+    const columns = ['Product', 'SKU', 'Variant', 'Qty on Hand', 'Total Stock', 'Reorder', 'Low Stock'];
+    if (showMoney) columns.push('Unit Cost (USD)', 'Stock Value (USD)');
+    const rows = [];
+    for (const p of products) {
+      const pvs = variantsByProduct[p.id] || [];
+      const reorder = p.reorder_level ?? 3;
+      const total = (p.has_variants && pvs.length > 0)
+        ? pvs.reduce((s, v) => s + (v.qty_on_hand || 0), 0)
+        : (p.stock_quantity || 0);
+      const cost = Number(p.cost_usd || 0);
+      const emit = (label, sku, qty) => {
+        const row = [p.name || '', sku || '', label || '', qty, total, reorder, qty <= reorder ? 'Yes' : 'No'];
+        if (showMoney) row.push(cost.toFixed(2), (cost * qty).toFixed(2));
+        rows.push(row);
+      };
+      if (p.has_variants && pvs.length > 0) {
+        for (const v of pvs) emit([v.size, v.color].filter(Boolean).join(' / '), v.variant_sku || p.sku, v.qty_on_hand || 0);
+      } else {
+        emit('', p.sku, p.stock_quantity || 0);
+      }
+    }
+    printTable({ title: 'Inventory', columns, rows, meta: showMoney ? 'Financial' : 'Operational' });
+  }
+
   async function handleAdjust({ newQty, movementType, reason }) {
     const { product, variant } = adjustTarget;
     await manualStockAdjust({ productId: product.id, variantSku: variant?.variant_sku || null, newQty, movementType, reason });
@@ -372,6 +416,14 @@ export default function InventoryPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <button onClick={handleExport} disabled={exporting}
+              className="flex items-center gap-2 border border-border text-foreground px-4 py-2.5 rounded-xl text-sm font-semibold hover:bg-muted transition-colors disabled:opacity-50">
+              <Download className="w-4 h-4" /> {exporting ? 'Exporting…' : 'Export CSV'}
+            </button>
+            <button onClick={handlePrint}
+              className="flex items-center gap-2 border border-border text-foreground px-4 py-2.5 rounded-xl text-sm font-semibold hover:bg-muted transition-colors">
+              <Printer className="w-4 h-4" /> Print
+            </button>
             <button onClick={handleFixStock} disabled={fixingStock}
               title="Remove leftover/duplicate variants that inflate stock totals"
               className="flex items-center gap-2 bg-secondary/15 text-foreground border border-border px-4 py-2.5 rounded-xl text-sm font-semibold hover:bg-secondary/25 transition-colors disabled:opacity-60">
@@ -383,6 +435,10 @@ export default function InventoryPage() {
             </button>
           </div>
         </div>
+
+        {exportErr && (
+          <p className="text-sm px-3 py-2 rounded-lg bg-destructive/10 text-destructive">{exportErr}</p>
+        )}
 
         {/* Low-stock alert banner */}
         {lowStock.length > 0 && (
