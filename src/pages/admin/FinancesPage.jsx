@@ -8,7 +8,7 @@ import AccessDenied from './AccessDenied';
 import { BarChart2, Plus, Pencil, Trash2, X, Receipt, TrendingUp, Tag } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
 
-const TABS = ['Summary', 'Purchases', 'Overhead', 'Promo Codes'];
+const TABS = ['Summary', 'Projected Revenue', 'Purchases', 'Overhead', 'Promo Codes'];
 const PURCHASE_CATS = ['Stock', 'Shipping', 'Packaging', 'Marketing', 'Other'];
 const PIE_COLORS = ['#2F5D57', '#7FA99B', '#E8C7C4', '#f59e0b', '#6366f1'];
 const CHANNELS = ['Website', 'Instagram', 'Facebook', 'WhatsApp', 'Other'];
@@ -238,8 +238,76 @@ export default function FinancesPage() {
   const { data: overheads = [] } = useQuery({ queryKey: ['fin-overhead'], queryFn: () => base44.entities.Overhead.list('-month', 24) });
   const { data: promos = [] } = useQuery({ queryKey: ['fin-promos'], queryFn: () => base44.entities.PromoCode.list('-created_date', 200) });
 
+  // Projected Revenue: live product/variant figures + persistent overhead config.
+  const { data: products = [] } = useQuery({ queryKey: ['fin-products'], queryFn: () => base44.entities.Product.list('-created_date', 1000) });
+  const { data: variants = [] } = useQuery({ queryKey: ['fin-variants'], queryFn: () => base44.entities.ProductVariant.list('-created_date', 5000) });
+  const { data: projectionConfig } = useQuery({
+    queryKey: ['fin-projection-config'],
+    queryFn: async () => (await base44.functions.invoke('getFinancialsConfig')).data,
+  });
+
   const [overheadForm, setOverheadForm] = useState({ rent_usd: 0, utilities_usd: 0, marketing_usd: 0, other_usd: 0 });
   const [savingOverhead, setSavingOverhead] = useState(false);
+
+  const [currencyLabel, setCurrencyLabel] = useState('USD');
+  const [projRows, setProjRows] = useState([]);
+  const [savingProjection, setSavingProjection] = useState(false);
+  const [projSaved, setProjSaved] = useState(false);
+
+  useEffect(() => {
+    if (projectionConfig) {
+      setCurrencyLabel(projectionConfig.currency_label || 'USD');
+      setProjRows(Array.isArray(projectionConfig.overhead_rows) ? projectionConfig.overhead_rows : []);
+    }
+  }, [projectionConfig]);
+
+  async function saveProjectionConfig() {
+    setSavingProjection(true);
+    try {
+      await base44.functions.invoke('saveFinancialsConfig', {
+        currency_label: currencyLabel,
+        overhead_rows: projRows.map(r => ({ label: r.label, qty: Number(r.qty) || 0, unit_price: Number(r.unit_price) || 0 })),
+      });
+      await logAction({ action: 'updated', entity: 'FinancialsConfig', userName: currentUser?.email });
+      qc.invalidateQueries({ queryKey: ['fin-projection-config'] });
+      setProjSaved(true);
+      setTimeout(() => setProjSaved(false), 2500);
+    } finally { setSavingProjection(false); }
+  }
+
+  function setProjRow(i, k, v) { setProjRows(rows => rows.map((r, idx) => idx === i ? { ...r, [k]: v } : r)); }
+  function addProjRow() { setProjRows(rows => [...rows, { label: '', qty: 1, unit_price: 0 }]); }
+  function removeProjRow(i) { setProjRows(rows => rows.filter((_, idx) => idx !== i)); }
+
+  // Live revenue projection from current active products.
+  const projection = useMemo(() => {
+    const variantsByProduct = {};
+    for (const v of variants) {
+      (variantsByProduct[v.product_id] || (variantsByProduct[v.product_id] = [])).push(v);
+    }
+    const active = products.filter(p => (p.status || 'Active') === 'Active');
+    let potentialRevenue = 0, cogs = 0, totalUnits = 0;
+    for (const p of active) {
+      const pvs = variantsByProduct[p.id] || [];
+      const stock = (p.has_variants && pvs.length > 0)
+        ? pvs.reduce((s, v) => s + (v.qty_on_hand || 0), 0)
+        : (p.stock_quantity || 0);
+      potentialRevenue += (p.price_usd || 0) * stock;
+      cogs += (p.cost_usd || 0) * stock;
+      totalUnits += stock;
+    }
+    const grossProfit = potentialRevenue - cogs;
+    const grossMargin = potentialRevenue > 0 ? grossProfit / potentialRevenue : 0;
+    return { potentialRevenue, cogs, grossProfit, grossMargin, totalUnits, activeCount: active.length };
+  }, [products, variants]);
+
+  const totalOverheads = useMemo(
+    () => projRows.reduce((s, r) => s + (Number(r.qty) || 0) * (Number(r.unit_price) || 0), 0),
+    [projRows]
+  );
+  const netProjectedProfit = projection.grossProfit - totalOverheads;
+  const netProjectedMargin = projection.potentialRevenue > 0 ? netProjectedProfit / projection.potentialRevenue : 0;
+  const fmt = (n) => `${currencyLabel} ${Number(n || 0).toFixed(2)}`;
 
   const currentOverhead = useMemo(() => overheads.find(o => o.month === selectedMonth), [overheads, selectedMonth]);
 
@@ -344,7 +412,7 @@ export default function FinancesPage() {
         </div>
 
         {/* Month picker (Summary, Purchases, Overhead) */}
-        {tab !== 'Promo Codes' && (
+        {tab !== 'Promo Codes' && tab !== 'Projected Revenue' && (
           <div className="flex items-center gap-3">
             <label className="text-sm text-muted-foreground">Month:</label>
             <input type="month" value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)}
@@ -417,6 +485,114 @@ export default function FinancesPage() {
                     </BarChart>
                   </ResponsiveContainer>
               }
+            </div>
+          </div>
+        )}
+
+        {/* PROJECTED REVENUE */}
+        {tab === 'Projected Revenue' && (
+          <div className="space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <p className="text-sm text-muted-foreground">
+                Potential revenue & profit if all current stock sells, after costs and overheads. Product figures are recomputed live from active products.
+              </p>
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-muted-foreground">Currency label</label>
+                <input value={currencyLabel} onChange={e => setCurrencyLabel(e.target.value)}
+                  className="w-20 px-2 py-1.5 rounded-lg border border-input bg-background text-sm" />
+              </div>
+            </div>
+
+            {/* Summary cards */}
+            <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+              {[
+                { label: 'Potential Revenue', value: fmt(projection.potentialRevenue), color: 'bg-green-50 text-green-700', icon: TrendingUp },
+                { label: 'Cost of Goods (COGS)', value: fmt(projection.cogs), color: 'bg-amber-50 text-amber-700', icon: Receipt },
+                { label: 'Gross Profit', value: fmt(projection.grossProfit), sub: `${(projection.grossMargin * 100).toFixed(1)}% gross margin`, color: 'bg-blue-50 text-blue-700', icon: BarChart2 },
+                { label: 'Total Overheads', value: fmt(totalOverheads), color: 'bg-violet-50 text-violet-700', icon: Tag },
+                { label: 'Net Projected Profit', value: fmt(netProjectedProfit), sub: `${(netProjectedMargin * 100).toFixed(1)}% net margin`, color: netProjectedProfit >= 0 ? 'bg-primary/10 text-primary' : 'bg-destructive/10 text-destructive', icon: TrendingUp },
+              ].map(({ label, value, sub, color, icon: Icon }) => (
+                <div key={label} className="bg-card border border-border rounded-2xl p-5 shadow-sm">
+                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center mb-3 ${color}`}>
+                    <Icon className="w-4 h-4" />
+                  </div>
+                  <p className="text-xs text-muted-foreground mb-1">{label}</p>
+                  <p className="text-2xl font-heading font-bold text-foreground">{value}</p>
+                  {sub && <p className="text-xs text-muted-foreground mt-0.5">{sub}</p>}
+                </div>
+              ))}
+            </div>
+
+            <p className="text-xs text-muted-foreground">
+              {projection.activeCount} active products · {projection.totalUnits} units in stock
+            </p>
+
+            {/* Overheads editor */}
+            <div className="bg-card border border-border rounded-2xl shadow-sm overflow-hidden">
+              <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+                <h3 className="font-heading font-semibold text-foreground">Business Overheads</h3>
+                <button onClick={addProjRow}
+                  className="flex items-center gap-1.5 bg-primary text-primary-foreground px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-primary/90">
+                  <Plus className="w-3.5 h-3.5" /> Add row
+                </button>
+              </div>
+              <table className="w-full text-sm">
+                <thead className="bg-muted/50 text-muted-foreground text-xs uppercase tracking-wide">
+                  <tr>
+                    <th className="px-4 py-3 text-left">Item</th>
+                    <th className="px-4 py-3 text-right w-24">Qty</th>
+                    <th className="px-4 py-3 text-right w-32">Unit Price</th>
+                    <th className="px-4 py-3 text-right w-32">Line Total</th>
+                    <th className="px-4 py-3 w-12" />
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {projRows.map((r, i) => (
+                    <tr key={i} className="hover:bg-muted/20">
+                      <td className="px-4 py-2">
+                        <input value={r.label} onChange={e => setProjRow(i, 'label', e.target.value)}
+                          placeholder="Label (e.g. Shopping bags)"
+                          className="w-full px-2 py-1.5 rounded-lg border border-input bg-background text-sm" />
+                      </td>
+                      <td className="px-4 py-2">
+                        <input type="number" min="0" step="1" value={r.qty}
+                          onChange={e => setProjRow(i, 'qty', e.target.value)}
+                          className="w-full px-2 py-1.5 rounded-lg border border-input bg-background text-sm text-right" />
+                      </td>
+                      <td className="px-4 py-2">
+                        <input type="number" min="0" step="0.01" value={r.unit_price}
+                          onChange={e => setProjRow(i, 'unit_price', e.target.value)}
+                          className="w-full px-2 py-1.5 rounded-lg border border-input bg-background text-sm text-right" />
+                      </td>
+                      <td className="px-4 py-2 text-right font-semibold text-foreground">
+                        {fmt((Number(r.qty) || 0) * (Number(r.unit_price) || 0))}
+                      </td>
+                      <td className="px-4 py-2">
+                        <button onClick={() => removeProjRow(i)}
+                          className="p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {projRows.length === 0 && (
+                    <tr><td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">No overhead rows. Add one above.</td></tr>
+                  )}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t border-border bg-muted/30">
+                    <td className="px-4 py-3 font-semibold text-foreground" colSpan={3}>Total Overheads</td>
+                    <td className="px-4 py-3 text-right font-bold text-foreground">{fmt(totalOverheads)}</td>
+                    <td />
+                  </tr>
+                </tfoot>
+              </table>
+              <div className="flex justify-end px-5 py-4 border-t border-border">
+                <button onClick={saveProjectionConfig} disabled={savingProjection}
+                  className="px-5 py-2 rounded-xl bg-primary text-primary-foreground text-sm font-semibold disabled:opacity-50">
+                  {projSaved ? 'Saved ✓' : savingProjection ? 'Saving…' : 'Save Overheads'}
+                </button>
+              </div>
             </div>
           </div>
         )}

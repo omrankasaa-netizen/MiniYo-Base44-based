@@ -17,6 +17,18 @@ export default function InstagramStrip() {
     staleTime: 60_000,
   });
 
+  const { data: sections = [] } = useQuery({
+    queryKey: ['cms-section', 'home_instagram'],
+    queryFn: () => base44.entities.CmsSection.filter({ section_key: 'home_instagram' }, 'sort_order', 1),
+    staleTime: 60_000,
+  });
+  const section = sections[0];
+  if (section && section.is_active === false) return null;
+
+  const heading = (section && (lang === 'ar' ? (section.title_ar || section.title) : section.title)) || t('Our community', 'مجتمعنا');
+  const handle = (section && (lang === 'ar' ? (section.body_ar || section.body) : section.body)) || t('Follow @miniyo.lb', 'تابع @miniyo.lb');
+  const igUrl = section?.link_url || settings.instagramUrl;
+
   // Show up to 6 tiles; fill remainder with blush placeholders
   const tiles = [...assets.slice(0, 6)];
   while (tiles.length < 6) tiles.push(null);
@@ -33,12 +45,12 @@ export default function InstagramStrip() {
         >
           <div className="flex items-center gap-2.5">
             <Instagram className="w-5 h-5 text-primary" />
-            <h2 className="text-xl sm:text-2xl font-heading font-bold text-foreground">{t('Our community', 'مجتمعنا')}</h2>
+            <h2 className="text-xl sm:text-2xl font-heading font-bold text-foreground">{heading}</h2>
           </div>
-          {settings.instagramUrl && (
-            <a href={settings.instagramUrl} target="_blank" rel="noopener"
+          {igUrl && (
+            <a href={igUrl} target="_blank" rel="noopener"
               className="flex items-center gap-2 text-sm text-primary font-medium hover:underline underline-offset-4">
-              {t('Follow @miniyo.lb', 'تابع @miniyo.lb')}
+              {handle}
               <Instagram className="w-4 h-4" />
             </a>
           )}
