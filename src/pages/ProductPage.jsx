@@ -111,10 +111,14 @@ export default function ProductPage() {
   const needsSize = usesVariants && sizes.length > 0;
   const needsColor = usesVariants && colors.length > 0;
 
-  // Stock for a given size/color combination (sums matching variants).
+  // Stock for a given size/variant combination. An `undefined` axis is a
+  // wildcard (sums across that axis) so that, before the other axis is picked,
+  // an option is offered when ANY pair using it has stock. Once both axes are
+  // fixed this resolves to the single (size,variant) row — a pair with no
+  // matching variant row sums to 0 and is therefore treated as out of stock.
   function variantStockFor({ size, color } = {}) {
     return variants
-      .filter(v => (!needsSize || v.size === size) && (!needsColor || v.color === color))
+      .filter(v => (size === undefined || v.size === size) && (color === undefined || v.color === color))
       .reduce((s, v) => s + (v.qty_on_hand || 0), 0);
   }
 
@@ -198,13 +202,13 @@ export default function ProductPage() {
               </div>
             </div>
 
-            {/* Color picker */}
+            {/* Variant picker */}
             {colors.length > 0 && (
               <div>
-                <p className="text-sm font-medium text-foreground mb-2">{t('Color', 'اللون')}: <span className="text-muted-foreground">{selectedColor}</span></p>
+                <p className="text-sm font-medium text-foreground mb-2">{t('Variant', 'الخيار')}: <span className="text-muted-foreground">{selectedColor}</span></p>
                 <div className="flex flex-wrap gap-2">
                   {colors.map(c => {
-                    const outOfStock = usesVariants && variantStockFor({ color: c, size: needsSize ? selectedSize : undefined }) <= 0;
+                    const outOfStock = usesVariants && variantStockFor({ color: c, size: needsSize && selectedSize ? selectedSize : undefined }) <= 0;
                     return (
                       <button key={c} onClick={() => !outOfStock && setSelectedColor(c)} disabled={outOfStock}
                         className={`min-h-[44px] px-4 py-2 rounded-lg border text-sm transition-colors
@@ -223,7 +227,7 @@ export default function ProductPage() {
                 <p className="text-sm font-medium text-foreground mb-2">{t('Size', 'المقاس')}: <span className="text-muted-foreground">{selectedSize}</span></p>
                 <div className="flex flex-wrap gap-2">
                   {sizes.map(s => {
-                    const outOfStock = usesVariants && variantStockFor({ size: s, color: needsColor ? selectedColor : undefined }) <= 0;
+                    const outOfStock = usesVariants && variantStockFor({ size: s, color: needsColor && selectedColor ? selectedColor : undefined }) <= 0;
                     return (
                       <button key={s} onClick={() => !outOfStock && setSelectedSize(s)} disabled={outOfStock}
                         className={`min-w-[48px] h-12 px-3 rounded-xl border text-sm font-semibold transition-colors
@@ -239,7 +243,7 @@ export default function ProductPage() {
             {/* Prompt to choose required options */}
             {usesVariants && ((needsSize && !selectedSize) || (needsColor && !selectedColor)) && (
               <p className="text-xs text-muted-foreground">
-                {t('Please select', 'يرجى اختيار')} {[needsSize && !selectedSize ? t('a size', 'مقاساً') : null, needsColor && !selectedColor ? t('a color', 'لوناً') : null].filter(Boolean).join(t(' and ', ' و '))}.
+                {t('Please select', 'يرجى اختيار')} {[needsSize && !selectedSize ? t('a size', 'مقاساً') : null, needsColor && !selectedColor ? t('a variant', 'خياراً') : null].filter(Boolean).join(t(' and ', ' و '))}.
               </p>
             )}
 

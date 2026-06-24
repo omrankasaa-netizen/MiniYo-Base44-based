@@ -57,30 +57,49 @@ Each following row is one product. The example rows are clearly marked `SAMPLE-�
 | `is_active` | No | `true` → product is **Active** (visible); `false` → **Hidden**. Default `true`. |
 | `video_url` | No | Optional product video URL. |
 | `tags` | No | Comma-separated tags. |
-| `sizes` | No | Size/stock list — see below. |
+| `sizes` | No | Size list (or legacy size/stock list) — see below. |
+| `variants` | No | Variant list (colour / print / design / pack) — see below. |
+| `stock_matrix` | No | Per `size:variant:qty` stock — see below. |
 | `images` | No | Image filenames or URLs — see below. |
 
-### `sizes` column format
+### Variants: the two-axis format (recommended)
 
-A single cell holding `size:stock` pairs separated by commas:
+A product has up to two independent axes: **Size** and **Variant** (the second
+axis is generic — colour, print, design, pack, etc.). Stock is set per
+**(size, variant)** pair using three columns:
+
+| Column | Holds | Example |
+| --- | --- | --- |
+| `sizes` | pipe-separated size tokens | `Assorted\|18-24M` |
+| `variants` | pipe-separated variant tokens | `Ecru\|Grey\|Lilac` |
+| `stock_matrix` | `;`-separated `size:variant:qty` triples | `Assorted:Ecru:4; Assorted:Grey:4; 18-24M:Grey:3; Assorted:Lilac:14` |
+
+- Each triple in `stock_matrix` becomes **exactly one** ProductVariant row —
+  there is **no** cartesian fill, so list only the pairs you actually stock.
+- A size or variant used in `stock_matrix` is added to the product's axes even
+  if you forgot to list it in `sizes`/`variants` (a warning is shown).
+- Single-axis products: use `size::qty` for size-only (no variant) or
+  `:variant:qty` for variant-only (no size).
+- If you provide `sizes`/`variants` but leave `stock_matrix` blank, every
+  intersection is created with **0** stock so the editor renders the full grid —
+  prefer the explicit matrix.
+- Leave all three blank for a one-size / no-variant product.
+
+The product's `sizes` and `colors` summary fields are filled from the distinct
+sizes and variants found.
+
+### `sizes` column — legacy format
+
+For backwards compatibility, a `sizes` cell that contains `:stock` pairs (with
+no `variants`/`stock_matrix` columns) is still parsed the old way — comma- or
+semicolon-separated `size:stock`, optionally prefixed with `color|`:
 
 ```
 0-3M:5, 3-6M:8, 6-9M:3
-```
-
-- `0-3M:5` means size **0-3M** with **5** in stock.
-- Each pair becomes a **ProductVariant** row, and the product is marked as
-  having variants.
-- Leave the cell **blank** for a one-size / no-variant product.
-
-Optional **color** dimension — prefix the size with `color|`:
-
-```
 Pink|0-3M:5, Pink|3-6M:2, Blue|0-3M:3
 ```
 
-This creates per-color/size variants. The product's `sizes` and `colors`
-summary fields are filled from the distinct values found.
+New sheets should prefer the three-column two-axis format above.
 
 ### `images` column format
 

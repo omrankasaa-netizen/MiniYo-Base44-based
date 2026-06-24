@@ -30,7 +30,7 @@ export const SHEET_COLUMNS = [
   'short_description_en', 'short_description_ar', 'category', 'subcategory',
   'gender', 'age_group', 'price', 'compare_at_price', 'cost',
   'is_new', 'is_trending', 'is_featured', 'is_active',
-  'video_url', 'tags', 'sizes', 'images',
+  'video_url', 'tags', 'sizes', 'variants', 'stock_matrix', 'images',
 ];
 
 const VALID_GENDERS = ['Girls', 'Boys', 'Unisex'];
@@ -101,6 +101,86 @@ function parseSizes(raw) {
   }
   out.sizesPipe = sizeSet.join('|');
   out.colorsPipe = colorSet.join('|');
+  return out;
+}
+
+// Split a pipe-delimited axis cell ("Assorted|18-24M") into trimmed, de-duped
+// tokens (order preserved). Blank -> [].
+function parsePipeTokens(raw) {
+  const out = [];
+  for (const partRaw of cleanStr(raw).split('|')) {
+    const part = partRaw.trim();
+    if (part && !out.includes(part)) out.push(part);
+  }
+  return out;
+}
+
+// Two-axis variant parser. SIZE × VARIANT (variant stored in `.color`).
+//   sizes cell        : pipe list of size tokens   e.g. "Assorted|18-24M" (may be empty)
+//   variants cell     : pipe list of variant tokens e.g. "Ecru|Grey|Lilac" (may be empty)
+//   stock_matrix cell : semicolon-separated `size:variant:qty` triples, e.g.
+//                       "Assorted:Ecru:4; Assorted:Grey:4; 18-24M:Grey:3; Assorted:Lilac:14"
+// Each triple -> one row { size, color:variant, stock:qty }. NO cartesian
+// expansion when a matrix is given. `size::qty` -> variant=null; `:variant:qty`
+// -> size=null. Tokens referenced in the matrix but absent from the pipe lists
+// are added (permissive) with a soft warning. When the matrix is blank but
+// sizes/variants are provided, falls back to cartesian expansion at stock 0 so
+// the editor still renders a grid.
+// Returns the SAME shape as parseSizes:
+//   { variants:[{size,color,stock}], totalStock, sizesPipe, colorsPipe, errors:[], warnings:[] }.
+function parseStockMatrix(sizesCell, variantsCell, stockMatrixCell) {
+  const out = {
+    variants: [], totalStock: 0, sizesPipe: '', colorsPipe: '', errors: [], warnings: [],
+  };
+  const sizeSet = parsePipeTokens(sizesCell);
+  const variantSet = parsePipeTokens(variantsCell);
+  const matrix = cleanStr(stockMatrixCell);
+
+  if (matrix !== '') {
+    for (const tripleRaw of matrix.split(/[;]+/)) {
+      const triple = tripleRaw.trim();
+      if (!triple) continue;
+      const segs = triple.split(':');
+      if (segs.length !== 3) {
+        out.errors.push(`stock_matrix entry "${triple}" must use the form size:variant:qty (e.g. Assorted:Ecru:4)`);
+        continue;
+      }
+      const size = segs[0].trim() || null;
+      const variant = segs[1].trim() || null;
+      const qtyStr = segs[2].trim();
+      if (!size && !variant) {
+        out.errors.push(`stock_matrix entry "${triple}" must specify a size and/or a variant`);
+        continue;
+      }
+      const qty = Number(qtyStr);
+      if (!Number.isFinite(qty) || qty < 0) {
+        out.errors.push(`stock_matrix qty for "${triple}" must be a non-negative number (got "${qtyStr}")`);
+        continue;
+      }
+      if (size && !sizeSet.includes(size)) {
+        sizeSet.push(size);
+        out.warnings.push(`size "${size}" in stock_matrix was not listed in the sizes column — added automatically`);
+      }
+      if (variant && !variantSet.includes(variant)) {
+        variantSet.push(variant);
+        out.warnings.push(`variant "${variant}" in stock_matrix was not listed in the variants column — added automatically`);
+      }
+      out.variants.push({ size, color: variant, stock: Math.floor(qty) });
+      out.totalStock += Math.floor(qty);
+    }
+  } else if (sizeSet.length || variantSet.length) {
+    // No explicit matrix: cartesian expansion at stock 0 so the editor shows a grid.
+    const sizeAxis = sizeSet.length ? sizeSet : [null];
+    const variantAxis = variantSet.length ? variantSet : [null];
+    for (const size of sizeAxis) {
+      for (const variant of variantAxis) {
+        out.variants.push({ size: size || null, color: variant || null, stock: 0 });
+      }
+    }
+  }
+
+  out.sizesPipe = sizeSet.join('|');
+  out.colorsPipe = variantSet.join('|');
   return out;
 }
 
@@ -230,8 +310,20 @@ function normalizeRow(raw, ctx) {
     warnings.push(`subcategory "${subName}" does not exist yet — it will be created`);
   }
 
-  const sizeParsed = parseSizes(raw.sizes);
+  // Two-axis (Size × Variant) format vs. legacy "color|size:stock" sizes cell.
+  // Use the new parser when an explicit stock_matrix is given, or when a
+  // variants column is present and the sizes cell is NOT in the legacy form
+  // (legacy entries carry a ":stock", whereas the new sizes cell is a plain
+  // pipe list of size tokens). Otherwise fall back to the legacy parser.
+  const stockMatrixCell = cleanStr(raw.stock_matrix);
+  const variantsCell = cleanStr(raw.variants);
+  const sizesIsLegacy = cleanStr(raw.sizes).includes(':');
+  const useMatrix = stockMatrixCell !== '' || (variantsCell !== '' && !sizesIsLegacy);
+  const sizeParsed = useMatrix
+    ? parseStockMatrix(raw.sizes, raw.variants, raw.stock_matrix)
+    : parseSizes(raw.sizes);
   for (const e of sizeParsed.errors) errors.push(e);
+  if (sizeParsed.warnings) for (const w of sizeParsed.warnings) warnings.push(w);
 
   const imgParsed = parseImages(raw.images);
   const imagesProvided = (raw.images != null && cleanStr(raw.images) !== '');
@@ -289,7 +381,7 @@ function normalizeRow(raw, ctx) {
       tags: cleanStr(raw.tags),
     },
     variants: sizeParsed.variants,
-    sizesProvided: (raw.sizes != null && cleanStr(raw.sizes) !== ''),
+    sizesProvided: (cleanStr(raw.sizes) !== '' || variantsCell !== '' || stockMatrixCell !== ''),
     images: { files: imgParsed.files, urls: imgParsed.urls, provided: imagesProvided },
     categoryName,
     subName,
