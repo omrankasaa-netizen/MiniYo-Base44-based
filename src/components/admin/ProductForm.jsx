@@ -8,7 +8,7 @@ import ImageFramingEditor from './ImageFramingEditor';
 import { framingStyle } from '@/lib/imageFraming';
 
 const SIZES = ['NB', '0-3M', '3-6M', '6-12M', '12-18M', '18-24M', '2Y', '3Y', '4Y', '5Y', '6Y'];
-const COLORS_DEFAULT = ['White', 'Black', 'Pink', 'Blue', 'Sage', 'Cream', 'Blush', 'Yellow', 'Red'];
+const VARIANTS_DEFAULT = ['White', 'Black', 'Pink', 'Blue', 'Sage', 'Cream', 'Blush', 'Yellow', 'Red'];
 
 function ChipInput({ label, chips, setChips, suggestions }) {
   const [input, setInput] = useState('');
@@ -104,6 +104,11 @@ export default function ProductForm({ product, categories, onClose, onSaved }) {
   // init effect and clobber the admin's in-progress edits.
   const variantsInitRef = useRef(null);
   const imagesInitRef = useRef(null);
+  // The size/variant tokens present when the product was loaded. Intersections
+  // outside this set are treated as "newly added" and become editable; existing
+  // tokens only expose a stock input where a real variant row already exists.
+  const loadedSizesRef = useRef([]);
+  const loadedVariantsRef = useRef([]);
 
   // ── Form state ──────────────────────────────────────────────────────────────
   const [form, setForm] = useState({
@@ -118,7 +123,7 @@ export default function ProductForm({ product, categories, onClose, onSaved }) {
   });
 
   const [sizes, setSizes] = useState([]);
-  const [colors, setColors] = useState([]);
+  const [variants, setVariants] = useState([]);
   const [variantGrid, setVariantGrid] = useState({});
   const [images, setImages] = useState([]); // { url, is_primary, sort_order, id?, isNew? }
   const [removedImageIds, setRemovedImageIds] = useState([]); // persisted ProductImage ids removed in this session
@@ -160,9 +165,11 @@ export default function ProductForm({ product, categories, onClose, onSaved }) {
     variantsInitRef.current = product?.id ?? null;
     if (existingVariants.length > 0) {
       const uniqueSizes = [...new Set(existingVariants.map(v => v.size).filter(Boolean))];
-      const uniqueColors = [...new Set(existingVariants.map(v => v.color).filter(Boolean))];
+      const uniqueVariants = [...new Set(existingVariants.map(v => v.color).filter(Boolean))];
       setSizes(uniqueSizes);
-      setColors(uniqueColors);
+      setVariants(uniqueVariants);
+      loadedSizesRef.current = uniqueSizes;
+      loadedVariantsRef.current = uniqueVariants;
       const grid = {};
       for (const v of existingVariants) {
         const key = `${v.size || ''}__${v.color || ''}`;
@@ -188,6 +195,25 @@ export default function ProductForm({ product, categories, onClose, onSaved }) {
 
   function setVariantQty(size, color, qty) {
     setVariantGrid(g => ({ ...g, [variantKey(size, color)]: { ...(g[variantKey(size, color)] || {}), qty: Number(qty) } }));
+  }
+
+  // A (size,variant) cell is editable when a real variant row already backs it,
+  // or when either axis token was added in this session (not loaded from the
+  // DB) — that's how the admin opts a new pair in. Untouched intersections of
+  // pre-existing tokens render as a non-editable "—" so phantom 0-qty combos
+  // are never shown or persisted.
+  function isCellActive(size, color) {
+    if (variantGrid[variantKey(size, color)]) return true;
+    const sizeIsNew = !!size && !loadedSizesRef.current.includes(size);
+    const variantIsNew = !!color && !loadedVariantsRef.current.includes(color);
+    return sizeIsNew || variantIsNew;
+  }
+
+  // Turn an unoffered "—" intersection into an editable 0-stock input.
+  function enableCell(size, color) {
+    setVariantGrid(g => (
+      g[variantKey(size, color)] ? g : { ...g, [variantKey(size, color)]: { qty: 0 } }
+    ));
   }
 
   async function handleImageUpload(files) {
@@ -283,16 +309,20 @@ export default function ProductForm({ product, categories, onClose, onSaved }) {
       const desiredKeys = new Set();
       const keptIds = new Set();
 
-      if (form.has_variants && (sizes.length > 0 || colors.length > 0)) {
-        const pairs = sizes.length > 0 && colors.length > 0
-          ? sizes.flatMap(s => colors.map(c => ({ size: s, color: c })))
+      if (form.has_variants && (sizes.length > 0 || variants.length > 0)) {
+        const pairs = sizes.length > 0 && variants.length > 0
+          ? sizes.flatMap(s => variants.map(c => ({ size: s, color: c })))
           : sizes.length > 0
             ? sizes.map(s => ({ size: s, color: '' }))
-            : colors.map(c => ({ size: '', color: c }));
+            : variants.map(c => ({ size: '', color: c }));
 
         for (const { size, color } of pairs) {
           const key = variantKey(size, color);
-          const entry = variantGrid[key] || { qty: 0 };
+          const entry = variantGrid[key];
+          // Skip unoffered intersections entirely — only persist cells the admin
+          // explicitly activated (loaded row or enabled), so phantom combos are
+          // never written.
+          if (!entry) continue;
           const qty = Number(entry.qty) || 0;
           const sku = `${payload.sku || slug}-${size || color}`.toUpperCase();
           if (entry.id) {
@@ -504,7 +534,7 @@ export default function ProductForm({ product, categories, onClose, onSaved }) {
           {/* ── VARIANTS & STOCK ── */}
           {tab === 'variants' && (
             <div className="space-y-5">
-              <Toggle label="This product has variants (sizes / colors)" checked={!!form.has_variants} onChange={() => set('has_variants', !form.has_variants)} />
+              <Toggle label="This product has variants (sizes / variants)" checked={!!form.has_variants} onChange={() => set('has_variants', !form.has_variants)} />
 
               {!form.has_variants && (
                 <Field label="Stock Quantity">
@@ -515,17 +545,18 @@ export default function ProductForm({ product, categories, onClose, onSaved }) {
               {form.has_variants && (
                 <div className="space-y-5">
                   <ChipInput label="Sizes" chips={sizes} setChips={setSizes} suggestions={SIZES} />
-                  <ChipInput label="Colors" chips={colors} setChips={setColors} suggestions={COLORS_DEFAULT} />
+                  <ChipInput label="Variants" chips={variants} setChips={setVariants} suggestions={VARIANTS_DEFAULT} />
 
-                  {(sizes.length > 0 || colors.length > 0) && (
+                  {(sizes.length > 0 || variants.length > 0) && (
                     <div>
                       <p className="text-xs font-medium text-muted-foreground mb-2">Stock per variant (qty_on_hand)</p>
+                      <p className="text-[11px] text-muted-foreground mb-2">A muted “—” means that size/variant pair isn’t offered — click it to start stocking it.</p>
                       <div className="overflow-x-auto">
                         <table className="text-sm">
                           <thead>
                             <tr>
-                              <th className="text-left pr-4 pb-2 text-xs text-muted-foreground font-medium">Size / Color</th>
-                              {colors.length > 0 ? colors.map(c => (
+                              <th className="text-left pr-4 pb-2 text-xs text-muted-foreground font-medium">Size / Variant</th>
+                              {variants.length > 0 ? variants.map(c => (
                                 <th key={c} className="pb-2 px-3 text-xs text-muted-foreground font-medium text-center">{c}</th>
                               )) : <th className="pb-2 px-3 text-xs text-muted-foreground font-medium text-center">Qty</th>}
                             </tr>
@@ -534,14 +565,23 @@ export default function ProductForm({ product, categories, onClose, onSaved }) {
                             {(sizes.length > 0 ? sizes : ['']).map(size => (
                               <tr key={size}>
                                 <td className="pr-4 py-1.5 text-sm font-medium text-foreground">{size || 'Default'}</td>
-                                {(colors.length > 0 ? colors : ['']).map(color => (
-                                  <td key={color} className="px-2 py-1.5">
-                                    <input
-                                      type="number" min="0"
-                                      value={variantGrid[variantKey(size, color)]?.qty ?? 0}
-                                      onChange={e => setVariantQty(size, color, e.target.value)}
-                                      className="w-16 px-2 py-1 rounded-lg border border-input bg-background text-sm text-center outline-none focus:ring-2 focus:ring-ring"
-                                    />
+                                {(variants.length > 0 ? variants : ['']).map(color => (
+                                  <td key={color} className="px-2 py-1.5 text-center">
+                                    {isCellActive(size, color) ? (
+                                      <input
+                                        type="number" min="0"
+                                        value={variantGrid[variantKey(size, color)]?.qty ?? 0}
+                                        onChange={e => setVariantQty(size, color, e.target.value)}
+                                        className="w-16 px-2 py-1 rounded-lg border border-input bg-background text-sm text-center outline-none focus:ring-2 focus:ring-ring"
+                                      />
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={() => enableCell(size, color)}
+                                        title="Not offered — click to stock this pair"
+                                        className="w-16 px-2 py-1 rounded-lg text-sm text-center text-muted-foreground/50 hover:text-primary hover:bg-primary/5 transition-colors"
+                                      >—</button>
+                                    )}
                                   </td>
                                 ))}
                               </tr>
