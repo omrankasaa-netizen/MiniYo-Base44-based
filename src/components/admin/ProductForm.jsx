@@ -98,6 +98,12 @@ export default function ProductForm({ product, categories, onClose, onSaved }) {
   const { currentUser } = useAuthUser();
   const isNew = !product?.id;
   const fileInputRef = useRef();
+  // Seed the editable grid/images from the DB exactly once per opened product.
+  // The global query client uses staleTime:0 + refetchOnWindowFocus, so a
+  // background refetch (e.g. tabbing away and back) would otherwise re-run the
+  // init effect and clobber the admin's in-progress edits.
+  const variantsInitRef = useRef(null);
+  const imagesInitRef = useRef(null);
 
   // ── Form state ──────────────────────────────────────────────────────────────
   const [form, setForm] = useState({
@@ -123,13 +129,13 @@ export default function ProductForm({ product, categories, onClose, onSaved }) {
   const [tab, setTab] = useState('basic'); // basic | variants | images | preview
 
   // Load existing variants & images
-  const { data: existingVariants = [] } = useQuery({
+  const { data: existingVariants = [], isFetched: variantsFetched } = useQuery({
     queryKey: ['form-variants', product?.id],
     queryFn: () => base44.entities.ProductVariant.filter({ product_id: product.id }),
     enabled: !!product?.id,
   });
 
-  const { data: existingImages = [] } = useQuery({
+  const { data: existingImages = [], isFetched: imagesFetched } = useQuery({
     queryKey: ['form-images', product?.id],
     queryFn: () => base44.entities.ProductImage.filter({ product_id: product.id }),
     enabled: !!product?.id,
@@ -148,6 +154,10 @@ export default function ProductForm({ product, categories, onClose, onSaved }) {
   const selectedCollectionIds = (form.collection_ids || '').split(',').map(s => s.trim()).filter(Boolean);
 
   useEffect(() => {
+    // Only seed once per product; ignore later background refetches so we don't
+    // overwrite edits the admin has made but not yet saved.
+    if (!variantsFetched || variantsInitRef.current === (product?.id ?? null)) return;
+    variantsInitRef.current = product?.id ?? null;
     if (existingVariants.length > 0) {
       const uniqueSizes = [...new Set(existingVariants.map(v => v.size).filter(Boolean))];
       const uniqueColors = [...new Set(existingVariants.map(v => v.color).filter(Boolean))];
@@ -160,10 +170,15 @@ export default function ProductForm({ product, categories, onClose, onSaved }) {
       }
       setVariantGrid(grid);
     }
+  }, [variantsFetched, existingVariants, product?.id]);
+
+  useEffect(() => {
+    if (!imagesFetched || imagesInitRef.current === (product?.id ?? null)) return;
+    imagesInitRef.current = product?.id ?? null;
     if (existingImages.length > 0) {
       setImages([...existingImages].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)));
     }
-  }, [existingVariants, existingImages]);
+  }, [imagesFetched, existingImages, product?.id]);
 
   function set(field, value) {
     setForm(f => ({ ...f, [field]: value }));
@@ -255,7 +270,19 @@ export default function ProductForm({ product, categories, onClose, onSaved }) {
         productId = product.id;
       }
 
-      // Save variants
+      // Reconcile variants so the editor is the source of truth. We upsert every
+      // size/color the admin currently has, then delete any leftover rows. This
+      // fixes three bugs: (1) removed sizes/colors persisted because they were
+      // never deleted and reappeared on reload; (2) the full size×color grid
+      // materialised phantom 0-qty rows for combinations that never existed;
+      // (3) duplicate/orphan rows from earlier imports inflated the stock total.
+      // We re-read the DB rows (not the possibly-stale query cache) so orphans
+      // created by a prior save in the same session are cleaned up too.
+      const keyFor = (size, color) => `${size || ''}__${color || ''}`;
+      const dbVariants = await base44.entities.ProductVariant.filter({ product_id: productId });
+      const desiredKeys = new Set();
+      const keptIds = new Set();
+
       if (form.has_variants && (sizes.length > 0 || colors.length > 0)) {
         const pairs = sizes.length > 0 && colors.length > 0
           ? sizes.flatMap(s => colors.map(c => ({ size: s, color: c })))
@@ -266,14 +293,30 @@ export default function ProductForm({ product, categories, onClose, onSaved }) {
         for (const { size, color } of pairs) {
           const key = variantKey(size, color);
           const entry = variantGrid[key] || { qty: 0 };
+          const qty = Number(entry.qty) || 0;
           const sku = `${payload.sku || slug}-${size || color}`.toUpperCase();
           if (entry.id) {
-            await base44.entities.ProductVariant.update(entry.id, { qty_on_hand: entry.qty });
-          } else {
-            await base44.entities.ProductVariant.create({
-              product_id: productId, variant_sku: sku, size, color, qty_on_hand: entry.qty,
+            await base44.entities.ProductVariant.update(entry.id, { qty_on_hand: qty });
+            desiredKeys.add(keyFor(size, color));
+            keptIds.add(entry.id);
+          } else if (qty > 0) {
+            // Only create a row when it carries stock — never materialise an
+            // empty phantom combo just because the grid renders the cell.
+            const created = await base44.entities.ProductVariant.create({
+              product_id: productId, variant_sku: sku, size, color, qty_on_hand: qty,
             });
+            desiredKeys.add(keyFor(size, color));
+            keptIds.add(created.id);
           }
+        }
+      }
+
+      // Remove rows the admin no longer has: variants whose size/color is gone,
+      // duplicate rows that share a kept key but a different id, everything when
+      // has_variants is toggled off, and any pre-existing orphans.
+      for (const v of dbVariants) {
+        if (!desiredKeys.has(keyFor(v.size, v.color)) || !keptIds.has(v.id)) {
+          await base44.entities.ProductVariant.delete(v.id);
         }
       }
 

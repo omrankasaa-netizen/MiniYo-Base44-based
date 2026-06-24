@@ -340,6 +340,7 @@ export default function ProductsPage() {
             qc.invalidateQueries({ queryKey: ['shop-product-images'] });
             qc.invalidateQueries({ queryKey: ['product-images'] });
             qc.invalidateQueries({ queryKey: ['form-images'] });
+            qc.invalidateQueries({ queryKey: ['form-variants'] });
             setShowForm(false);
             setEditProduct(null);
           }}
