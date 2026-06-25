@@ -1,4 +1,7 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { base44 } from '@/api/base44Client';
+import { isDiscountLive, getEffectiveUnitPrice } from '@/lib/discounts';
 
 const CartContext = createContext();
 const STORAGE_KEY = 'miniyo-cart';
@@ -53,11 +56,29 @@ export function CartProvider({ children }) {
 
   function clearCart() { setItems([]); }
 
-  const totalQty = items.reduce((s, i) => s + i.quantity, 0);
-  const subtotal = items.reduce((s, i) => s + (parseFloat(i.price) || 0) * i.quantity, 0);
+  // Live auto-discounts (same source as the storefront DiscountContext) so cart
+  // and checkout prices match the badge price. Recomputed reactively — the stored
+  // line price is never frozen.
+  const { data: discounts = [] } = useQuery({
+    queryKey: ['active-discounts'],
+    queryFn: () => base44.entities.Discount.filter({ is_active: true }, '-created_date', 100),
+    staleTime: 60_000,
+  });
+  const liveDiscounts = useMemo(() => discounts.filter(isDiscountLive), [discounts]);
+
+  // Decorate each line with its effective (discounted) unit price. basePrice is the
+  // variant price when present, otherwise the product price (unchanged base selection).
+  const decoratedItems = useMemo(() => items.map(i => {
+    const basePrice = parseFloat(i.variant?.price_usd || i.product?.price_usd || i.price || 0) || 0;
+    const effective = getEffectiveUnitPrice(liveDiscounts, i.product, basePrice);
+    return { ...i, basePrice, price: effective };
+  }), [items, liveDiscounts]);
+
+  const totalQty = decoratedItems.reduce((s, i) => s + i.quantity, 0);
+  const subtotal = decoratedItems.reduce((s, i) => s + (parseFloat(i.price) || 0) * i.quantity, 0);
 
   return (
-    <CartContext.Provider value={{ items, addItem, removeItem, updateQty, clearCart, totalQty, subtotal, isOpen, setIsOpen }}>
+    <CartContext.Provider value={{ items: decoratedItems, addItem, removeItem, updateQty, clearCart, totalQty, subtotal, isOpen, setIsOpen }}>
       {children}
     </CartContext.Provider>
   );
