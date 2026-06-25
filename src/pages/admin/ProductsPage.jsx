@@ -6,7 +6,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { logAction } from '@/lib/auditLog';
 import AccessDenied from './AccessDenied';
 import ProductForm from '@/components/admin/ProductForm';
-import { Plus, Search, Filter, Pencil, Trash2, Eye, EyeOff, Star, Download, Printer } from 'lucide-react';
+import { Plus, Search, Filter, Pencil, Copy, Trash2, Eye, EyeOff, Star, Download, Printer } from 'lucide-react';
 import { stockStatus } from '@/lib/inventory';
 import { downloadCsv, printTable } from '@/lib/adminExport';
 
@@ -25,6 +25,7 @@ export default function ProductsPage() {
   const [selected, setSelected] = useState(new Set());
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [editProduct, setEditProduct] = useState(null); // null=closed, {} = new, product=edit
+  const [cloneSourceId, setCloneSourceId] = useState(null); // when set, the form seeds variants/images from this product
   const [showForm, setShowForm] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportErr, setExportErr] = useState('');
@@ -122,6 +123,21 @@ export default function ProductsPage() {
     qc.invalidateQueries({ queryKey: ['admin-products'] });
     setSelected(new Set());
     setConfirmDelete(null);
+  }
+
+  // Open the editor pre-filled with a deep copy of the source product as a NEW
+  // draft (no id) so nothing is written until the owner saves a unique SKU. The
+  // form seeds variants/images from `cloneSourceId` and recreates them fresh.
+  function handleClone(p) {
+    const { id, created_date, updated_date, ...rest } = p;
+    setEditProduct({
+      ...rest,
+      sku: p.sku ? `${p.sku}-COPY` : '',
+      slug: '', // re-derived from the new SKU on save to avoid handle collisions
+      image_url: '', // primary image is recomputed from the cloned image rows
+    });
+    setCloneSourceId(p.id);
+    setShowForm(true);
   }
 
   const catMap = Object.fromEntries(categories.map(c => [c.id, c.name]));
@@ -305,11 +321,15 @@ export default function ProductsPage() {
                       <td className="px-4 py-3">
                         {canAccess('edit_products') && (
                           <div className="flex items-center gap-1">
-                            <button onClick={() => { setEditProduct(p); setShowForm(true); }}
+                            <button onClick={() => { setEditProduct(p); setShowForm(true); }} title="Edit"
                               className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">
                               <Pencil className="w-3.5 h-3.5" />
                             </button>
-                            <button onClick={() => setConfirmDelete([p.id])}
+                            <button onClick={() => handleClone(p)} title="Duplicate"
+                              className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">
+                              <Copy className="w-3.5 h-3.5" />
+                            </button>
+                            <button onClick={() => setConfirmDelete([p.id])} title="Delete"
                               className="p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors">
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
@@ -330,7 +350,9 @@ export default function ProductsPage() {
         <ProductForm
           product={editProduct}
           categories={categories}
-          onClose={() => { setShowForm(false); setEditProduct(null); }}
+          cloneSourceId={cloneSourceId}
+          products={products}
+          onClose={() => { setShowForm(false); setEditProduct(null); setCloneSourceId(null); }}
           onSaved={() => {
             qc.invalidateQueries({ queryKey: ['admin-products'] });
             qc.invalidateQueries({ queryKey: ['admin-variants-all'] });
@@ -343,6 +365,7 @@ export default function ProductsPage() {
             qc.invalidateQueries({ queryKey: ['form-variants'] });
             setShowForm(false);
             setEditProduct(null);
+            setCloneSourceId(null);
           }}
         />
       )}
