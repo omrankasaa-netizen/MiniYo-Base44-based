@@ -50,35 +50,51 @@ export function buildProductsCsv(user, opts = {}) {
     if (!cur || (img.is_primary && !cur.is_primary)) imgByProduct[img.product_id] = img;
   }
 
+  // One row PER SIZE/VARIANT so the export shows stock per size per variant.
+  // Products without variants emit a single row (Size/Variant blank, product
+  // total stock). Per-variant Stock Value at cost is qty×unit cost.
   const header = ['SKU', 'Name (EN)', 'Name (AR)', 'Category', 'Gender', 'Age Group',
-    'Selling Price (USD)', 'Compare-at (USD)', 'Stock', 'Active', 'Slug', 'Image URL'];
+    'Size', 'Variant', 'Selling Price (USD)', 'Compare-at (USD)', 'Stock', 'Active', 'Slug', 'Image URL'];
   if (showMoney) header.push('Cost (USD)', 'Stock Value at Cost (USD)');
 
   const lines = [csvRow(header)];
+  let rowCount = 0;
   for (const p of products) {
     const pvs = byProduct[p.id] || [];
-    const units = stockOf(p, pvs);
-    const row = [
-      p.sku || '',
+    const unitCost = Number(p.cost_usd || 0);
+    const baseHead = [
       p.name || '',
       p.name_ar || '',
       catName[p.category_id] || '',
       p.gender || '',
       p.age_group || '',
+    ];
+    const baseTail = [
       Number(p.price_usd || 0).toFixed(2),
       p.compare_at_price_usd ? Number(p.compare_at_price_usd).toFixed(2) : '',
-      units,
-      (p.status || 'Active') === 'Active' ? 'Yes' : 'No',
-      p.slug || '',
-      imgByProduct[p.id]?.url || '',
     ];
-    if (showMoney) {
-      row.push(Number(p.cost_usd || 0).toFixed(2), (Number(p.cost_usd || 0) * units).toFixed(2));
+    const active = (p.status || 'Active') === 'Active' ? 'Yes' : 'No';
+    const slug = p.slug || '';
+    const imgUrl = imgByProduct[p.id]?.url || '';
+
+    const emit = (sku, size, variant, qty) => {
+      const row = [sku || '', ...baseHead, size || '', variant || '', ...baseTail,
+        qty, active, slug, imgUrl];
+      if (showMoney) row.push(unitCost.toFixed(2), (unitCost * qty).toFixed(2));
+      lines.push(csvRow(row));
+      rowCount++;
+    };
+
+    if (p.has_variants && pvs.length > 0) {
+      for (const v of pvs) {
+        emit(v.variant_sku || p.sku, v.size, v.color, v.qty_on_hand || 0);
+      }
+    } else {
+      emit(p.sku, '', '', p.stock_quantity || 0);
     }
-    lines.push(csvRow(row));
   }
   const scope = showMoney ? 'financial' : 'operational';
-  return { filename: `miniyo-products-${scope}-${stamp()}.csv`, csv: lines.join('\n'), rows: products.length };
+  return { filename: `miniyo-products-${scope}-${stamp()}.csv`, csv: lines.join('\n'), rows: rowCount };
 }
 
 // ── Inventory CSV ────────────────────────────────────────────────────────────
