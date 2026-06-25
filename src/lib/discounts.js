@@ -44,8 +44,10 @@ function discountMatchesProduct(d, product) {
       return tags.includes((d.target || '').toLowerCase());
     }
     case 'specific_products': {
-      const ids = (d.target || '').split(',').map(s => s.trim());
-      return ids.includes(product.id);
+      const targets = (d.target || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+      const id = String(product.id || '').toLowerCase();
+      const sku = String(product.sku || '').trim().toLowerCase();
+      return (id && targets.includes(id)) || (sku && targets.includes(sku));
     }
     default: return false;
   }
@@ -55,6 +57,16 @@ function calcSaving(discount, price) {
   if (discount.type === 'percentage') return (price * discount.value) / 100;
   if (discount.type === 'fixed_amount') return discount.value;
   return 0;
+}
+
+/**
+ * Effective unit price for a product after applying its best live auto-discount.
+ * basePrice defaults to product.price_usd but callers may pass a variant price.
+ */
+export function getEffectiveUnitPrice(discounts, product, basePrice) {
+  const base = parseFloat(basePrice != null ? basePrice : product?.price_usd) || 0;
+  const best = getBestDiscount(discounts, product);
+  return best ? applyDiscountToPrice(best, base) : base;
 }
 
 export function applyDiscountToPrice(discount, price) {

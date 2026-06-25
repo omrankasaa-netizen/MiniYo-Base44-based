@@ -429,8 +429,8 @@ export default function CheckoutPage() {
           size: item.variant?.size || '',
           color: item.variant?.color || '',
           quantity: item.quantity,
-          unit_price_usd: item.product.price_usd,
-          line_total_usd: item.product.price_usd * item.quantity,
+          unit_price_usd: Number(item.price),
+          line_total_usd: Number(item.price) * item.quantity,
         })
       ));
 
@@ -714,7 +714,7 @@ export default function CheckoutPage() {
                 return (
                   <div key={i} className="flex justify-between text-sm gap-2">
                     <span className="text-muted-foreground line-clamp-1 flex-1">{name} ×{item.quantity}</span>
-                    <span className="font-semibold shrink-0">${(item.product.price_usd * item.quantity).toFixed(2)}</span>
+                    <span className="font-semibold shrink-0">${(Number(item.price) * item.quantity).toFixed(2)}</span>
                   </div>
                 );
               })}
