@@ -53,13 +53,13 @@ function DiscountModal({ initial, onClose, onSave }) {
               <option value="category">Specific Category</option>
               <option value="collection">Specific Collection</option>
               <option value="tag">Products with Tag</option>
-              <option value="specific_products">Specific Products (IDs)</option>
+              <option value="specific_products">Specific Products (IDs or SKUs)</option>
             </select>
           </div>
           {form.applies_to !== 'all_products' && (
             <div className="col-span-2">
               <label className="text-xs text-muted-foreground mb-1 block">
-                {form.applies_to === 'category' ? 'Category ID' : form.applies_to === 'collection' ? 'Collection ID' : form.applies_to === 'tag' ? 'Tag name (exact)' : 'Product IDs (comma-separated)'}
+                {form.applies_to === 'category' ? 'Category ID' : form.applies_to === 'collection' ? 'Collection ID' : form.applies_to === 'tag' ? 'Tag name (exact)' : 'Product IDs or SKUs (comma-separated)'}
               </label>
               <input value={form.target||''} onChange={e=>f('target',e.target.value)} className="w-full px-3 py-2 rounded-xl border border-input bg-background text-sm" />
             </div>
