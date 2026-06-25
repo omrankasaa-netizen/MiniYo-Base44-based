@@ -6,11 +6,12 @@ import { useDiscounts } from '@/contexts/DiscountContext';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import { ShoppingBag, ArrowLeft, ChevronLeft, ChevronRight } from 'lucide-react';
+import ImageLightbox from '@/components/storefront/ImageLightbox';
 import WishlistHeart from '@/components/storefront/WishlistHeart';
 import { ReviewList, ReviewForm } from '@/components/storefront/ReviewCard';
 import RelatedProducts from '@/components/storefront/RelatedProducts';
 import { useQueryClient } from '@tanstack/react-query';
-import { normalizeImages, focalImageStyle, imageSrc, handleImageError } from '@/lib/imageFraming';
+import { normalizeImages, imageSrc, handleImageError } from '@/lib/imageFraming';
 
 export default function ProductPage() {
   const { slug } = useParams();
@@ -20,6 +21,7 @@ export default function ProductPage() {
   const [selectedColor, setSelectedColor] = useState('');
   const [selectedSize, setSelectedSize] = useState('');
   const [imgIdx, setImgIdx] = useState(0);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
   const [added, setAdded] = useState(false);
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
 
@@ -152,9 +154,10 @@ export default function ProductPage() {
           <div className="space-y-3">
             <div className="relative aspect-square bg-muted rounded-3xl overflow-hidden">
               {displayImages.length > 0 ? (
-                <img src={imageSrc(displayImages[imgIdx], 'large')} alt={name} className="w-full h-full"
+                <img src={imageSrc(displayImages[imgIdx], 'large')} alt={name} loading="eager"
                   decoding="async" onError={handleImageError}
-                  style={focalImageStyle(displayImages[imgIdx]?.focal)} />
+                  onClick={() => setLightboxOpen(true)}
+                  className="absolute inset-0 w-full h-full object-contain cursor-zoom-in" />
               ) : (
                 <div className="w-full h-full flex items-center justify-center">
                   <ShoppingBag className="w-16 h-16 text-accent" />
@@ -297,6 +300,17 @@ export default function ProductPage() {
         {/* You might also like */}
         <RelatedProducts product={product} limit={4} />
       </div>
+
+      {/* Full-screen photo popup (tap/click the main gallery image to open). */}
+      {lightboxOpen && displayImages.length > 0 && (
+        <ImageLightbox
+          images={displayImages}
+          startIndex={imgIdx}
+          alt={name}
+          rtl={lang === 'ar'}
+          onClose={() => setLightboxOpen(false)}
+        />
+      )}
     </div>
   );
 }
