@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { base44 } from '@/api/base44Client';
-import { LayoutTemplate, Save, ExternalLink, Upload } from 'lucide-react';
+import { LayoutTemplate, Save, ExternalLink, Upload, X } from 'lucide-react';
 
 // Each storefront homepage block is backed by a CmsSection row keyed by
 // section_key. The matching home components read these keys and fall back to
@@ -26,10 +26,11 @@ const SECTIONS = [
   {
     key: 'home_instagram',
     label: 'Instagram Strip — "Our community"',
-    fields: { title: true, body: true, link: true },
+    fields: { title: true, body: true, link: true, gallery: true },
     titleHint: 'Section heading',
     bodyHint: 'Handle label (e.g. @miniyo.lb)',
     linkHint: 'Instagram profile URL',
+    galleryHint: 'Photos shown in the strip (up to 6). These do NOT sync from Instagram — upload the images you want to show here.',
     preview: '/',
   },
   {
@@ -54,6 +55,9 @@ export default function CmsHomeSections({ sectionMap, onSave }) {
 
   function getForm() {
     if (forms[activeKey] !== undefined) return forms[activeKey];
+    // gallery is persisted as a JSON string array of image URLs in gallery_json.
+    let gallery = [];
+    try { gallery = existing?.gallery_json ? JSON.parse(existing.gallery_json) : []; } catch { gallery = []; }
     return {
       title: existing?.title || '',
       title_ar: existing?.title_ar || '',
@@ -61,6 +65,7 @@ export default function CmsHomeSections({ sectionMap, onSave }) {
       body_ar: existing?.body_ar || '',
       image_url: existing?.image_url || '',
       link_url: existing?.link_url || '',
+      gallery: Array.isArray(gallery) ? gallery : [],
       is_active: existing?.is_active !== false,
     };
   }
@@ -81,10 +86,41 @@ export default function CmsHomeSections({ sectionMap, onSave }) {
     }
   }
 
+  // Upload one or more photos into the gallery (capped at 6). Each file is
+  // uploaded sequentially; the resulting URLs are appended to form.gallery.
+  async function handleGalleryUpload(e) {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    setUploading(true);
+    try {
+      const current = getForm().gallery || [];
+      const room = Math.max(0, 6 - current.length);
+      const next = [...current];
+      for (const file of files.slice(0, room)) {
+        const { file_url } = await base44.integrations.Core.UploadFile({ file });
+        if (file_url) next.push(file_url);
+      }
+      setF('gallery', next);
+    } finally {
+      setUploading(false);
+      e.target.value = ''; // allow re-selecting the same file later
+    }
+  }
+
+  function removeGalleryImage(idx) {
+    const next = (getForm().gallery || []).filter((_, i) => i !== idx);
+    setF('gallery', next);
+  }
+
   async function handleSave() {
     setSaving(true);
     try {
-      await onSave(activeKey, { ...getForm(), section_key: activeKey });
+      // Serialize the gallery array back to gallery_json for storage; drop the
+      // transient `gallery` array so we don't persist a duplicate field.
+      const { gallery, ...rest } = getForm();
+      const payload = { ...rest, section_key: activeKey };
+      if (def.fields.gallery) payload.gallery_json = JSON.stringify(gallery || []);
+      await onSave(activeKey, payload);
       setSaved(activeKey);
       setTimeout(() => setSaved(''), 2500);
     } finally {
@@ -181,6 +217,37 @@ export default function CmsHomeSections({ sectionMap, onSave }) {
                 <button onClick={() => setF('image_url', '')} className="text-xs text-destructive hover:underline">Remove</button>
               )}
             </div>
+          </div>
+        )}
+
+        {def.fields.gallery && (
+          <div>
+            <label className="text-xs font-medium text-muted-foreground block mb-1">Strip photos</label>
+            {def.galleryHint && (
+              <p className="text-xs text-muted-foreground mb-2">{def.galleryHint}</p>
+            )}
+            <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mb-3">
+              {(form.gallery || []).map((url, i) => (
+                <div key={i} className="relative group aspect-square">
+                  <img src={url} alt="" className="w-full h-full rounded-xl object-cover border border-border" />
+                  <button type="button" onClick={() => removeGalleryImage(i)}
+                    className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-destructive text-white flex items-center justify-center shadow-sm hover:scale-110 transition-transform"
+                    aria-label="Remove photo">
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+              {(form.gallery || []).length === 0 && (
+                <p className="col-span-full text-xs text-muted-foreground italic">No photos yet — the strip shows placeholders until you add some.</p>
+              )}
+            </div>
+            {(form.gallery || []).length < 6 && (
+              <label className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-input bg-background text-sm cursor-pointer hover:bg-muted">
+                <Upload className="w-3.5 h-3.5" />
+                {uploading ? 'Uploading…' : `Add photos (${(form.gallery || []).length}/6)`}
+                <input type="file" accept="image/*" multiple className="hidden" onChange={handleGalleryUpload} disabled={uploading} />
+              </label>
+            )}
           </div>
         )}
 
