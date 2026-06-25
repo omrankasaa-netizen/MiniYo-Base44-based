@@ -155,21 +155,39 @@ export default function ProductsPage() {
     }
   }
 
-  // Print the current (filtered) table. Cost is a financial column, so it is
-  // only included for super-admins — matching the server-side CSV gating.
+  // Print the current (filtered) table, expanded to ONE ROW PER SIZE/VARIANT so
+  // the printed sheet shows stock per size per variant (matching the CSV).
+  // Products without variants print a single row (Size/Variant blank, product
+  // total stock). Cost is a financial column, only included for super-admins —
+  // matching the server-side CSV gating.
   function handlePrint() {
-    const columns = ['SKU', 'Name', 'Category', 'Price (USD)', 'Stock', 'Status'];
+    const columns = ['SKU', 'Name', 'Category', 'Size', 'Variant', 'Price (USD)', 'Stock', 'Status'];
     if (showMoney) columns.push('Cost (USD)');
-    const rows = filtered.map(p => {
-      const qty = getQty(p, variantsByProduct[p.id] || []);
-      const row = [
-        p.sku || '', p.name || '', catMap[p.category_id] || '',
-        Number(p.price_usd || 0).toFixed(2), qty, p.status || '',
-      ];
-      if (showMoney) row.push(Number(p.cost_usd || 0).toFixed(2));
-      return row;
-    });
-    printTable({ title: 'Products', columns, rows, meta: showMoney ? 'Financial' : 'Operational' });
+    const rows = [];
+    for (const p of filtered) {
+      const pvs = variantsByProduct[p.id] || [];
+      const price = Number(p.price_usd || 0).toFixed(2);
+      const cost = Number(p.cost_usd || 0).toFixed(2);
+      const cat = catMap[p.category_id] || '';
+      const status = p.status || '';
+      if (p.has_variants && pvs.length > 0) {
+        for (const v of pvs) {
+          const row = [
+            v.variant_sku || p.sku || '', p.name || '', cat,
+            v.size || '', v.color || '', price, v.qty_on_hand || 0, status,
+          ];
+          if (showMoney) row.push(cost);
+          rows.push(row);
+        }
+      } else {
+        const row = [
+          p.sku || '', p.name || '', cat, '', '', price, p.stock_quantity || 0, status,
+        ];
+        if (showMoney) row.push(cost);
+        rows.push(row);
+      }
+    }
+    printTable({ title: 'Products — Stock by Size & Variant', columns, rows, meta: showMoney ? 'Financial' : 'Operational' });
   }
 
   if (!canAccess('view_products')) return <AdminLayout><AccessDenied /></AdminLayout>;
