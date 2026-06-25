@@ -29,8 +29,18 @@ export default function InstagramStrip() {
   const handle = (section && (lang === 'ar' ? (section.body_ar || section.body) : section.body)) || t('Follow @miniyo.lb', 'تابع @miniyo.lb');
   const igUrl = section?.link_url || settings.instagramUrl;
 
+  // Photos are manually curated in the CMS (Homepage Sections → Instagram Strip)
+  // and stored as a JSON array of image URLs in gallery_json. These do NOT sync
+  // from Instagram. Fall back to legacy MediaAsset rows, then blush placeholders.
+  let gallery = [];
+  try { gallery = section?.gallery_json ? JSON.parse(section.gallery_json) : []; } catch { gallery = []; }
+  const galleryUrls = (Array.isArray(gallery) ? gallery : []).filter(Boolean);
+  const sourceUrls = galleryUrls.length
+    ? galleryUrls
+    : assets.slice(0, 6).map(a => a?.url).filter(Boolean);
+
   // Show up to 6 tiles; fill remainder with blush placeholders
-  const tiles = [...assets.slice(0, 6)];
+  const tiles = [...sourceUrls.slice(0, 6)];
   while (tiles.length < 6) tiles.push(null);
 
   return (
@@ -57,25 +67,31 @@ export default function InstagramStrip() {
         </motion.div>
 
         <div className="grid grid-cols-3 sm:grid-cols-6 gap-2.5">
-          {tiles.map((asset, i) => (
-            <motion.div
-              key={i}
-              initial={{ opacity: 0, scale: 0.95 }}
-              whileInView={{ opacity: 1, scale: 1 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.35, delay: i * 0.05 }}
-              className="aspect-square rounded-2xl overflow-hidden bg-accent/25 group cursor-pointer"
-            >
-              {asset?.url
-                ? <img src={cmsImageSrc(asset.url, 'card')} alt={asset.name || ''} loading="lazy" decoding="async" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                : (
-                  <div className="w-full h-full flex items-center justify-center bg-accent/20 group-hover:bg-accent/35 transition-colors">
-                    <Instagram className="w-6 h-6 text-muted-foreground/30" />
-                  </div>
-                )
-              }
-            </motion.div>
-          ))}
+          {tiles.map((url, i) => {
+            const tile = (
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, scale: 0.95 }}
+                whileInView={{ opacity: 1, scale: 1 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.35, delay: i * 0.05 }}
+                className="aspect-square rounded-2xl overflow-hidden bg-accent/25 group cursor-pointer"
+              >
+                {url
+                  ? <img src={cmsImageSrc(url, 'card')} alt="" loading="lazy" decoding="async" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                  : (
+                    <div className="w-full h-full flex items-center justify-center bg-accent/20 group-hover:bg-accent/35 transition-colors">
+                      <Instagram className="w-6 h-6 text-muted-foreground/30" />
+                    </div>
+                  )
+                }
+              </motion.div>
+            );
+            // Make populated tiles open the Instagram profile in a new tab.
+            return url && igUrl
+              ? <a key={i} href={igUrl} target="_blank" rel="noopener" className="block">{tile}</a>
+              : tile;
+          })}
         </div>
       </div>
     </section>
