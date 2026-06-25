@@ -94,9 +94,13 @@ function Toggle({ label, checked, onChange }) {
   );
 }
 
-export default function ProductForm({ product, categories, onClose, onSaved }) {
+export default function ProductForm({ product, categories, onClose, onSaved, cloneSourceId = null, products = [] }) {
   const { currentUser } = useAuthUser();
   const isNew = !product?.id;
+  const isClone = isNew && !!cloneSourceId;
+  // When cloning, variants/images are read from the SOURCE product but seeded as
+  // brand-new (ids stripped) so saving creates fresh rows without touching it.
+  const sourceId = product?.id || cloneSourceId || null;
   const fileInputRef = useRef();
   // Seed the editable grid/images from the DB exactly once per opened product.
   // The global query client uses staleTime:0 + refetchOnWindowFocus, so a
@@ -135,15 +139,15 @@ export default function ProductForm({ product, categories, onClose, onSaved }) {
 
   // Load existing variants & images
   const { data: existingVariants = [], isFetched: variantsFetched } = useQuery({
-    queryKey: ['form-variants', product?.id],
-    queryFn: () => base44.entities.ProductVariant.filter({ product_id: product.id }),
-    enabled: !!product?.id,
+    queryKey: ['form-variants', sourceId],
+    queryFn: () => base44.entities.ProductVariant.filter({ product_id: sourceId }),
+    enabled: !!sourceId,
   });
 
   const { data: existingImages = [], isFetched: imagesFetched } = useQuery({
-    queryKey: ['form-images', product?.id],
-    queryFn: () => base44.entities.ProductImage.filter({ product_id: product.id }),
-    enabled: !!product?.id,
+    queryKey: ['form-images', sourceId],
+    queryFn: () => base44.entities.ProductImage.filter({ product_id: sourceId }),
+    enabled: !!sourceId,
   });
 
   const { data: collections = [] } = useQuery({
@@ -158,11 +162,20 @@ export default function ProductForm({ product, categories, onClose, onSaved }) {
   // Selected collection IDs as array
   const selectedCollectionIds = (form.collection_ids || '').split(',').map(s => s.trim()).filter(Boolean);
 
+  // True when `sku` collides with another product (any product except the one
+  // being edited). Used to block save on create/clone and to flag the field.
+  function skuExists(sku) {
+    const s = (sku || '').trim().toLowerCase();
+    if (!s) return false;
+    return products.some(p => p.id !== product?.id && (p.sku || '').trim().toLowerCase() === s);
+  }
+  const skuCollision = skuExists(form.sku);
+
   useEffect(() => {
-    // Only seed once per product; ignore later background refetches so we don't
+    // Only seed once per source; ignore later background refetches so we don't
     // overwrite edits the admin has made but not yet saved.
-    if (!variantsFetched || variantsInitRef.current === (product?.id ?? null)) return;
-    variantsInitRef.current = product?.id ?? null;
+    if (!variantsFetched || variantsInitRef.current === (sourceId ?? null)) return;
+    variantsInitRef.current = sourceId ?? null;
     if (existingVariants.length > 0) {
       const uniqueSizes = [...new Set(existingVariants.map(v => v.size).filter(Boolean))];
       const uniqueVariants = [...new Set(existingVariants.map(v => v.color).filter(Boolean))];
@@ -173,19 +186,23 @@ export default function ProductForm({ product, categories, onClose, onSaved }) {
       const grid = {};
       for (const v of existingVariants) {
         const key = `${v.size || ''}__${v.color || ''}`;
-        grid[key] = { qty: v.qty_on_hand || 0, id: v.id, sku: v.variant_sku };
+        // Clone: drop the source row id so save creates a fresh variant row.
+        grid[key] = { qty: v.qty_on_hand || 0, id: isClone ? undefined : v.id, sku: v.variant_sku };
       }
       setVariantGrid(grid);
     }
-  }, [variantsFetched, existingVariants, product?.id]);
+  }, [variantsFetched, existingVariants, sourceId, isClone]);
 
   useEffect(() => {
-    if (!imagesFetched || imagesInitRef.current === (product?.id ?? null)) return;
-    imagesInitRef.current = product?.id ?? null;
+    if (!imagesFetched || imagesInitRef.current === (sourceId ?? null)) return;
+    imagesInitRef.current = sourceId ?? null;
     if (existingImages.length > 0) {
-      setImages([...existingImages].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0)));
+      const sorted = [...existingImages].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+      // Clone: strip ids and mark new so images are recreated for the new
+      // product (same URLs reused) rather than re-pointing the source's rows.
+      setImages(isClone ? sorted.map(img => ({ ...img, id: undefined, isNew: true })) : sorted);
     }
-  }, [imagesFetched, existingImages, product?.id]);
+  }, [imagesFetched, existingImages, sourceId, isClone]);
 
   function set(field, value) {
     setForm(f => ({ ...f, [field]: value }));
@@ -269,10 +286,16 @@ export default function ProductForm({ product, categories, onClose, onSaved }) {
 
   async function handleSave() {
     if (!form.name || !form.price_usd) { setError('Name and price are required.'); return; }
+    const sku = (form.sku || '').trim();
+    if (isClone && !sku) { setError('A unique SKU is required before saving the duplicate.'); return; }
+    if (sku && skuExists(sku)) { setError('That SKU is already used by another product — choose a unique SKU.'); return; }
     setSaving(true);
     setError('');
     try {
-      const slug = form.slug || form.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+      // Clone: always derive the slug from the (validated, unique) SKU so the
+      // new product never collides with the source's handle.
+      const slugBase = isClone ? (form.sku || form.name) : (form.slug || form.name);
+      const slug = slugBase.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
       // Keep the legacy single image_url in sync with the current primary image
       // (falling back to the first image) so consumers that read product.image_url
       // don't show a deleted/stale photo.
@@ -403,7 +426,7 @@ export default function ProductForm({ product, categories, onClose, onSaved }) {
       <div className="bg-card border border-border rounded-2xl w-full max-w-3xl max-h-[95vh] flex flex-col shadow-2xl">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
-          <h2 className="font-heading font-bold text-foreground text-lg">{isNew ? 'Add Product' : 'Edit Product'}</h2>
+          <h2 className="font-heading font-bold text-foreground text-lg">{isClone ? 'Duplicate Product' : isNew ? 'Add Product' : 'Edit Product'}</h2>
           <button onClick={onClose} className="p-2 rounded-xl hover:bg-muted"><X className="w-4 h-4" /></button>
         </div>
 
@@ -432,8 +455,14 @@ export default function ProductForm({ product, categories, onClose, onSaved }) {
                 </Field>
               </div>
               <div className="grid grid-cols-2 gap-4">
-                <Field label="SKU"><Input value={form.sku} onChange={e => set('sku', e.target.value)} placeholder="e.g. BODY-WH-NB" /></Field>
-                <Field label="Slug"><Input value={form.slug} onChange={e => set('slug', e.target.value)} placeholder="auto-generated from name" /></Field>
+                <Field label="SKU" required={isClone}>
+                  <Input value={form.sku} onChange={e => set('sku', e.target.value)} placeholder="e.g. BODY-WH-NB"
+                    className={skuCollision ? 'border-destructive focus:ring-destructive' : ''} />
+                  {skuCollision
+                    ? <p className="text-xs text-destructive mt-1">This SKU is already used by another product.</p>
+                    : isClone && <p className="text-xs text-muted-foreground mt-1">Set a unique SKU for the duplicate before saving.</p>}
+                </Field>
+                <Field label="Slug"><Input value={form.slug} onChange={e => set('slug', e.target.value)} placeholder={isClone ? 'auto-generated from SKU' : 'auto-generated from name'} /></Field>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <Field label="Short Description">
@@ -692,7 +721,7 @@ export default function ProductForm({ product, categories, onClose, onSaved }) {
         {error && <p className="px-6 py-2 text-xs text-destructive bg-destructive/5">{error}</p>}
         <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-border shrink-0">
           <button onClick={onClose} className="px-5 py-2 rounded-xl border border-border text-sm hover:bg-muted">Cancel</button>
-          <button onClick={handleSave} disabled={saving}
+          <button onClick={handleSave} disabled={saving || skuCollision || (isClone && !(form.sku || '').trim())}
             className="px-6 py-2 rounded-xl bg-primary text-primary-foreground text-sm font-semibold disabled:opacity-50 hover:bg-primary/90 transition-colors">
             {saving ? 'Saving…' : isNew ? 'Create Product' : 'Save Changes'}
           </button>
