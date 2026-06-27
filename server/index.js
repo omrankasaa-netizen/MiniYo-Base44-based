@@ -18,6 +18,7 @@ import {
 import { invokeFunction, invalidateDashboardCache } from './functions.js';
 import { sendEmail } from './email.js';
 import { runSeed } from './seed.js';
+import { repairDuplicateSlugs } from './repairSlugs.js';
 import { getStorage } from './storage.js';
 import { optimizeAndStore, bufferFromBase64 } from './imageOptimize.js';
 
@@ -40,6 +41,9 @@ const PORT = process.env.PORT || 4000;
 
 initSchema();
 runSeed();
+// Repair any pre-existing duplicate product slugs so each product page resolves
+// to the correct item. Idempotent — a no-op once slugs are unique.
+repairDuplicateSlugs();
 
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
