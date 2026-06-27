@@ -569,6 +569,31 @@ export async function bulkImportProducts(payload = {}) {
   // Detect duplicate SKUs within the sheet itself.
   const skuSeen = new Map();
 
+  // Guarantee globally-unique slugs. A slug is the product page's lookup key
+  // (Product.filter({ slug }, ..., 1)), so two products sharing a slug make the
+  // page show the wrong item's photos/details. Seed with every slug already in
+  // the DB *except* the ones this import will update (those keep their slug),
+  // then claim a unique slug per created row, appending -2, -3, … on collision.
+  const slugTaken = new Set();
+  for (const [s, p] of ctx.productIdx.bySlug.entries()) {
+    slugTaken.add(s); // p is the existing record; kept for clarity
+    void p;
+  }
+  function claimUniqueSlug(base, ownerExistingId) {
+    const root = (base || 'product').toLowerCase();
+    // An update keeps its own slug even though it's already "taken" by itself.
+    if (ownerExistingId && ctx.productIdx.bySlug.get(root)?.id === ownerExistingId) {
+      slugTaken.add(root);
+      return root;
+    }
+    if (!slugTaken.has(root)) { slugTaken.add(root); return root; }
+    let i = 2;
+    while (slugTaken.has(`${root}-${i}`)) i += 1;
+    const unique = `${root}-${i}`;
+    slugTaken.add(unique);
+    return unique;
+  }
+
   for (const raw of rows) {
     const { ok, row, errors, warnings } = normalizeRow(raw, ctx);
     if (row.sku) {
@@ -577,6 +602,15 @@ export async function bulkImportProducts(payload = {}) {
         errors.push(`duplicate sku "${row.sku}" — also on row ${skuSeen.get(k)}; only the first is used`);
       } else {
         skuSeen.set(k, row.rowNumber);
+      }
+    }
+    // Assign a collision-free slug to every valid row that will be committed.
+    if (ok && errors.length === 0 && row.slug) {
+      const unique = claimUniqueSlug(row.slug, row.existingId);
+      if (unique !== row.slug) {
+        warnings.push(`slug "${row.slug}" was already in use — saved as "${unique}" to keep product links unique`);
+        row.slug = unique;
+        if (row.fields) row.fields.slug = unique;
       }
     }
     const rowOk = ok && errors.length === 0;
