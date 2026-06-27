@@ -171,6 +171,22 @@ export default function ProductForm({ product, categories, onClose, onSaved, clo
   }
   const skuCollision = skuExists(form.sku);
 
+  // Return a slug that no OTHER product is using. The product page resolves by
+  // slug, so a duplicate would silently load the wrong item. Appends -2, -3, …
+  function uniqueSlug(base) {
+    const root = (base || 'product').toLowerCase();
+    const used = new Set(
+      products
+        .filter(p => p.id !== product?.id)
+        .map(p => (p.slug || '').toLowerCase())
+        .filter(Boolean)
+    );
+    if (!used.has(root)) return root;
+    let i = 2;
+    while (used.has(`${root}-${i}`)) i += 1;
+    return `${root}-${i}`;
+  }
+
   useEffect(() => {
     // Only seed once per source; ignore later background refetches so we don't
     // overwrite edits the admin has made but not yet saved.
@@ -295,7 +311,8 @@ export default function ProductForm({ product, categories, onClose, onSaved, clo
       // Clone: always derive the slug from the (validated, unique) SKU so the
       // new product never collides with the source's handle.
       const slugBase = isClone ? (form.sku || form.name) : (form.slug || form.name);
-      const slug = slugBase.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+      const rawSlug = slugBase.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+      const slug = uniqueSlug(rawSlug);
       // Keep the legacy single image_url in sync with the current primary image
       // (falling back to the first image) so consumers that read product.image_url
       // don't show a deleted/stale photo.
