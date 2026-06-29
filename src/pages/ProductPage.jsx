@@ -11,7 +11,7 @@ import WishlistHeart from '@/components/storefront/WishlistHeart';
 import { ReviewList, ReviewForm } from '@/components/storefront/ReviewCard';
 import RelatedProducts from '@/components/storefront/RelatedProducts';
 import { useQueryClient } from '@tanstack/react-query';
-import { normalizeImages, imageSrc, handleImageError } from '@/lib/imageFraming';
+import { normalizeImages, imageSrc, imageSrcSet, DETAIL_SIZES, handleImageError } from '@/lib/imageFraming';
 import { track } from '@/lib/pixel';
 
 export default function ProductPage() {
@@ -168,7 +168,9 @@ export default function ProductPage() {
           <div className="space-y-3">
             <div className="relative aspect-square bg-muted rounded-3xl overflow-hidden">
               {displayImages.length > 0 ? (
-                <img src={imageSrc(displayImages[imgIdx], 'large')} alt={name} loading="eager"
+                <img src={imageSrc(displayImages[imgIdx], 'large')}
+                  srcSet={imageSrcSet(displayImages[imgIdx])} sizes={DETAIL_SIZES}
+                  alt={name} loading="eager"
                   decoding="async" onError={handleImageError}
                   onClick={() => setLightboxOpen(true)}
                   className="absolute inset-0 w-full h-full object-contain cursor-zoom-in" />
@@ -179,12 +181,12 @@ export default function ProductPage() {
               )}
               {displayImages.length > 1 && (
                 <>
-                  <button onClick={() => setImgIdx(i => (i - 1 + displayImages.length) % displayImages.length)}
-                    className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 bg-white/80 backdrop-blur rounded-full flex items-center justify-center shadow">
+                  <button aria-label={t('Previous image', 'الصورة السابقة')} onClick={() => setImgIdx(i => (i - 1 + displayImages.length) % displayImages.length)}
+                    className="absolute left-2 top-1/2 -translate-y-1/2 w-11 h-11 bg-white/80 backdrop-blur rounded-full flex items-center justify-center shadow">
                     <ChevronLeft className="w-4 h-4" />
                   </button>
-                  <button onClick={() => setImgIdx(i => (i + 1) % displayImages.length)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 bg-white/80 backdrop-blur rounded-full flex items-center justify-center shadow">
+                  <button aria-label={t('Next image', 'الصورة التالية')} onClick={() => setImgIdx(i => (i + 1) % displayImages.length)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 w-11 h-11 bg-white/80 backdrop-blur rounded-full flex items-center justify-center shadow">
                     <ChevronRight className="w-4 h-4" />
                   </button>
                 </>

@@ -14,7 +14,7 @@ export default function PageNotFound() {
         queryFn: async () => {
             try {
                 const user = await base44.auth.me();
-                return { user, isAuthenticated: true };
+                return { user, isAuthenticated: !!user };
             } catch (error) {
                 return { user: null, isAuthenticated: false };
             }

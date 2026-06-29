@@ -85,7 +85,10 @@ function handleError(res, e) {
 // ─── Auth routes ──────────────────────────────────────────────────────────────
 app.get('/api/auth/me', (req, res) => {
   const user = getUserFromRequest(req);
-  if (!user) return res.status(401).json({ error: 'Not authenticated' });
+  // Guests are the normal case on a public storefront. Return 200 with a null
+  // body instead of 401 so the client's session probe on every page load does
+  // not surface a red console error. Protected routes still enforce auth (401).
+  if (!user) return res.json(null);
   res.json(publicUser(user));
 });
 
