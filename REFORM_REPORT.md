@@ -67,8 +67,8 @@ membership flows pass an HTTP-level smoke test.
 
 ### Build
 `npm install` → 710 packages, **0 `@base44/*`**. `npm run build` → succeeds,
-emits `dist/` (no Base44 package in `node_modules` or the bundle; the only
-`base44.com` strings are external media URLs in `index.html`).
+emits `dist/` (no Base44 package in `node_modules` or the bundle; the logo is
+now served locally from `public/miniyo-logo.png` — no external media URLs remain).
 
 ### Route smoke test (HTTP, 42/42 PASS)
 Every storefront + account + admin + auth route, plus a product detail page and an

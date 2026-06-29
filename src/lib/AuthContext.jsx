@@ -26,12 +26,13 @@ export const AuthProvider = ({ children }) => {
     try {
       setIsLoadingAuth(true);
       const currentUser = await base44.auth.me();
+      // me() resolves to null for guests (200), or the user object when signed in.
       setUser(currentUser);
-      setIsAuthenticated(true);
+      setIsAuthenticated(!!currentUser);
       setIsLoadingAuth(false);
       setAuthChecked(true);
     } catch {
-      // 401 for guests is expected — not an error worth logging.
+      // Genuine network/server errors only — guests are handled above.
       setUser(null);
       setIsLoadingAuth(false);
       setIsAuthenticated(false);

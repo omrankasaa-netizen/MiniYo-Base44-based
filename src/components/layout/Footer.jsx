@@ -43,10 +43,10 @@ export default function Footer() {
           <div>
             <p className="font-semibold text-sm mb-3 opacity-90">{t('Shop', 'المتجر')}</p>
             <div className="flex flex-col gap-2">
-              <Link to="/shop" className="text-xs opacity-70 hover:opacity-100 transition-opacity">{t('All Products', 'جميع المنتجات')}</Link>
-              <Link to="/shop?gender=Girls" className="text-xs opacity-70 hover:opacity-100 transition-opacity">{t('Girls', 'بنات')}</Link>
-              <Link to="/shop?gender=Boys" className="text-xs opacity-70 hover:opacity-100 transition-opacity">{t('Boys', 'أولاد')}</Link>
-              <Link to="/shop?gender=Unisex" className="text-xs opacity-70 hover:opacity-100 transition-opacity">{t('Unisex', 'للجنسين')}</Link>
+              <Link to="/shop" className="inline-block py-1.5 text-xs opacity-70 hover:opacity-100 transition-opacity">{t('All Products', 'جميع المنتجات')}</Link>
+              <Link to="/shop?gender=Girls" className="inline-block py-1.5 text-xs opacity-70 hover:opacity-100 transition-opacity">{t('Girls', 'بنات')}</Link>
+              <Link to="/shop?gender=Boys" className="inline-block py-1.5 text-xs opacity-70 hover:opacity-100 transition-opacity">{t('Boys', 'أولاد')}</Link>
+              <Link to="/shop?gender=Unisex" className="inline-block py-1.5 text-xs opacity-70 hover:opacity-100 transition-opacity">{t('Unisex', 'للجنسين')}</Link>
             </div>
           </div>
           {/* Support */}
@@ -55,11 +55,11 @@ export default function Footer() {
             <div className="flex flex-col gap-2">
               {settings.whatsappNumber && (
                 <a href={`https://wa.me/${settings.whatsappNumber.replace(/\D/g,'')}`} target="_blank" rel="noopener"
-                  className="text-xs opacity-70 hover:opacity-100 transition-opacity">
+                  className="inline-block py-1.5 text-xs opacity-70 hover:opacity-100 transition-opacity">
                   {t('WhatsApp Us', 'تواصل عبر واتساب')}
                 </a>
               )}
-              <Link to="/track" className="text-xs opacity-70 hover:opacity-100 transition-opacity">{t('Track Your Order', 'تتبع طلبك')}</Link>
+              <Link to="/track" className="inline-block py-1.5 text-xs opacity-70 hover:opacity-100 transition-opacity">{t('Track Your Order', 'تتبع طلبك')}</Link>
               <span className="text-xs opacity-70">{t('Cash on Delivery', 'الدفع عند الاستلام')}</span>
               <span className="text-xs opacity-70">{t('Delivery across Lebanon', 'توصيل في كل لبنان')}</span>
             </div>
@@ -69,13 +69,13 @@ export default function Footer() {
           <div>
             <p className="font-semibold text-sm mb-3 opacity-90">{t('Info', 'معلومات')}</p>
             <div className="flex flex-col gap-2">
-              <Link to="/about"          className="text-xs opacity-70 hover:opacity-100 transition-opacity">{t('Our Story', 'قصتنا')}</Link>
-              <Link to="/faq"            className="text-xs opacity-70 hover:opacity-100 transition-opacity">{t('FAQs', 'الأسئلة الشائعة')}</Link>
-              <Link to="/legal/contact"  className="text-xs opacity-70 hover:opacity-100 transition-opacity">{t('Contact Us', 'تواصل معنا')}</Link>
-              <Link to="/legal/shipping" className="text-xs opacity-70 hover:opacity-100 transition-opacity">{t('Shipping Policy', 'سياسة الشحن')}</Link>
-              <Link to="/legal/returns"  className="text-xs opacity-70 hover:opacity-100 transition-opacity">{t('Returns & Exchanges', 'الإرجاع والاستبدال')}</Link>
-              <Link to="/legal/privacy"  className="text-xs opacity-70 hover:opacity-100 transition-opacity">{t('Privacy Policy', 'سياسة الخصوصية')}</Link>
-              <Link to="/legal/terms"    className="text-xs opacity-70 hover:opacity-100 transition-opacity">{t('Terms', 'الشروط والأحكام')}</Link>
+              <Link to="/about"          className="inline-block py-1.5 text-xs opacity-70 hover:opacity-100 transition-opacity">{t('Our Story', 'قصتنا')}</Link>
+              <Link to="/faq"            className="inline-block py-1.5 text-xs opacity-70 hover:opacity-100 transition-opacity">{t('FAQs', 'الأسئلة الشائعة')}</Link>
+              <Link to="/legal/contact"  className="inline-block py-1.5 text-xs opacity-70 hover:opacity-100 transition-opacity">{t('Contact Us', 'تواصل معنا')}</Link>
+              <Link to="/legal/shipping" className="inline-block py-1.5 text-xs opacity-70 hover:opacity-100 transition-opacity">{t('Shipping Policy', 'سياسة الشحن')}</Link>
+              <Link to="/legal/returns"  className="inline-block py-1.5 text-xs opacity-70 hover:opacity-100 transition-opacity">{t('Returns & Exchanges', 'الإرجاع والاستبدال')}</Link>
+              <Link to="/legal/privacy"  className="inline-block py-1.5 text-xs opacity-70 hover:opacity-100 transition-opacity">{t('Privacy Policy', 'سياسة الخصوصية')}</Link>
+              <Link to="/legal/terms"    className="inline-block py-1.5 text-xs opacity-70 hover:opacity-100 transition-opacity">{t('Terms', 'الشروط والأحكام')}</Link>
             </div>
           </div>
         </div>
