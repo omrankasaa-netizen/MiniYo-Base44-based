@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useCart } from '@/contexts/CartContext';
 import { useAuthUser } from '@/contexts/AuthUserContext';
 import { useLang } from '@/contexts/LanguageContext';
@@ -8,6 +8,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { ShoppingBag, CheckCircle2, Tag, X, Loader2, Gift } from 'lucide-react';
 import { validatePromoCode, calcPromoDiscount } from '@/lib/discounts';
 import { useQuery } from '@tanstack/react-query';
+import { track } from '@/lib/pixel';
 
 const ScrollToTop = ({ trigger }) => {
   useEffect(() => {
@@ -196,6 +197,42 @@ export default function CheckoutPage() {
   const totalDiscount = Number(effectivePromoDiscount + effectiveMemberDiscount);
   const effectiveDelivery = isFreeShipping || qualifiesForThreshold ? 0 : deliveryFee;
   const grandTotal = Number((subtotal - totalDiscount + effectiveDelivery).toFixed(2));
+
+  // Meta Pixel InitiateCheckout — fire once when the checkout page opens with a
+  // non-empty cart.
+  const initiateCheckoutFired = useRef(false);
+  useEffect(() => {
+    if (initiateCheckoutFired.current || !items?.length) return;
+    initiateCheckoutFired.current = true;
+    track('InitiateCheckout', {
+      value: Number(subtotal) || 0,
+      currency: 'USD',
+      num_items: items.reduce((s, i) => s + i.quantity, 0),
+      content_ids: items.map(i => i.product.sku || i.product.id),
+      content_type: 'product',
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items?.length]);
+
+  // Meta Pixel Purchase — fire exactly once per completed order. `success` holds
+  // the order number; the ref guards against re-fire on remount/refresh.
+  // The cart is cleared right before `success` is set, so the order total/items
+  // are snapshotted at submit time into refs for the Purchase payload.
+  const purchasedOrderRef = useRef(null);
+  const lastOrderTotal = useRef(0);
+  const lastOrderItems = useRef([]);
+  useEffect(() => {
+    if (!success || purchasedOrderRef.current === success) return;
+    purchasedOrderRef.current = success;
+    track('Purchase', {
+      value: lastOrderTotal.current,
+      currency: 'USD',
+      num_items: lastOrderItems.current.length,
+      content_ids: lastOrderItems.current.map(i => i.product.sku || i.product.id),
+      content_type: 'product',
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [success]);
 
   async function handleApplyPromo() {
     setPromoError('');
@@ -445,6 +482,11 @@ export default function CheckoutPage() {
       } catch (e) {
         console.error('Order notification email failed:', e);
       }
+
+      // Snapshot order total/items for the Pixel Purchase event before the cart
+      // is cleared (which would otherwise zero out the values).
+      lastOrderTotal.current = grandTotal;
+      lastOrderItems.current = items;
 
       clearCart();
       setSuccess(order.order_number);
