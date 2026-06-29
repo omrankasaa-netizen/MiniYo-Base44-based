@@ -12,6 +12,7 @@ import { ReviewList, ReviewForm } from '@/components/storefront/ReviewCard';
 import RelatedProducts from '@/components/storefront/RelatedProducts';
 import { useQueryClient } from '@tanstack/react-query';
 import { normalizeImages, imageSrc, handleImageError } from '@/lib/imageFraming';
+import { track } from '@/lib/pixel';
 
 export default function ProductPage() {
   const { slug } = useParams();
@@ -59,6 +60,19 @@ export default function ProductPage() {
     queryFn: () => base44.entities.Review.filter({ product_id: product.id }, '-created_date', 50),
     enabled: !!product?.id,
   });
+
+  // Meta Pixel ViewContent — fire once each time a product is loaded/changed.
+  useEffect(() => {
+    if (!product?.id) return;
+    track('ViewContent', {
+      content_ids: [product.sku || product.id],
+      content_type: 'product',
+      content_name: product.name,
+      value: parseFloat(product.price_usd) || 0,
+      currency: 'USD',
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [product?.id]);
 
   // Default-select the first in-stock size/color once variants load, so a
   // single-dimension product is immediately addable. Kept above the early

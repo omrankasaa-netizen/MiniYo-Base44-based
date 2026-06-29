@@ -4,6 +4,7 @@ import { queryClientInstance } from '@/lib/query-client';
 import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import ScrollToTop from '@/components/ScrollToTop';
+import PixelPageView from '@/lib/pixel';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import UserNotRegisteredError from '@/components/UserNotRegisteredError';
 import ErrorBoundary from '@/components/ErrorBoundary';
@@ -160,6 +161,7 @@ function App() {
                   <DiscountProvider>
                     <Router>
                       <ScrollToTop />
+                      <PixelPageView />
                       <AuthenticatedApp />
                     </Router>
                     <Toaster />
