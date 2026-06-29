@@ -6,7 +6,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { ShoppingBag, Heart, User, Menu, X } from 'lucide-react';
 import { useCustomerTier } from '@/hooks/useCustomerTier';
 
-const LOGO_URL = 'https://media.base44.com/images/public/user_69bce7a330edaf2341767706/6d0c383f4_MiniYo-final-logo-kit.png';
+const LOGO_URL = '/miniyo-logo.png';
 
 export default function Header() {
   const { lang, toggleLang, t } = useLang();
@@ -34,7 +34,7 @@ export default function Header() {
         <div className="flex items-center justify-between h-16 sm:h-20 gap-4">
           {/* Logo */}
           <Link to="/" className="flex items-center gap-2 shrink-0">
-            <img src="https://media.base44.com/images/public/6a2bffef4e8e1d463ab61be0/95411557c_v2-logo-forbase44.png" alt="MiniYo" className="h-10 sm:h-14 w-auto object-contain" />
+            <img src={LOGO_URL} alt="MiniYo" className="h-10 sm:h-14 w-auto object-contain" />
           </Link>
 
           {/* Desktop nav */}
