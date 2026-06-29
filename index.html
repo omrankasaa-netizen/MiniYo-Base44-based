@@ -32,8 +32,28 @@
     <!-- Robots -->
     <meta name="robots" content="index, follow" />
     <meta name="theme-color" content="#2F5D57" />
+
+    <!-- Meta (Facebook) Pixel — init only. PageView is fired from the React
+         router (src/lib/pixel.js) on first load and every route change, so we do
+         NOT call fbq('track','PageView') here to avoid double-counting. -->
+    <script>
+      !function(f,b,e,v,n,t,s)
+      {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+      n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+      if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+      n.queue=[];t=b.createElement(e);t.async=!0;
+      t.src=v;s=b.getElementsByTagName(e)[0];
+      s.parentNode.insertBefore(t,s)}(window, document,'script',
+      'https://connect.facebook.net/en_US/fbevents.js');
+      fbq('init', '1480243427454221');
+    </script>
+    <!-- End Meta Pixel -->
   </head>
   <body>
+    <!-- Meta Pixel <noscript> fallback -->
+    <noscript><img height="1" width="1" style="display:none"
+      src="https://www.facebook.com/tr?id=1480243427454221&ev=PageView&noscript=1"
+      alt="" /></noscript>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
