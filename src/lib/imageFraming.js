@@ -150,6 +150,41 @@ export function imageSrc(normalized, size = 'card') {
   return cfResize(normalized.url, size);
 }
 
+// Approximate intrinsic widths (CSS px) of each derivative, used as the `w`
+// descriptors in srcset so the browser can pick the smallest sufficient image.
+// R2 derivatives: thumb <=300, card <=600, large <=1600. Single-URL images are
+// resized on the fly by Cloudflare, so their descriptors mirror CF_SIZE_WIDTH.
+const SRCSET_VARIANT_WIDTH = { thumb: 300, card: 600, large: 1600 };
+
+// Sensible default `sizes` strings for each render context. Callers can override.
+export const CARD_SIZES = '(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 220px';
+export const DETAIL_SIZES = '(max-width: 768px) 100vw, 50vw';
+
+// Build a srcset for a normalized image so mobile pulls the right derivative.
+// Prefers the pre-generated R2 variants (free, pixel-crisp); for legacy single
+// URL images it emits Cloudflare-resized candidates. Returns '' when there is
+// nothing useful to offer (caller should just rely on `src`).
+export function imageSrcSet(normalized) {
+  if (!normalized) return '';
+  const v = normalized.variants;
+  const entries = [];
+  if (v) {
+    for (const k of ['thumb', 'card', 'large']) {
+      if (v[k]) entries.push(`${v[k]} ${SRCSET_VARIANT_WIDTH[k]}w`);
+    }
+  } else if (normalized.url && /^https?:\/\//i.test(normalized.url)) {
+    for (const k of ['thumb', 'card', 'large']) {
+      const u = cfResize(normalized.url, k);
+      const w = CF_SIZE_WIDTH[k] || CF_SIZE_WIDTH.card;
+      // Only emit a candidate when resizing actually changed the URL, otherwise
+      // we'd list the same original at several widths (misleading to the browser).
+      if (u !== normalized.url) entries.push(`${u} ${w}w`);
+    }
+  }
+  // A single candidate adds no value over `src`.
+  return entries.length > 1 ? entries.join(', ') : '';
+}
+
 // Normalize a mixed list, dropping any entry without a usable URL so a carousel
 // never renders a blank slide.
 export function normalizeImages(images) {

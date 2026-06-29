@@ -6,7 +6,7 @@ import { useCart } from '@/contexts/CartContext';
 import { useDiscounts } from '@/contexts/DiscountContext';
 import { motion } from 'framer-motion';
 import WishlistHeart from './WishlistHeart';
-import { framingStyle, normalizeImages, imageSrc, handleImageError } from '@/lib/imageFraming';
+import { framingStyle, normalizeImages, imageSrc, imageSrcSet, CARD_SIZES, handleImageError } from '@/lib/imageFraming';
 
 // Renders one framed image inside the 3:4 box, honoring its focal/crop metadata.
 // Cropped images are absolutely sized via `style`; focal-only images fill the box.
@@ -18,6 +18,8 @@ function FramedImage({ image, alt, eager }) {
   return (
     <img
       src={imageSrc(image, 'card')}
+      srcSet={imageSrcSet(image)}
+      sizes={CARD_SIZES}
       alt={alt}
       loading={eager ? 'eager' : 'lazy'}
       decoding="async"
@@ -67,20 +69,22 @@ function ProductCardImage({ images, name, isRTL }) {
 
       {/* Arrows: hidden until hover on desktop, always visible on touch */}
       <button type="button" aria-label="Previous image" onClick={(e) => go(prevDelta, e)}
-        className="absolute top-1/2 -translate-y-1/2 left-2 w-7 h-7 rounded-full bg-white/80 backdrop-blur shadow flex items-center justify-center text-foreground opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity z-10">
-        <ChevronLeft className="w-4 h-4" />
+        className="absolute top-1/2 -translate-y-1/2 left-1 w-11 h-11 rounded-full flex items-center justify-center text-foreground opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity z-10">
+        <span className="w-7 h-7 rounded-full bg-white/80 backdrop-blur shadow flex items-center justify-center"><ChevronLeft className="w-4 h-4" /></span>
       </button>
       <button type="button" aria-label="Next image" onClick={(e) => go(nextDelta, e)}
-        className="absolute top-1/2 -translate-y-1/2 right-2 w-7 h-7 rounded-full bg-white/80 backdrop-blur shadow flex items-center justify-center text-foreground opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity z-10">
-        <ChevronRight className="w-4 h-4" />
+        className="absolute top-1/2 -translate-y-1/2 right-1 w-11 h-11 rounded-full flex items-center justify-center text-foreground opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity z-10">
+        <span className="w-7 h-7 rounded-full bg-white/80 backdrop-blur shadow flex items-center justify-center"><ChevronRight className="w-4 h-4" /></span>
       </button>
 
-      {/* Dots */}
-      <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1.5 opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity z-10">
+      {/* Dots — small visual marker inside a 44px-tall, comfortably wide tap area */}
+      <div className="absolute bottom-0 left-1/2 -translate-x-1/2 flex items-center opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity z-10">
         {images.map((_, i) => (
           <button key={i} type="button" aria-label={`Go to image ${i + 1}`}
             onClick={(e) => { e.preventDefault(); e.stopPropagation(); setIdx(i); }}
-            className={`w-1.5 h-1.5 rounded-full transition-all ${i === idx ? 'bg-white w-4' : 'bg-white/60'}`} />
+            className="h-11 w-6 flex items-center justify-center">
+            <span className={`h-1.5 rounded-full transition-all ${i === idx ? 'bg-white w-4' : 'bg-white/60 w-1.5'}`} />
+          </button>
         ))}
       </div>
     </div>

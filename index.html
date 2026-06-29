@@ -45,6 +45,11 @@
       t.src=v;s=b.getElementsByTagName(e)[0];
       s.parentNode.insertBefore(t,s)}(window, document,'script',
       'https://connect.facebook.net/en_US/fbevents.js');
+      // Consent Mode: revoke BEFORE init so no cookies (_fbp/_fbc) are set and
+      // no events are sent until the visitor accepts the cookie banner. The app
+      // calls fbq('consent','grant') after Accept (and on return visits that
+      // already stored a 'granted' choice in localStorage 'miniyo-consent').
+      fbq('consent', 'revoke');
       fbq('init', '1480243427454221');
     </script>
     <!-- End Meta Pixel -->
