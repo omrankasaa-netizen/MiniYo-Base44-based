@@ -10,14 +10,42 @@ import { isDiscountLive } from '@/lib/discounts';
 
 const EMPTY = { name: '', name_ar: '', type: 'percentage', value: '', applies_to: 'all_products', target: '', starts_at: '', ends_at: '', is_active: true, badge_label: 'SALE', badge_label_ar: 'تخفيض' };
 
+// Convert a datetime-local input value to ISO, guarding against partial/invalid
+// values (an unfinished pick would otherwise throw on toISOString and silently
+// drop the field).
+function datetimeLocalToIso(value) {
+  if (!value) return '';
+  const d = new Date(value);
+  return isNaN(d.getTime()) ? '' : d.toISOString();
+}
+
 function DiscountModal({ initial, onClose, onSave }) {
   const [form, setForm] = useState(initial || EMPTY);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
   const f = (k, v) => setForm(p => ({ ...p, [k]: v }));
   const toDatetimeLocal = (iso) => iso ? iso.slice(0, 16) : '';
+
+  async function submit() {
+    if (!form.name?.trim()) { setError('Name (EN) is required.'); return; }
+    if (!(Number(form.value) > 0)) { setError('Value must be a number greater than 0.'); return; }
+    if (form.starts_at && form.ends_at && new Date(form.ends_at) < new Date(form.starts_at)) {
+      setError('End date must be after the start date.'); return;
+    }
+    setError('');
+    setSaving(true);
+    try {
+      await onSave(form);
+    } catch (e) {
+      setError(e?.message || 'Could not save the discount. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  }
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
       <div className="bg-card rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-6 space-y-4">
-        <h2 className="font-heading font-bold text-lg">{form.id ? 'Edit Discount' : 'New Auto-Discount'}</h2>
+        <h2 className="font-heading font-bold text-lg">{(form.id || form._id) ? 'Edit Discount' : 'New Auto-Discount'}</h2>
         <div className="grid grid-cols-2 gap-3">
           <div className="col-span-2">
             <label className="text-xs text-muted-foreground mb-1 block">Name (EN) *</label>
@@ -66,20 +94,21 @@ function DiscountModal({ initial, onClose, onSave }) {
           )}
           <div>
             <label className="text-xs text-muted-foreground mb-1 block">Starts At</label>
-            <input type="datetime-local" value={toDatetimeLocal(form.starts_at)} onChange={e=>f('starts_at',e.target.value?new Date(e.target.value).toISOString():'')} className="w-full px-3 py-2 rounded-xl border border-input bg-background text-sm" />
+            <input type="datetime-local" value={toDatetimeLocal(form.starts_at)} onChange={e=>f('starts_at',datetimeLocalToIso(e.target.value))} className="w-full px-3 py-2 rounded-xl border border-input bg-background text-sm" />
           </div>
           <div>
             <label className="text-xs text-muted-foreground mb-1 block">Ends At</label>
-            <input type="datetime-local" value={toDatetimeLocal(form.ends_at)} onChange={e=>f('ends_at',e.target.value?new Date(e.target.value).toISOString():'')} className="w-full px-3 py-2 rounded-xl border border-input bg-background text-sm" />
+            <input type="datetime-local" value={toDatetimeLocal(form.ends_at)} onChange={e=>f('ends_at',datetimeLocalToIso(e.target.value))} className="w-full px-3 py-2 rounded-xl border border-input bg-background text-sm" />
           </div>
           <div className="col-span-2 flex items-center gap-2">
             <input type="checkbox" id="disc_active" checked={!!form.is_active} onChange={e=>f('is_active',e.target.checked)} className="rounded" />
             <label htmlFor="disc_active" className="text-sm text-foreground">Active</label>
           </div>
         </div>
+        {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
         <div className="flex gap-3 pt-2">
-          <button onClick={onClose} className="flex-1 py-2 rounded-xl border border-border text-sm">Cancel</button>
-          <button onClick={()=>onSave(form)} className="flex-1 py-2 bg-primary text-primary-foreground rounded-xl text-sm font-semibold">Save</button>
+          <button onClick={onClose} disabled={saving} className="flex-1 py-2 rounded-xl border border-border text-sm disabled:opacity-60">Cancel</button>
+          <button onClick={submit} disabled={saving} className="flex-1 py-2 bg-primary text-primary-foreground rounded-xl text-sm font-semibold disabled:opacity-60">{saving ? 'Saving…' : 'Save'}</button>
         </div>
       </div>
     </div>
@@ -98,31 +127,53 @@ export default function DiscountsPage() {
 
   if (!canAccess('manage_discounts')) return <AdminLayout><AccessDenied /></AdminLayout>;
 
+  // Records carry both `id` and `_id` (legacy alias). Always resolve a usable
+  // identifier so update/delete never hit /entities/Discount/undefined.
+  const discountId = (d) => d?.id || d?._id;
+
+  async function refreshDiscounts() {
+    await Promise.all([
+      qc.invalidateQueries({ queryKey: ['all-discounts'] }),
+      qc.invalidateQueries({ queryKey: ['active-discounts'] }),
+    ]);
+  }
+
+  // Throws on failure so the modal can surface the error and stay open. The
+  // modal is only closed once the write and the list refresh have succeeded.
   async function handleSave(form) {
+    const id = discountId(form);
     const data = { ...form, value: Number(form.value) || 0 };
-    if (form.id) {
-      await base44.entities.Discount.update(form.id, data);
-      await logAction({ action: 'updated', entity: 'Discount', entity_id: form.id, details: form.name, userName: currentUser?.email });
+    if (id) {
+      await base44.entities.Discount.update(id, data);
+      await logAction({ action: 'updated', entity: 'Discount', entityId: id, userName: currentUser?.email });
     } else {
       await base44.entities.Discount.create(data);
-      await logAction({ action: 'created', entity: 'Discount', details: form.name, userName: currentUser?.email });
+      await logAction({ action: 'created', entity: 'Discount', userName: currentUser?.email });
     }
-    qc.invalidateQueries({ queryKey: ['all-discounts'] });
-    qc.invalidateQueries({ queryKey: ['active-discounts'] });
+    await refreshDiscounts();
     setModal(null);
   }
 
   async function toggleActive(d) {
-    await base44.entities.Discount.update(d.id, { is_active: !d.is_active });
-    qc.invalidateQueries({ queryKey: ['all-discounts'] });
-    qc.invalidateQueries({ queryKey: ['active-discounts'] });
+    const id = discountId(d);
+    try {
+      await base44.entities.Discount.update(id, { is_active: !d.is_active });
+      await refreshDiscounts();
+    } catch (e) {
+      alert(`Could not update the discount: ${e?.message || e}`);
+    }
   }
 
   async function handleDelete(d) {
     if (!confirm(`Delete discount "${d.name}"?`)) return;
-    await base44.entities.Discount.delete(d.id);
-    qc.invalidateQueries({ queryKey: ['all-discounts'] });
-    qc.invalidateQueries({ queryKey: ['active-discounts'] });
+    const id = discountId(d);
+    try {
+      await base44.entities.Discount.delete(id);
+      await logAction({ action: 'deleted', entity: 'Discount', entityId: id, userName: currentUser?.email });
+      await refreshDiscounts();
+    } catch (e) {
+      alert(`Could not delete the discount: ${e?.message || e}`);
+    }
   }
 
   const now = new Date();
@@ -175,7 +226,7 @@ export default function DiscountsPage() {
                 {discounts.map(d => {
                   const st = discStatus(d);
                   return (
-                    <tr key={d.id} className="hover:bg-muted/20 transition-colors">
+                    <tr key={discountId(d)} className="hover:bg-muted/20 transition-colors">
                       <td className="px-4 py-3">
                         <p className="font-semibold text-foreground">{d.name}</p>
                         {d.name_ar && <p className="text-xs text-muted-foreground" dir="rtl">{d.name_ar}</p>}
