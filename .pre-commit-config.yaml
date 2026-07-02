@@ -1,0 +1,12 @@
+# Optional local pre-commit hooks. Not required, but recommended.
+# Install once with:
+#   pip install pre-commit
+#   pre-commit install
+# Then gitleaks runs automatically on every `git commit`.
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.18.4
+    hooks:
+      - id: gitleaks
+        name: Detect hardcoded secrets (gitleaks)
+        args: ["--config", ".gitleaks.toml"]

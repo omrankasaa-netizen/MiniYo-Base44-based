@@ -49,7 +49,8 @@ npm run dev          # Vite on :5173, proxies /api and /uploads to :4000
 
 On first boot the server seeds:
 
-- **Super admin** — `admin@miniyo.store` / `REDACTED_PASSWORD` (role `super_admin`)
+- **Super admin** — `admin@miniyo.store` / password from `MINIYO_ADMIN_PASSWORD`
+  (`<set-a-strong-password>`; change it immediately after first login) (role `super_admin`)
 - **MembershipSettings** singleton — Bronze 2 credits / 5%, Silver $100 → 4 / 10%,
   Gold $250 → 6 / 15%
 - **SiteSetting** rows — `free_shipping_threshold=50`, `payment_cod_enabled=true`, …

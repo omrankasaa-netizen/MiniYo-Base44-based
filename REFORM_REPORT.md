@@ -143,5 +143,5 @@ screen with order number `MNY-74602`. The only console output is expected guest
 ```bash
 npm install
 npm run serve     # build + start on :4000
-# admin: admin@miniyo.store / REDACTED_PASSWORD
+# admin: admin@miniyo.store / password from MINIYO_ADMIN_PASSWORD (<set-a-strong-password>, change after first login)
 ```

@@ -65,10 +65,15 @@ function normPipe(v) {
 
 function seedAdmin() {
   const email = 'admin@miniyo.store';
+  // Initial super-admin password. Set MINIYO_ADMIN_PASSWORD in the environment
+  // (Railway variables) before first boot. The fallback below is a documented
+  // default used ONLY when the env var is unset and MUST be changed immediately
+  // after first login. See SECURITY.md.
+  const password = process.env.MINIYO_ADMIN_PASSWORD || 'change-me-on-first-login';
   if (!findUserByEmail(email)) {
     registerUser({
       email,
-      password: 'REDACTED_PASSWORD',
+      password,
       full_name: 'MiniYo Super Admin',
       role: 'super_admin',
     });
