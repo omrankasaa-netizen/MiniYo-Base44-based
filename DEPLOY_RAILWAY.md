@@ -42,13 +42,17 @@ In your Railway service → **Variables**, add:
 | Variable | Value |
 |---|---|
 | `MINIYO_DB_PATH` | `/data/data.db` |
-| `RESEND_API_KEY` | `re_REDACTED_ROTATED` |
+| `RESEND_API_KEY` | `re_your_resend_api_key` |
 | `MINIYO_EMAIL_FROM` | `MiniYo <management@mail.miniyokids.com>` |
+| `MINIYO_ADMIN_PASSWORD` | `<set-a-strong-password>` |
+| `MINIYO_JWT_SECRET` | `<set-a-long-random-secret>` |
 
 Do **not** set `PORT` — Railway injects it automatically and the server reads it.
 
-> Security note: this Resend key was shared in chat. When convenient, generate a fresh key
-> in the Resend dashboard and replace `RESEND_API_KEY` here. Never put the key in the repo.
+> Security note: generate your Resend API key in the Resend dashboard and paste the real
+> value **only** into this Railway variable — never commit it to the repo. `MINIYO_JWT_SECRET`
+> must be set to a long random value in production (the code falls back to a dev-only
+> placeholder if unset). Set `MINIYO_ADMIN_PASSWORD` to seed the initial super-admin login.
 
 ---
 
@@ -58,8 +62,9 @@ Do **not** set `PORT` — Railway injects it automatically and the server reads 
    `MiniYo server listening`.
 2. Open the generated `*.up.railway.app` URL. Check:
    - Storefront loads, products show.
-   - `/admin/login` → sign in with `admin@miniyo.store` / `REDACTED_PASSWORD`
-     (change this password immediately after first login).
+   - `/admin/login` → sign in with `admin@miniyo.store` / the password you set in
+     `MINIYO_ADMIN_PASSWORD` (`<set-a-strong-password>`), then change it immediately
+     after first login.
    - WhatsApp floating button and footer social links work.
 
 ---

@@ -1,0 +1,27 @@
+# gitleaks configuration for MiniYo
+# Extends the default gitleaks ruleset (Resend, JWT, generic API keys, etc.)
+# and adds project-specific allowlisting for placeholder values.
+[extend]
+useDefault = true
+
+[[rules]]
+id = "resend-api-key"
+description = "Resend API key"
+regex = '''re_[A-Za-z0-9_]{16,}'''
+keywords = ["re_"]
+
+[allowlist]
+description = "Allowlisted paths and placeholder values that are safe by design"
+paths = [
+  '''\.env\.example$''',
+  '''\.gitleaks\.toml$''',
+]
+regexes = [
+  # Documentation placeholders — not real secrets.
+  '''re_your_resend_api_key''',
+  '''re_REDACTED_ROTATED''',
+  '''<set-a-strong-password>''',
+  '''<set-a-long-random-secret>''',
+  '''change-me-on-first-login''',
+  '''miniyo-dev-secret-change-me''',
+]
