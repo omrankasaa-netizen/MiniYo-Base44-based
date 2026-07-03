@@ -10,24 +10,26 @@
 // Pure functions only, so they stay testable (see tests/filterNormalize.test.js).
 
 // ── Fixed display orders (never alphabetical) ────────────────────────────────
-export const SIZE_BUCKETS = ['0-3M', '3-6M', '6-12M', '12-24M', '2-3Y'];
+export const SIZE_BUCKETS = ['0-3M', '3-6M', '6-12M', '12-24M', '24-36M', '2-3Y'];
 export const AGE_BUCKETS = ['Newborn', 'Toddler'];
 export const GENDER_BUCKETS = ['Girls', 'Boys'];
 
 // ── SIZE ─────────────────────────────────────────────────────────────────────
 // Each raw token maps to one clean bucket. Broad spans map to EVERY bucket they
 // cover, so a product tagged with a wide range still appears under each relevant
-// age range. Non-clothing tokens (packs, blanket dimensions, EU cm sizing,
-// "One size", "Assorted") map to NOTHING and are excluded from the size facet.
+// age range. EU cm sizes (50-56, 56-62) are real clothing sizes and DO map.
+// Non-clothing tokens (packs, blanket dimensions, "One size", "Assorted") map to
+// NOTHING and are excluded from the size facet.
 const SIZE_TOKEN_MAP = {
   // 0-3M
   '0-1m': ['0-3M'],
   '0-3m': ['0-3M'],
   '1-3m': ['0-3M'],
-  '0-1y': ['0-3M'],
+  '50-56': ['0-3M'], // EU 50-56cm ≈ newborn/0-3M
   // 3-6M
   '3-6m': ['3-6M'],
   '0-6m': ['3-6M'],
+  '56-62': ['3-6M'], // EU 56-62cm ≈ 3-6M
   // 6-12M
   '6-9m': ['6-12M'],
   '9-12m': ['6-12M'],
@@ -36,21 +38,22 @@ const SIZE_TOKEN_MAP = {
   '12-18m': ['12-24M'],
   '18-24m': ['12-24M'],
   '12-24m': ['12-24M'],
-  '24-36m': ['12-24M'],
+  // 24-36M
+  '24-36m': ['24-36M'],
   // 2-3Y
   '1-2y': ['2-3Y'],
   '2-3y': ['2-3Y'],
   // Broad spans → every overlapping bucket (0-18M ≈ NB→18mo, ends in 12-24M;
-  // NB-0m to 6-9m ≈ NB→9mo, ends in 6-12M).
+  // NB-0m to 6-9m ≈ NB→9mo, ends in 6-12M; 0-1Y ≈ NB→12mo, ends in 6-12M).
   '0-18m': ['0-3M', '3-6M', '6-12M', '12-24M'],
   'nb-0m to 6-9m': ['0-3M', '3-6M', '6-12M'],
+  '0-1y': ['0-3M', '3-6M', '6-12M'],
 };
 
 // Tokens explicitly excluded from the size facet (not clothing sizes).
 const SIZE_EXCLUDE = new Set([
   '5-pack', '7-pack',
   '77x90 cm', '90x90 cm', '80x85+85x90 cm',
-  '50-56', '56-62',
   'one size', 'assorted',
 ]);
 
@@ -143,6 +146,7 @@ export const SIZE_LABELS_AR = {
   '3-6M': '3-6 شهور',
   '6-12M': '6-12 شهر',
   '12-24M': '12-24 شهر',
+  '24-36M': '24-36 شهر',
   '2-3Y': '2-3 سنوات',
 };
 
