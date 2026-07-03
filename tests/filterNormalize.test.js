@@ -24,7 +24,6 @@ test('sizeTokenToBuckets: single tokens map to the right bucket', () => {
   assert.deepEqual(sizeTokenToBuckets('0-1M'), ['0-3M']);
   assert.deepEqual(sizeTokenToBuckets('0-3M'), ['0-3M']);
   assert.deepEqual(sizeTokenToBuckets('1-3M'), ['0-3M']);
-  assert.deepEqual(sizeTokenToBuckets('0-1Y'), ['0-3M']);
   assert.deepEqual(sizeTokenToBuckets('3-6M'), ['3-6M']);
   assert.deepEqual(sizeTokenToBuckets('0-6M'), ['3-6M']);
   assert.deepEqual(sizeTokenToBuckets('6-9M'), ['6-12M']);
@@ -33,9 +32,19 @@ test('sizeTokenToBuckets: single tokens map to the right bucket', () => {
   assert.deepEqual(sizeTokenToBuckets('12-18M'), ['12-24M']);
   assert.deepEqual(sizeTokenToBuckets('18-24M'), ['12-24M']);
   assert.deepEqual(sizeTokenToBuckets('12-24M'), ['12-24M']);
-  assert.deepEqual(sizeTokenToBuckets('24-36M'), ['12-24M']);
   assert.deepEqual(sizeTokenToBuckets('1-2Y'), ['2-3Y']);
   assert.deepEqual(sizeTokenToBuckets('2-3Y'), ['2-3Y']);
+});
+
+// ── SIZE: regression for the reported 24-36M bug ─────────────────────────────
+test('sizeTokenToBuckets: 24-36M maps to its own 24-36M bucket', () => {
+  assert.deepEqual(sizeTokenToBuckets('24-36M'), ['24-36M']);
+});
+
+// ── SIZE: EU cm sizes are real clothing sizes and map ────────────────────────
+test('sizeTokenToBuckets: EU cm sizes map into month buckets', () => {
+  assert.deepEqual(sizeTokenToBuckets('50-56'), ['0-3M']);
+  assert.deepEqual(sizeTokenToBuckets('56-62'), ['3-6M']);
 });
 
 test('sizeTokenToBuckets: case-insensitive and trims whitespace', () => {
@@ -47,14 +56,46 @@ test('sizeTokenToBuckets: case-insensitive and trims whitespace', () => {
 test('sizeTokenToBuckets: broad spans expand across buckets', () => {
   assert.deepEqual(sizeTokenToBuckets('0-18M'), ['0-3M', '3-6M', '6-12M', '12-24M']);
   assert.deepEqual(sizeTokenToBuckets('NB-0m to 6-9m'), ['0-3M', '3-6M', '6-12M']);
+  assert.deepEqual(sizeTokenToBuckets('0-1Y'), ['0-3M', '3-6M', '6-12M']);
 });
 
 // ── SIZE: excluded / unknown tokens ──────────────────────────────────────────
 test('sizeTokenToBuckets: excludes non-clothing tokens', () => {
   for (const t of ['5-pack', '7-pack', '77x90 cm', '90x90 cm',
-    '80x85+85x90 cm', '50-56', '56-62', 'One size', 'Assorted']) {
+    '80x85+85x90 cm', 'One size', 'Assorted']) {
     assert.deepEqual(sizeTokenToBuckets(t), [], `${t} should map to nothing`);
   }
+});
+
+// ── SIZE: full live inventory coverage — no clothing token falls through ─────
+// The 26 raw size tokens verified across all 95 live products. Only the 8
+// non-clothing tokens may be unmatched; every clothing token MUST map somewhere.
+test('sizeTokenToBuckets: no live clothing token falls through to unmatched', () => {
+  const CLOTHING_TOKENS = [
+    '0-1M', '0-3M', '1-3M', '0-6M', '3-6M', '6-9M', '9-12M', '6-12M',
+    '12-18M', '18-24M', '12-24M', '24-36M', '1-2Y', '2-3Y', '0-1Y',
+    '0-18M', 'NB-0m to 6-9m', '50-56', '56-62',
+  ];
+  const NON_CLOTHING_TOKENS = [
+    '5-pack', '7-pack', 'One size', 'Assorted',
+    '77x90 cm', '90x90 cm', '80x85+85x90 cm',
+  ];
+  for (const t of CLOTHING_TOKENS) {
+    assert.ok(sizeTokenToBuckets(t).length > 0, `${t} must map to at least one bucket`);
+    // Every produced bucket must be a real, displayable bucket.
+    for (const b of sizeTokenToBuckets(t)) {
+      assert.ok(SIZE_BUCKETS.includes(b), `${t} produced unknown bucket ${b}`);
+    }
+  }
+  for (const t of NON_CLOTHING_TOKENS) {
+    assert.deepEqual(sizeTokenToBuckets(t), [], `${t} must be unmatched`);
+  }
+  // Every one of the 6 buckets is reachable from the live clothing inventory.
+  const reached = new Set();
+  for (const t of CLOTHING_TOKENS) {
+    for (const b of sizeTokenToBuckets(t)) reached.add(b);
+  }
+  assert.deepEqual([...SIZE_BUCKETS].filter(b => reached.has(b)), SIZE_BUCKETS);
 });
 
 test('sizeTokenToBuckets: unknown tokens fall back to nothing', () => {
@@ -123,7 +164,7 @@ test('availableGenderBuckets: Girls/Boys only, fixed order', () => {
 
 // ── Sanity on the exported orders ────────────────────────────────────────────
 test('bucket orders are the canonical fixed orders', () => {
-  assert.deepEqual(SIZE_BUCKETS, ['0-3M', '3-6M', '6-12M', '12-24M', '2-3Y']);
+  assert.deepEqual(SIZE_BUCKETS, ['0-3M', '3-6M', '6-12M', '12-24M', '24-36M', '2-3Y']);
   assert.deepEqual(AGE_BUCKETS, ['Newborn', 'Toddler']);
   assert.deepEqual(GENDER_BUCKETS, ['Girls', 'Boys']);
 });
