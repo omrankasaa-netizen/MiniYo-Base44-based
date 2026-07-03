@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useLang } from '@/contexts/LanguageContext';
 import { useDiscounts } from '@/contexts/DiscountContext';
@@ -6,6 +6,17 @@ import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import ProductCard from '@/components/storefront/ProductCard';
 import { buildImagesByProduct } from '@/lib/imageFraming';
+import {
+  productSizeBuckets,
+  normalizeAge,
+  genderMatchBuckets,
+  availableSizeBuckets,
+  availableAgeBuckets,
+  availableGenderBuckets,
+  SIZE_LABELS_AR,
+  AGE_LABELS_AR,
+  GENDER_LABELS_AR,
+} from '@/lib/filterNormalize';
 import { SlidersHorizontal, X, Search, ChevronDown, ChevronUp } from 'lucide-react';
 
 // ── URL state helpers ──────────────────────────────────────────────────────────
@@ -30,28 +41,6 @@ function useUrlFilters() {
   function clear() { navigate({ search: '' }, { replace: true }); }
 
   return { get, getArr, set, clear, params };
-}
-
-// ── Color swatch component ─────────────────────────────────────────────────────
-const COLOR_HEX = {
-  White: '#FFFFFF', Black: '#222222', Pink: '#F9A8D4', Blue: '#93C5FD',
-  Sage: '#7FA99B', Cream: '#FAF7F2', Blush: '#E8C7C4', Yellow: '#FDE68A',
-  Red: '#FCA5A5', Navy: '#1E3A5F', Grey: '#D1D5DB', Green: '#86EFAC',
-  Brown: '#D97706', Purple: '#C4B5FD', Orange: '#FDBA74', Lilac: '#DDD6FE',
-};
-
-function ColorSwatch({ color, active, onClick }) {
-  const hex = COLOR_HEX[color] || '#999';
-  const isDark = ['Black', 'Navy'].includes(color);
-  return (
-    <button onClick={onClick} title={color}
-      className={`w-7 h-7 rounded-full border-2 transition-all ${active ? 'border-foreground scale-110' : 'border-transparent hover:border-muted-foreground'}`}
-      style={{ backgroundColor: hex, boxShadow: isDark && !active ? '0 0 0 1px #ccc' : undefined }}>
-      {active && (
-        <span className={`flex items-center justify-center w-full h-full text-xs font-bold ${isDark ? 'text-white' : 'text-foreground/70'}`}>✓</span>
-      )}
-    </button>
-  );
 }
 
 // ── Price slider ───────────────────────────────────────────────────────────────
@@ -115,7 +104,6 @@ export default function ShopPage() {
   const filterGender = get('gender');
   const filterAge = get('age');
   const filterSizes = getArr('sizes');
-  const filterColors = getArr('colors');
   const filterCollection = get('collection');
   const filterOnSale = get('sale') === '1';
   const filterInStock = get('stock') === '1';
@@ -188,18 +176,11 @@ export default function ShopPage() {
     return Math.min(m, 500);
   }, [products]);
 
-  // Derive available sizes/colors from actual product data
-  const availableSizes = useMemo(() => {
-    const s = new Set();
-    for (const p of products) { if (p.sizes) p.sizes.split('|').forEach(x => x.trim() && s.add(x.trim())); }
-    return [...s].sort();
-  }, [products]);
-
-  const availableColors = useMemo(() => {
-    const s = new Set();
-    for (const p of products) { if (p.colors) p.colors.split('|').forEach(x => x.trim() && s.add(x.trim())); }
-    return [...s].sort();
-  }, [products]);
+  // Derive available filter options from NORMALIZED buckets (fixed logical
+  // order, no ghost/empty buckets). Color facet intentionally removed.
+  const availableSizes = useMemo(() => availableSizeBuckets(products), [products]);
+  const availableAges = useMemo(() => availableAgeBuckets(products), [products]);
+  const availableGenders = useMemo(() => availableGenderBuckets(products), [products]);
 
   // Enrich products with images and stock
   const enriched = useMemo(() => products.map(p => {
@@ -229,19 +210,18 @@ export default function ShopPage() {
         if (!isInCategory) return false;
       }
       if (filterSubcategory && p.subcategory_id !== filterSubcategory) return false;
-      if (filterGender && p.gender !== filterGender) return false;
-      if (filterAge && p.age_group !== filterAge) return false;
+      // Gender: Unisex products surface under both Girls and Boys.
+      if (filterGender && !genderMatchBuckets(p.gender).includes(filterGender)) return false;
+      // Age: raw "Baby" normalizes to Newborn; "Kids" is dropped.
+      if (filterAge && normalizeAge(p.age_group) !== filterAge) return false;
       if (filterCollection) {
         const ids = (p.collection_ids || '').split(',').map(s => s.trim());
         if (!ids.includes(filterCollection) && p.collection_id !== filterCollection) return false;
       }
       if (filterSizes.length > 0) {
-        const pSizes = (p.sizes || '').split('|').map(s => s.trim());
-        if (!filterSizes.some(s => pSizes.includes(s))) return false;
-      }
-      if (filterColors.length > 0) {
-        const pColors = (p.colors || '').split('|').map(c => c.trim());
-        if (!filterColors.some(c => pColors.includes(c))) return false;
+        // A product matches if ANY of its size tokens maps to a selected bucket.
+        const pBuckets = productSizeBuckets(p.sizes);
+        if (!filterSizes.some(s => pBuckets.includes(s))) return false;
       }
       if (filterOnSale && !isOnSale(p)) return false;
       if (filterInStock && p.totalStock <= 0) return false;
@@ -258,7 +238,7 @@ export default function ShopPage() {
       default: list = [...list].sort((a, b) => new Date(b.created_date) - new Date(a.created_date)); break;
     }
     return list;
-  }, [enriched, search, filterCategory, filterSubcategory, filterGender, filterAge, filterCollection, filterSizes, filterColors, filterOnSale, filterInStock, filterPriceMin, filterPriceMax, filterSort, liveDiscounts]);
+  }, [enriched, search, filterCategory, filterSubcategory, filterGender, filterAge, filterCollection, filterSizes, filterOnSale, filterInStock, filterPriceMin, filterPriceMax, filterSort, liveDiscounts]);
 
   // Active filter chips
   const activeChips = useMemo(() => {
@@ -272,24 +252,22 @@ export default function ShopPage() {
       const cat = catMap[filterSubcategory];
       chips.push({ label: `Sub: ${cat ? (lang === 'ar' ? (cat.name_ar || cat.name) : cat.name) : filterSubcategory}`, key: 'sub' });
     }
-    if (filterGender) chips.push({ label: filterGender, key: 'gender' });
-    if (filterAge) chips.push({ label: filterAge, key: 'age' });
+    if (filterGender) chips.push({ label: lang === 'ar' ? (GENDER_LABELS_AR[filterGender] || filterGender) : filterGender, key: 'gender' });
+    if (filterAge) chips.push({ label: lang === 'ar' ? (AGE_LABELS_AR[filterAge] || filterAge) : filterAge, key: 'age' });
     if (filterCollection) {
       const col = collectionMap[filterCollection];
       chips.push({ label: `Collection: ${col ? (lang === 'ar' ? (col.name_ar || col.name) : col.name) : filterCollection}`, key: 'collection' });
     }
-    filterSizes.forEach(s => chips.push({ label: `Size: ${s}`, key: 'sizes', val: s, isArr: true }));
-    filterColors.forEach(c => chips.push({ label: `Color: ${c}`, key: 'colors', val: c, isArr: true }));
+    filterSizes.forEach(s => chips.push({ label: `${t('Size', 'المقاس')}: ${lang === 'ar' ? (SIZE_LABELS_AR[s] || s) : s}`, key: 'sizes', val: s, isArr: true }));
     if (filterOnSale) chips.push({ label: t('On Sale', 'تخفيضات'), key: 'sale' });
     if (filterInStock) chips.push({ label: t('In Stock', 'متوفر'), key: 'stock' });
     if (filterPriceMin > 0 || filterPriceMax < maxPrice) chips.push({ label: `$${filterPriceMin}–$${filterPriceMax}`, key: 'price' });
     return chips;
-  }, [search, filterCategory, filterSubcategory, filterGender, filterAge, filterCollection, filterSizes, filterColors, filterOnSale, filterInStock, filterPriceMin, filterPriceMax, maxPrice, catMap, collectionMap, lang]);
+  }, [search, filterCategory, filterSubcategory, filterGender, filterAge, filterCollection, filterSizes, filterOnSale, filterInStock, filterPriceMin, filterPriceMax, maxPrice, catMap, collectionMap, lang]);
 
   function removeChip(chip) {
     if (chip.isArr) {
-      const current = chip.key === 'sizes' ? filterSizes : filterColors;
-      set({ [chip.key]: current.filter(v => v !== chip.val) });
+      set({ [chip.key]: filterSizes.filter(v => v !== chip.val) });
     } else if (chip.key === 'price') {
       set({ pmin: '', pmax: '' });
     } else {
@@ -333,47 +311,39 @@ export default function ShopPage() {
           </div>
         </FilterSection>
 
-        {/* Gender */}
-        <FilterSection title={t('Gender', 'الجنس')}>
-          {['Girls', 'Boys', 'Unisex'].map(g => (
-            <button key={g} onClick={() => set({ gender: filterGender === g ? '' : g })}
-              className={`w-full text-left text-sm px-2 py-1 rounded-lg transition-colors ${filterGender === g ? 'text-primary font-semibold bg-primary/5' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}`}>
-              {t(g, g === 'Girls' ? 'بنات' : g === 'Boys' ? 'أولاد' : 'للجنسين')}
-            </button>
-          ))}
-        </FilterSection>
+        {/* Gender (Girls / Boys only; Unisex surfaces under both) */}
+        {availableGenders.length > 0 && (
+          <FilterSection title={t('Gender', 'الجنس')}>
+            {availableGenders.map(g => (
+              <button key={g} onClick={() => set({ gender: filterGender === g ? '' : g })}
+                className={`w-full text-left text-sm px-2 py-1 rounded-lg transition-colors ${filterGender === g ? 'text-primary font-semibold bg-primary/5' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}`}>
+                {t(g, GENDER_LABELS_AR[g] || g)}
+              </button>
+            ))}
+          </FilterSection>
+        )}
 
-        {/* Age */}
-        <FilterSection title={t('Age Group', 'الفئة العمرية')}>
-          {['Newborn', 'Baby', 'Toddler', 'Kids'].map(a => (
-            <button key={a} onClick={() => set({ age: filterAge === a ? '' : a })}
-              className={`w-full text-left text-sm px-2 py-1 rounded-lg transition-colors ${filterAge === a ? 'text-primary font-semibold bg-primary/5' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}`}>
-              {t(a, a === 'Newborn' ? 'حديث الولادة' : a === 'Baby' ? 'رضيع' : a === 'Toddler' ? 'صغير' : 'أطفال')}
-            </button>
-          ))}
-        </FilterSection>
+        {/* Age (Newborn / Toddler only) */}
+        {availableAges.length > 0 && (
+          <FilterSection title={t('Age Group', 'الفئة العمرية')}>
+            {availableAges.map(a => (
+              <button key={a} onClick={() => set({ age: filterAge === a ? '' : a })}
+                className={`w-full text-left text-sm px-2 py-1 rounded-lg transition-colors ${filterAge === a ? 'text-primary font-semibold bg-primary/5' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}`}>
+                {t(a, AGE_LABELS_AR[a] || a)}
+              </button>
+            ))}
+          </FilterSection>
+        )}
 
-        {/* Sizes */}
+        {/* Sizes (clean clothing buckets, fixed age order) */}
         {availableSizes.length > 0 && (
           <FilterSection title={t('Size', 'المقاس')}>
             <div className="flex flex-wrap gap-1.5">
               {availableSizes.map(s => (
                 <button key={s} onClick={() => set({ sizes: filterSizes.includes(s) ? filterSizes.filter(x => x !== s) : [...filterSizes, s] })}
                   className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${filterSizes.includes(s) ? 'bg-primary text-primary-foreground border-primary' : 'border-border text-muted-foreground hover:border-primary hover:text-primary'}`}>
-                  {s}
+                  {t(s, SIZE_LABELS_AR[s] || s)}
                 </button>
-              ))}
-            </div>
-          </FilterSection>
-        )}
-
-        {/* Colors */}
-        {availableColors.length > 0 && (
-          <FilterSection title={t('Color', 'اللون')}>
-            <div className="flex flex-wrap gap-2 pt-0.5">
-              {availableColors.map(c => (
-                <ColorSwatch key={c} color={c} active={filterColors.includes(c)}
-                  onClick={() => set({ colors: filterColors.includes(c) ? filterColors.filter(x => x !== c) : [...filterColors, c] })} />
               ))}
             </div>
           </FilterSection>
