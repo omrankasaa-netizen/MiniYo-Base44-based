@@ -21,6 +21,7 @@ import { runSeed } from './seed.js';
 import { repairDuplicateSlugs } from './repairSlugs.js';
 import { getStorage } from './storage.js';
 import { optimizeAndStore, bufferFromBase64 } from './imageOptimize.js';
+import { getProductBySlug, injectProductMeta } from './productMeta.js';
 
 // Build the verification-code email HTML.
 function otpEmailHtml(code) {
@@ -414,8 +415,28 @@ if (fs.existsSync(DIST)) {
   });
 
   app.use(express.static(DIST));
+
+  // Server-inject per-product structured data for product detail pages so
+  // Meta's non-JS crawler / Pixel catalog scanner sees per-product OG product
+  // tags + JSON-LD (id, price, availability). Registered before the SPA
+  // fallback; unknown slugs fall through to the plain shell (the SPA renders
+  // its own not-found state). Best-effort — any read/inject error degrades to
+  // serving the untouched shell so the page always loads.
+  const INDEX_HTML = path.join(DIST, 'index.html');
+  app.get('/product/:slug', (req, res, next) => {
+    try {
+      const product = getProductBySlug(req.params.slug);
+      if (!product) return next();
+      const template = fs.readFileSync(INDEX_HTML, 'utf8');
+      res.type('html').send(injectProductMeta(template, product));
+    } catch (e) {
+      console.error('[productMeta] inject failed:', e?.message);
+      next();
+    }
+  });
+
   app.get(/^(?!\/api\/).*/, (req, res) => {
-    res.sendFile(path.join(DIST, 'index.html'));
+    res.sendFile(INDEX_HTML);
   });
 } else {
   app.get('/', (req, res) => {
