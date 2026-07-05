@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 import { isDiscountLive, getEffectiveUnitPrice } from '@/lib/discounts';
 import { track } from '@/lib/pixel';
+import { safeLocalStorage } from '@/lib/safeStorage';
 
 const CartContext = createContext();
 const STORAGE_KEY = 'miniyo-cart';
@@ -10,10 +11,11 @@ const STORAGE_KEY = 'miniyo-cart';
 function loadCart() {
   if (typeof window === 'undefined') return [];
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = safeLocalStorage.getItem(STORAGE_KEY);
     const parsed = raw ? JSON.parse(raw) : [];
     return Array.isArray(parsed) ? parsed : [];
   } catch {
+    // JSON.parse guard — safeLocalStorage itself never throws.
     return [];
   }
 }
@@ -23,11 +25,9 @@ export function CartProvider({ children }) {
   const [isOpen, setIsOpen] = useState(false);
 
   useEffect(() => {
-    try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
-    } catch {
-      /* storage unavailable (private mode / quota) — cart stays in memory */
-    }
+    // safeLocalStorage no-ops (keeps the cart in an in-memory shim) when storage
+    // is unavailable — private mode, quota, or a blocked in-app WebView.
+    safeLocalStorage.setItem(STORAGE_KEY, JSON.stringify(items));
   }, [items]);
 
   function getKey(product, variant) {

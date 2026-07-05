@@ -1,10 +1,13 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { safeLocalStorage } from '@/lib/safeStorage';
 
 const LanguageContext = createContext();
 
 export function LanguageProvider({ children }) {
+  // Runs during render — must never throw (FB/IG in-app WebView can throw on
+  // storage access), so it goes through the safe helper.
   const [lang, setLang] = useState(() => {
-    return localStorage.getItem('miniyo-lang') || 'en';
+    return safeLocalStorage.getItem('miniyo-lang') || 'en';
   });
 
   const isRTL = lang === 'ar';
@@ -13,7 +16,7 @@ export function LanguageProvider({ children }) {
     const html = document.documentElement;
     html.setAttribute('dir', isRTL ? 'rtl' : 'ltr');
     html.setAttribute('lang', lang);
-    localStorage.setItem('miniyo-lang', lang);
+    safeLocalStorage.setItem('miniyo-lang', lang);
   }, [lang, isRTL]);
 
   const toggleLang = () => setLang(prev => (prev === 'en' ? 'ar' : 'en'));
