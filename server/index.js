@@ -399,6 +399,20 @@ app.use('/uploads', express.static(UPLOAD_DIR));
 
 // ─── Serve SPA with history fallback ──────────────────────────────────────────
 if (fs.existsSync(DIST)) {
+  // Serve the PWA manifest and robots.txt with their correct content types,
+  // ahead of both express.static and the SPA history fallback. Without these,
+  // /manifest.json and /robots.txt fall through to the catch-all and return the
+  // index.html shell as text/html — an invalid manifest that some in-app
+  // WebViews (e.g. Facebook) choke on.
+  app.get('/manifest.json', (req, res) => {
+    res.type('application/manifest+json');
+    res.sendFile(path.join(DIST, 'manifest.json'));
+  });
+  app.get('/robots.txt', (req, res) => {
+    res.type('text/plain');
+    res.sendFile(path.join(DIST, 'robots.txt'));
+  });
+
   app.use(express.static(DIST));
   app.get(/^(?!\/api\/).*/, (req, res) => {
     res.sendFile(path.join(DIST, 'index.html'));
