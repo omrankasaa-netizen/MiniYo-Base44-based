@@ -165,6 +165,15 @@ export default function ProductCard({ product }) {
                 <span className={`font-bold ${autoDiscount ? 'text-destructive' : 'text-foreground'}`}>${displayPrice?.toFixed(2)}</span>
                 {originalPrice && <span className="text-xs text-muted-foreground line-through">${originalPrice?.toFixed(2)}</span>}
               </div>
+              {!isOutOfStock && product.has_variants && (
+                // The whole card is wrapped in a <Link> to the product page, so
+                // this styled span rides that navigation — clicking it lands on
+                // the same detail route where size/color is picked (no add-to-cart).
+                <span
+                  className="shrink-0 h-8 px-3 rounded-full flex items-center justify-center transition-all shadow-sm text-xs font-semibold bg-primary text-primary-foreground group-hover:bg-primary/90">
+                  {t('Select Options', 'اختر الخيارات')}
+                </span>
+              )}
               {!isOutOfStock && !product.has_variants && (
                 <button type="button" onClick={handleAdd}
                   aria-label={added ? t('Added!', 'تمت الإضافة!') : t('Add to Cart', 'أضف إلى السلة')}
