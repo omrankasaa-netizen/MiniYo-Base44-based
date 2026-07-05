@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
+import { safeLocalStorage } from '@/lib/safeStorage';
 
 // Meta (Facebook) Pixel helpers.
 // The base snippet (fbq + init) is installed in index.html so it loads before
@@ -13,12 +14,8 @@ const CONSENT_KEY = 'miniyo-consent';
 // Returns 'granted' | 'denied' | null (no choice stored yet).
 export function getConsentChoice() {
   if (typeof window === 'undefined') return null;
-  try {
-    const v = window.localStorage.getItem(CONSENT_KEY);
-    return v === 'granted' || v === 'denied' ? v : null;
-  } catch {
-    return null;
-  }
+  const v = safeLocalStorage.getItem(CONSENT_KEY);
+  return v === 'granted' || v === 'denied' ? v : null;
 }
 
 export function hasConsent() {
@@ -38,7 +35,7 @@ export function applyStoredConsent() {
 }
 
 export function grantConsent() {
-  try { window.localStorage.setItem(CONSENT_KEY, 'granted'); } catch { /* ignore */ }
+  safeLocalStorage.setItem(CONSENT_KEY, 'granted');
   setFbqConsent(true);
   // Count the page the visitor accepted on (the initial PageView was withheld
   // while consent was still revoked).
@@ -46,7 +43,7 @@ export function grantConsent() {
 }
 
 export function denyConsent() {
-  try { window.localStorage.setItem(CONSENT_KEY, 'denied'); } catch { /* ignore */ }
+  safeLocalStorage.setItem(CONSENT_KEY, 'denied');
   setFbqConsent(false);
 }
 

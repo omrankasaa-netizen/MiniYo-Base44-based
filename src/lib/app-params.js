@@ -1,6 +1,9 @@
+import { safeLocalStorage } from '@/lib/safeStorage';
+
 const isNode = typeof window === 'undefined';
-const windowObj = isNode ? { localStorage: new Map() } : window;
-const storage = windowObj.localStorage;
+// safeLocalStorage never throws (falls back to an in-memory shim) so this module
+// can read/write params at import time even in a storage-blocked in-app WebView.
+const storage = safeLocalStorage;
 
 const toSnakeCase = (str) => {
 	return str.replace(/([A-Z])/g, '_$1').toLowerCase();
