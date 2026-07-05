@@ -98,7 +98,12 @@ export default function ProductCard({ product }) {
   const [added, setAdded] = useState(false);
 
   const name = lang === 'ar' ? (product.name_ar || product.name) : product.name;
-  const isOutOfStock = (product.stock_quantity || 0) <= 0 && !product.has_variants;
+  // A product is unavailable if it's been deactivated (status set to anything
+  // other than "Active"; a missing status is treated as Active for back-compat)
+  // or, for simple products, sold out. Variant products track stock per-variant,
+  // so their product-level stock_quantity is not a sell-out signal here.
+  const isInactive = !!product.status && product.status !== 'Active';
+  const isOutOfStock = isInactive || ((product.stock_quantity || 0) <= 0 && !product.has_variants);
   const isLowStock = !isOutOfStock && (product.stock_quantity || 0) > 0 && (product.stock_quantity || 0) <= 3;
   const hasCompareDiscount = product.compare_at_price_usd > product.price_usd;
   const autoDiscount = getProductDiscount(product);
@@ -161,7 +166,8 @@ export default function ProductCard({ product }) {
                 {originalPrice && <span className="text-xs text-muted-foreground line-through">${originalPrice?.toFixed(2)}</span>}
               </div>
               {!isOutOfStock && !product.has_variants && (
-                <button onClick={handleAdd}
+                <button type="button" onClick={handleAdd}
+                  aria-label={added ? t('Added!', 'تمت الإضافة!') : t('Add to Cart', 'أضف إلى السلة')}
                   className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center transition-all shadow-sm text-xs font-bold
                     ${added ? 'bg-green-500 text-white scale-110' : 'bg-primary text-primary-foreground hover:bg-primary/90'}`}>
                   {added ? '✓' : '+'}
