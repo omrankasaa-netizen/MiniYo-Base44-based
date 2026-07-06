@@ -1,5 +1,6 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { trackSearch } from '@/lib/metaPixel';
 import { useLang } from '@/contexts/LanguageContext';
 import { useDiscounts } from '@/contexts/DiscountContext';
 import { base44 } from '@/api/base44Client';
@@ -239,6 +240,19 @@ export default function ShopPage() {
     }
     return list;
   }, [enriched, search, filterCategory, filterSubcategory, filterGender, filterAge, filterCollection, filterSizes, filterOnSale, filterInStock, filterPriceMin, filterPriceMax, filterSort, liveDiscounts]);
+
+  // Meta Pixel Search — fire when a search term settles (debounced so we don't
+  // emit an event on every keystroke). Reports the matched result skus.
+  const lastSearchFired = useRef('');
+  useEffect(() => {
+    const q = (search || '').trim();
+    if (!q || q === lastSearchFired.current) return;
+    const timer = setTimeout(() => {
+      lastSearchFired.current = q;
+      trackSearch(q, filtered.slice(0, 20).map(p => p.sku || p.id));
+    }, 700);
+    return () => clearTimeout(timer);
+  }, [search, filtered]);
 
   // Active filter chips
   const activeChips = useMemo(() => {

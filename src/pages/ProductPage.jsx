@@ -12,7 +12,7 @@ import { ReviewList, ReviewForm } from '@/components/storefront/ReviewCard';
 import RelatedProducts from '@/components/storefront/RelatedProducts';
 import { useQueryClient } from '@tanstack/react-query';
 import { normalizeImages, imageSrc, imageSrcSet, DETAIL_SIZES, handleImageError } from '@/lib/imageFraming';
-import { track } from '@/lib/pixel';
+import { trackViewContent } from '@/lib/metaPixel';
 
 export default function ProductPage() {
   const { slug } = useParams();
@@ -64,13 +64,7 @@ export default function ProductPage() {
   // Meta Pixel ViewContent — fire once each time a product is loaded/changed.
   useEffect(() => {
     if (!product?.id) return;
-    track('ViewContent', {
-      content_ids: [product.sku || product.id],
-      content_type: 'product',
-      content_name: product.name,
-      value: parseFloat(product.price_usd) || 0,
-      currency: 'USD',
-    });
+    trackViewContent(product);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [product?.id]);
 
