@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useMemo } from '
 import { useQuery } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 import { isDiscountLive, getEffectiveUnitPrice } from '@/lib/discounts';
-import { track } from '@/lib/pixel';
+import { trackAddToCart } from '@/lib/metaPixel';
 import { safeLocalStorage } from '@/lib/safeStorage';
 
 const CartContext = createContext();
@@ -45,15 +45,7 @@ export function CartProvider({ children }) {
       return [...prev, { key, product, variant, quantity: qty, price }];
     });
 
-    const unitPrice = parseFloat(variant?.price_usd || product.price_usd || 0) || 0;
-    track('AddToCart', {
-      content_ids: [product.sku || product.id],
-      content_type: 'product',
-      content_name: product.name,
-      value: unitPrice,
-      currency: 'USD',
-      contents: [{ id: product.sku || product.id, quantity: qty }],
-    });
+    trackAddToCart({ product, variant, quantity: qty });
   }
 
   function removeItem(key) {

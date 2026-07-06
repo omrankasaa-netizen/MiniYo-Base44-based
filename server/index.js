@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 
 import {
   initSchema, createRecord, getRecord, updateRecord, deleteRecord,
-  queryRecords, ENTITIES,
+  queryRecords, ENTITIES, nowIso,
 } from './db.js';
 import {
   registerUser, authenticate, signToken, setSessionCookie, clearSessionCookie,
@@ -22,6 +22,12 @@ import { repairDuplicateSlugs } from './repairSlugs.js';
 import { getStorage } from './storage.js';
 import { optimizeAndStore, bufferFromBase64 } from './imageOptimize.js';
 import { getProductBySlug, injectProductMeta } from './productMeta.js';
+import { buildFeedCsv } from './metaFeed.js';
+import { sendCapiEvent } from './metaCapiClient.js';
+import {
+  derivePurchaseEventId, buildPurchaseCustomData, buildPurchaseUserData,
+  purchaseConsentAllowed, isSendableValue,
+} from './metaPurchase.js';
 
 // Build the verification-code email HTML.
 function otpEmailHtml(code) {
@@ -394,6 +400,87 @@ app.delete('/api/entities/:entity/:id', ensureEntity, authorizeWrite('delete'), 
     maybeInvalidateDashboard(req.params.entity);
     res.json(result);
   } catch (e) { handleError(res, e); }
+});
+
+// ─── Meta catalog feed ────────────────────────────────────────────────────────
+// Meta-supported CSV product feed. `id` == Product.sku so catalog entries match
+// content_ids in Pixel/CAPI events + product:retailer_item_id in the JSON-LD.
+// Cached so Meta's scheduled fetch is cheap; regenerated at most hourly.
+const SITE_BASE = process.env.MINIYO_SITE_BASE || 'https://miniyokids.com';
+app.get('/meta-feed.csv', (req, res) => {
+  try {
+    const products = queryRecords('Product', { limit: 100000 });
+    const csv = buildFeedCsv(products);
+    res.set('Content-Type', 'text/csv; charset=utf-8');
+    res.set('Content-Disposition', 'inline; filename="meta-feed.csv"');
+    res.set('Cache-Control', 'public, max-age=3600');
+    res.send(csv);
+  } catch (e) {
+    console.error('[metaFeed] generation failed:', e?.message);
+    res.status(500).type('text/plain').send('feed generation error');
+  }
+});
+
+// ─── Meta Conversions API: Purchase ─────────────────────────────────────────
+// Fires the server-side Purchase event from TRUSTED order data. The client only
+// passes an order_id; all money/contact values are read from the DB (never from
+// the request body) so the event can't be spoofed. Idempotent + consent-gated.
+function metaClientSignals(req) {
+  const xff = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+  return {
+    fbp: req.cookies?._fbp,
+    fbc: req.cookies?._fbc,
+    clientIp: req.headers['cf-connecting-ip'] || xff || req.socket?.remoteAddress,
+    userAgent: req.headers['user-agent'],
+  };
+}
+
+app.post('/api/meta/purchase', async (req, res) => {
+  try {
+    const orderId = req.body?.order_id;
+    if (!orderId) return res.status(400).json({ error: 'order_id required' });
+    const order = getRecord('Order', orderId);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+
+    // Idempotent: never fire twice for the same order.
+    if (order.meta_purchase_sent) return res.json({ ok: true, deduped: true });
+
+    // Consent gate: skip when the buyer declined marketing.
+    if (!purchaseConsentAllowed(order)) return res.json({ ok: true, skipped: 'no_consent' });
+
+    const items = queryRecords('OrderItem', { query: { order_id: orderId }, limit: 5000 });
+    const { customData, value } = buildPurchaseCustomData(order, items);
+
+    // Only send for a real sale (value > 0).
+    if (!isSendableValue(value)) return res.json({ ok: true, skipped: 'invalid_value' });
+
+    const userData = buildPurchaseUserData(order, metaClientSignals(req));
+    const eventId = derivePurchaseEventId(order);
+    const eventTime = order.created_date
+      ? Math.floor(Date.parse(order.created_date) / 1000) || Math.floor(Date.now() / 1000)
+      : Math.floor(Date.now() / 1000);
+
+    const result = await sendCapiEvent({
+      eventName: 'Purchase',
+      eventId,
+      eventTime,
+      eventSourceUrl: `${SITE_BASE}/checkout`,
+      actionSource: 'website',
+      userData,
+      customData,
+    });
+
+    // Mark as sent only on a confirmed send so a transient failure (or a
+    // not-yet-configured token) can retry with the SAME deterministic event_id.
+    if (result.ok) {
+      updateRecord('Order', orderId, { meta_purchase_sent: nowIso() });
+    }
+    res.json({ ok: result.ok, skipped: result.skipped });
+  } catch (e) {
+    // Tracking must never surface as a checkout error.
+    console.error('[metaCapi] purchase route error:', e?.message);
+    res.json({ ok: false, error: 'purchase_capi_failed' });
+  }
 });
 
 app.use('/uploads', express.static(UPLOAD_DIR));

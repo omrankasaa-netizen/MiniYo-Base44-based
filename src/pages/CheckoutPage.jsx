@@ -8,7 +8,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { ShoppingBag, CheckCircle2, Tag, X, Loader2, Gift } from 'lucide-react';
 import { validatePromoCode, calcPromoDiscount } from '@/lib/discounts';
 import { useQuery } from '@tanstack/react-query';
-import { track } from '@/lib/pixel';
+import { trackInitiateCheckout, notifyPurchase, genEventId, hasMarketingConsent } from '@/lib/metaPixel';
 
 const ScrollToTop = ({ trigger }) => {
   useEffect(() => {
@@ -204,35 +204,13 @@ export default function CheckoutPage() {
   useEffect(() => {
     if (initiateCheckoutFired.current || !items?.length) return;
     initiateCheckoutFired.current = true;
-    track('InitiateCheckout', {
-      value: Number(subtotal) || 0,
-      currency: 'USD',
-      num_items: items.reduce((s, i) => s + i.quantity, 0),
-      content_ids: items.map(i => i.product.sku || i.product.id),
-      content_type: 'product',
-    });
+    trackInitiateCheckout({ items, value: Number(subtotal) || 0 });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items?.length]);
 
-  // Meta Pixel Purchase — fire exactly once per completed order. `success` holds
-  // the order number; the ref guards against re-fire on remount/refresh.
-  // The cart is cleared right before `success` is set, so the order total/items
-  // are snapshotted at submit time into refs for the Purchase payload.
-  const purchasedOrderRef = useRef(null);
-  const lastOrderTotal = useRef(0);
-  const lastOrderItems = useRef([]);
-  useEffect(() => {
-    if (!success || purchasedOrderRef.current === success) return;
-    purchasedOrderRef.current = success;
-    track('Purchase', {
-      value: lastOrderTotal.current,
-      currency: 'USD',
-      num_items: lastOrderItems.current.length,
-      content_ids: lastOrderItems.current.map(i => i.product.sku || i.product.id),
-      content_type: 'product',
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [success]);
+  // Purchase is fired server-side via the Conversions API (never from the
+  // browser) so it is built from trusted order data and can't be spoofed. We
+  // trigger it after the order + items are persisted (see handleSubmit).
 
   async function handleApplyPromo() {
     setPromoError('');
@@ -384,8 +362,17 @@ export default function CheckoutPage() {
         }
       }
 
+      // Meta Conversions API dedup id, generated client-side and stored on the
+      // order so the server-side Purchase event reuses it (and re-fires with the
+      // same id on retry). meta_consent lets the backend skip CAPI when the
+      // visitor declined marketing cookies.
+      const metaEventId = genEventId();
+      const metaConsent = hasMarketingConsent();
+
       const order = await base44.entities.Order.create({
         customer_id: guestCustomerId,
+        meta_event_id: metaEventId,
+        meta_consent: metaConsent,
         customer_name: form.customer_name,
         customer_phone: form.customer_phone,
         customer_email: form.customer_email,
@@ -483,10 +470,10 @@ export default function CheckoutPage() {
         console.error('Order notification email failed:', e);
       }
 
-      // Snapshot order total/items for the Pixel Purchase event before the cart
-      // is cleared (which would otherwise zero out the values).
-      lastOrderTotal.current = grandTotal;
-      lastOrderItems.current = items;
+      // Fire the server-side Purchase (Conversions API) now that the order and
+      // its line items are persisted. The backend reads the trusted values from
+      // the DB; this is a best-effort trigger that never blocks confirmation.
+      notifyPurchase(order.id);
 
       clearCart();
       setSuccess(order.order_number);
