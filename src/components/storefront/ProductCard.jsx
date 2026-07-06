@@ -150,7 +150,7 @@ export default function ProductCard({ product }) {
               {isLowStock && <span className="bg-amber-500 text-white text-xs font-semibold px-2.5 py-1 rounded-full">{t('Only', 'فقط')} {product.stock_quantity} {t('left', 'متبقي')}</span>}
             </div>
             {/* Wishlist */}
-            <WishlistHeart productId={product.id} className="absolute top-2.5 right-2.5 w-8 h-8 rounded-full bg-white/80 backdrop-blur shadow-sm" />
+            <WishlistHeart productId={product.id} product={product} className="absolute top-2.5 right-2.5 w-8 h-8 rounded-full bg-white/80 backdrop-blur shadow-sm" />
             {/* Sold out overlay */}
             {isOutOfStock && (
               <div className="absolute inset-0 bg-background/60 flex items-center justify-center backdrop-blur-[1px]">

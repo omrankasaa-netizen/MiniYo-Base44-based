@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useAuthUser } from '@/contexts/AuthUserContext';
+import { trackAddToWishlist } from '@/lib/metaPixel';
 
 const WishlistContext = createContext();
 
@@ -25,7 +26,7 @@ export function WishlistProvider({ children }) {
     } catch { }
   }
 
-  async function toggle(productId) {
+  async function toggle(productId, product = null) {
     if (!currentUser?.id) { base44.auth.redirectToLogin(window.location.pathname); return; }
     if (itemMap[productId]) {
       await base44.entities.WishlistItem.delete(itemMap[productId]);
@@ -35,6 +36,8 @@ export function WishlistProvider({ children }) {
       const w = await base44.entities.WishlistItem.create({ user_id: currentUser.id, product_id: productId });
       setItems(p => [...p, productId]);
       setItemMap(m => ({ ...m, [productId]: w.id }));
+      // Fire AddToWishlist only on the add path (consent-gated inside the helper).
+      if (product) trackAddToWishlist(product);
     }
   }
 
