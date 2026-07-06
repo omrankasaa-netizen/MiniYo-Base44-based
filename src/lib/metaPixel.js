@@ -10,6 +10,7 @@
 
 import { track, genEventId, hasMarketingConsent } from '@/lib/pixel';
 import {
+  contentId,
   buildAddToWishlistParams,
   buildCompleteRegistrationParams,
   buildLeadParams,
@@ -23,12 +24,6 @@ export { genEventId, hasMarketingConsent };
 export const META_PIXEL_ID =
   (typeof import.meta !== 'undefined' && import.meta.env?.VITE_META_PIXEL_ID) ||
   '1480243427454221';
-
-// Canonical content identifier. Prefer the SKU (used in the feed, JSON-LD and
-// server CAPI); fall back to the internal id only so we never emit undefined.
-function contentId(product) {
-  return product?.sku || product?.id || null;
-}
 
 function toNumber(v) {
   const n = Number(v);

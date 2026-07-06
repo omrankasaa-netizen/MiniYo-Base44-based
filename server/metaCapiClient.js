@@ -12,6 +12,7 @@
 // unit-tested without network access or secrets.
 
 import crypto from 'node:crypto';
+import { normalizeSku } from './metaFeed.js';
 
 // Pin a stable, recent Graph API version.
 export const GRAPH_VERSION = 'v21.0';
@@ -77,7 +78,9 @@ export function buildContents(items = []) {
   const contents = [];
   let skipped = 0;
   for (const it of items) {
-    const id = it?.sku;
+    // Normalize the OrderItem sku at the Meta boundary so server Purchase
+    // content_ids match the catalog feed id + browser Pixel content_ids.
+    const id = normalizeSku(it?.sku);
     if (!id) { skipped += 1; continue; }
     const quantity = Number(it.quantity) || 1;
     const price = Number(it.unit_price_usd ?? it.item_price);

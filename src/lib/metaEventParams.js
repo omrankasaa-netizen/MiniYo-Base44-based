@@ -8,8 +8,20 @@
 // feed, JSON-LD and server CAPI); we fall back to the internal id only so we
 // never emit undefined.
 
+// Canonical SKU normalizer for the Meta boundary: uppercase + trim so the value
+// placed into content_ids / contents[].id can never mismatch the catalog feed on
+// casing or whitespace (Meta catalog matching is CASE-SENSITIVE). Null-safe →
+// returns '' for a missing sku.
+// KEEP IN SYNC with normalizeSku in server/metaFeed.js — identical logic (the
+// frontend ESM/Vite bundle and the Node backend can't easily share one module).
+export function normalizeSku(sku) {
+  if (sku == null) return '';
+  return String(sku).trim().toUpperCase();
+}
+
 export function contentId(product) {
-  return product?.sku || product?.id || null;
+  const raw = product?.sku || product?.id;
+  return raw ? normalizeSku(raw) : null;
 }
 
 export function toNumber(v) {

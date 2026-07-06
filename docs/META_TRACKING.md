@@ -12,6 +12,17 @@ event deduplication, and marketing-consent gating.
 same value, so order line items map cleanly to catalog entries and conversion
 events. Never use the internal uuid `id` or the `prod-` `product_id`.
 
+**SKUs are normalized at the Meta boundary.** Meta catalog matching is
+CASE-SENSITIVE, so both the pixel `content_ids`/`contents[].id` and the feed `id`
+run the SKU through `normalizeSku(sku)` → `String(sku).trim().toUpperCase()`
+before it is emitted. This guarantees a mixed-case SKU (e.g.
+`moonstar-53183-Pink`) can never mismatch on casing/whitespace — feed and events
+both emit `MOONSTAR-53183-PINK`. The normalizer lives in
+`src/lib/metaEventParams.js` (frontend) and `server/metaFeed.js` (backend, reused
+by `server/metaCapiClient.js` for Purchase); the two copies are kept identical.
+Only the Meta `id`/`content_ids` are normalized — the underlying product data and
+the feed `link` (real slug URL) are untouched.
+
 ---
 
 ## 1. Event plan

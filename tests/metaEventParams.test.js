@@ -9,6 +9,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  normalizeSku,
   contentId,
   buildAddToWishlistParams,
   buildCompleteRegistrationParams,
@@ -16,11 +17,25 @@ import {
   buildContactParams,
 } from '../src/lib/metaEventParams.js';
 
-test('contentId prefers sku, falls back to id, else null', () => {
+test('normalizeSku uppercases + trims and is null-safe', () => {
+  assert.equal(normalizeSku('moonstar-53183-Pink'), 'MOONSTAR-53183-PINK');
+  assert.equal(normalizeSku('  cgs-chb-assorted-flower  '), 'CGS-CHB-ASSORTED-FLOWER');
+  assert.equal(normalizeSku(null), '');
+  assert.equal(normalizeSku(undefined), '');
+});
+
+test('contentId prefers sku, falls back to id, else null — always normalized', () => {
   assert.equal(contentId({ sku: 'MNY-1', id: 'abc' }), 'MNY-1');
-  assert.equal(contentId({ id: 'abc' }), 'abc');
+  assert.equal(contentId({ sku: 'moonstar-53183-Pink', id: 'abc' }), 'MOONSTAR-53183-PINK');
+  assert.equal(contentId({ id: 'abc' }), 'ABC');
   assert.equal(contentId({}), null);
   assert.equal(contentId(null), null);
+});
+
+test('content_ids come out uppercase for a mixed-case sku', () => {
+  const params = buildAddToWishlistParams({ sku: 'moonstar-53183-Pink', name: 'X', price_usd: 5 });
+  assert.deepEqual(params.content_ids, ['MOONSTAR-53183-PINK']);
+  assert.equal(params.contents[0].id, 'MOONSTAR-53183-PINK');
 });
 
 test('buildAddToWishlistParams uses sku as content_ids + numeric value', () => {
