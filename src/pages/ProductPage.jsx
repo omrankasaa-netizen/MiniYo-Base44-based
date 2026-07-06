@@ -185,7 +185,7 @@ export default function ProductPage() {
                   </button>
                 </>
               )}
-              <WishlistHeart productId={product.id} className="absolute top-3 right-3 w-9 h-9 rounded-full bg-white/80 backdrop-blur shadow" />
+              <WishlistHeart productId={product.id} product={product} className="absolute top-3 right-3 w-9 h-9 rounded-full bg-white/80 backdrop-blur shadow" />
             </div>
             {displayImages.length > 1 && (
               <div className="flex gap-2 overflow-x-auto">

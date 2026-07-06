@@ -9,8 +9,21 @@ import assert from 'node:assert/strict';
 
 import {
   buildFeedCsv, buildFeedRow, csvEscape, stripHtml, mapAvailability,
-  mapGender, mapAgeGroup, FEED_COLUMNS,
+  mapGender, mapAgeGroup, normalizeSku, FEED_COLUMNS,
 } from '../server/metaFeed.js';
+
+test('normalizeSku uppercases + trims and is null-safe', () => {
+  assert.equal(normalizeSku('moonstar-53183-Pink'), 'MOONSTAR-53183-PINK');
+  assert.equal(normalizeSku('  MUSLIN-59883-ECRU-PINK-Floral '), 'MUSLIN-59883-ECRU-PINK-FLORAL');
+  assert.equal(normalizeSku(null), '');
+});
+
+test('feed row id is normalized uppercase for a mixed-case sku', () => {
+  const row = buildFeedRow({ sku: 'moonstar-53183-Pink', name: 'X', price_usd: 5, status: 'Active', slug: 'x' });
+  assert.equal(row.id, 'MOONSTAR-53183-PINK');
+  // The link keeps the real (un-uppercased) slug URL.
+  assert.ok(row.link.endsWith('/product/x'));
+});
 
 test('csvEscape quotes fields with commas, quotes, newlines', () => {
   assert.equal(csvEscape('plain'), 'plain');

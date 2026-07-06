@@ -9,6 +9,13 @@
 // the Conversions API (see server/metaCapiClient.js) from trusted order data.
 
 import { track, genEventId, hasMarketingConsent } from '@/lib/pixel';
+import {
+  contentId,
+  buildAddToWishlistParams,
+  buildCompleteRegistrationParams,
+  buildLeadParams,
+  buildContactParams,
+} from '@/lib/metaEventParams';
 
 export { genEventId, hasMarketingConsent };
 
@@ -17,12 +24,6 @@ export { genEventId, hasMarketingConsent };
 export const META_PIXEL_ID =
   (typeof import.meta !== 'undefined' && import.meta.env?.VITE_META_PIXEL_ID) ||
   '1480243427454221';
-
-// Canonical content identifier. Prefer the SKU (used in the feed, JSON-LD and
-// server CAPI); fall back to the internal id only so we never emit undefined.
-function contentId(product) {
-  return product?.sku || product?.id || null;
-}
 
 function toNumber(v) {
   const n = Number(v);
@@ -89,6 +90,32 @@ export function trackSearch(searchString, resultSkus = []) {
     search_string: str,
     ...(ids.length ? { content_ids: ids, content_type: 'product' } : {}),
   });
+}
+
+// Add-to-wishlist. Fires only when a product is ADDED (never on remove/toggle-off
+// — the caller is responsible for calling this on the add path only).
+export function trackAddToWishlist(product) {
+  const params = buildAddToWishlistParams(product);
+  if (!params) return;
+  track('AddToWishlist', params);
+}
+
+// Successful account registration. Standard params only — no raw PII (email,
+// name, etc.) is ever forwarded to the Pixel.
+export function trackCompleteRegistration() {
+  track('CompleteRegistration', buildCompleteRegistrationParams());
+}
+
+// Lead — free email signup (newsletter). A no-cost email capture is a Lead, not
+// the paid `Subscribe` event. The raw email is never sent to the Pixel.
+export function trackLead(contentName = 'Newsletter Signup') {
+  track('Lead', buildLeadParams(contentName));
+}
+
+// Contact — customer-service / inquiry contact (e.g. tapping a WhatsApp chat
+// link). Not for order placement, which maps to InitiateCheckout / Purchase.
+export function trackContact(channel = 'WhatsApp') {
+  track('Contact', buildContactParams(channel));
 }
 
 // Tell the backend to fire the server-side Purchase CAPI event for an order.

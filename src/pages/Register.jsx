@@ -8,6 +8,7 @@ import { UserPlus, Mail, Lock, Loader2 } from "lucide-react";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import AuthLayout from "@/components/AuthLayout";
 import { toast } from "@/components/ui/use-toast";
+import { trackCompleteRegistration } from "@/lib/metaPixel";
 
 export default function Register() {
   const [email, setEmail] = useState("");
@@ -43,6 +44,10 @@ export default function Register() {
       const result = await base44.auth.verifyOtp({ email, otpCode });
       if (result?.access_token) {
         base44.auth.setToken(result.access_token);
+
+        // Account is now verified & created — fire CompleteRegistration
+        // (standard params only; no raw email/PII forwarded to the Pixel).
+        trackCompleteRegistration();
 
         // Create customer record and grant Bronze tier
         try {

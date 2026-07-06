@@ -76,6 +76,15 @@ test('buildContents uses sku as id and skips sku-less lines', () => {
   assert.deepEqual(contents[0], { id: 'TONGS-5456-MULTI', quantity: 2, item_price: 18.99 });
 });
 
+test('buildContents normalizes sku to uppercase+trimmed content_ids', () => {
+  const { contents, contentIds } = buildContents([
+    { sku: 'moonstar-53183-Pink', quantity: 1, unit_price_usd: 5 },
+    { sku: '  cgs-chb-assorted-flower ', quantity: 2, unit_price_usd: 3 },
+  ]);
+  assert.deepEqual(contentIds, ['MOONSTAR-53183-PINK', 'CGS-CHB-ASSORTED-FLOWER']);
+  assert.equal(contents[0].id, 'MOONSTAR-53183-PINK');
+});
+
 test('buildEventPayload sets required fields + defaults action_source', () => {
   const ev = buildEventPayload({
     eventName: 'Purchase',

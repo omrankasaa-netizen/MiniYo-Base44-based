@@ -12,6 +12,17 @@ event deduplication, and marketing-consent gating.
 same value, so order line items map cleanly to catalog entries and conversion
 events. Never use the internal uuid `id` or the `prod-` `product_id`.
 
+**SKUs are normalized at the Meta boundary.** Meta catalog matching is
+CASE-SENSITIVE, so both the pixel `content_ids`/`contents[].id` and the feed `id`
+run the SKU through `normalizeSku(sku)` → `String(sku).trim().toUpperCase()`
+before it is emitted. This guarantees a mixed-case SKU (e.g.
+`moonstar-53183-Pink`) can never mismatch on casing/whitespace — feed and events
+both emit `MOONSTAR-53183-PINK`. The normalizer lives in
+`src/lib/metaEventParams.js` (frontend) and `server/metaFeed.js` (backend, reused
+by `server/metaCapiClient.js` for Purchase); the two copies are kept identical.
+Only the Meta `id`/`content_ids` are normalized — the underlying product data and
+the feed `link` (real slug URL) are untouched.
+
 ---
 
 ## 1. Event plan
@@ -23,6 +34,10 @@ events. Never use the internal uuid `id` or the `prod-` `product_id`.
 | Search | Search term settles on the shop page | Pixel | matched skus (optional) | — | — | — | `search_string` |
 | AddToCart | Add to cart (card quick-add **or** PDP) via `useCart().addItem` | Pixel | `[sku]` | `[{id:sku, quantity, item_price}]` | line value | USD | `content_name` |
 | InitiateCheckout | Checkout page mount with a non-empty cart | Pixel | all cart skus | cart lines `[{id, quantity, item_price}]` | cart subtotal | USD | `num_items` |
+| AddToWishlist | Product **added** to the wishlist (heart on the product card or PDP). Fires on add only — never on remove/toggle-off | Pixel | `[sku]` | `[{id:sku, quantity:1, item_price:price_usd}]` | `price_usd` | USD | `content_name` |
+| CompleteRegistration | Account created — after OTP verification succeeds in `Register.jsx` | Pixel | — | — | — | USD | `content_name:"Account Registration"`, `status:true` |
+| Lead | Newsletter email submitted (home Newsletter strip) | Pixel | — | — | — | — | `content_name:"Newsletter Signup"` |
+| Contact | Customer-service / inquiry contact — tapping a storefront WhatsApp chat link (floating button, footer, FAQ, newsletter strip). **Not** order placement | Pixel | — | — | — | — | `content_name:"WhatsApp"` |
 | AddPaymentInfo | N/A — the store is Cash on Delivery (COD); there is no payment-info step. Documented as not applicable; wire in later if a payment-method capture step is added. | — | — | — | — | — | — |
 | **Purchase** | Order completed — **server-side (CAPI) only**, never from the browser | CAPI | order line skus | order items `[{id:sku, quantity, item_price:unit_price_usd}]` | `grand_total_usd` | USD | `order_id = order_number`, `num_items` |
 
@@ -42,10 +57,28 @@ events. Never use the internal uuid `id` or the `prod-` `product_id`.
 ### Where each event lives
 
 - Browser helpers: `src/lib/metaPixel.js` (`trackViewContent`, `trackAddToCart`,
-  `trackInitiateCheckout`, `trackSearch`, `notifyPurchase`, `genEventId`).
+  `trackInitiateCheckout`, `trackSearch`, `trackAddToWishlist`,
+  `trackCompleteRegistration`, `trackLead`, `trackContact`, `notifyPurchase`,
+  `genEventId`).
+- DOM-free payload builders (unit-tested): `src/lib/metaEventParams.js`
+  (`buildAddToWishlistParams`, `buildCompleteRegistrationParams`, `buildLeadParams`,
+  `buildContactParams`). `metaPixel.js` wraps these with the consent-gated `track()`.
 - Low-level fbq + consent gate: `src/lib/pixel.js`.
 - AddToCart is fired once, centrally, inside `CartContext.addItem`, so both the
   storefront card quick-add and the PDP add button emit it.
+- AddToWishlist fires from `WishlistContext.toggle` on the **add** branch only;
+  `WishlistHeart` forwards the full product so the payload carries sku/name/price.
+- CompleteRegistration fires in `Register.jsx` right after `verifyOtp` returns an
+  access token (the moment the account is confirmed). Standard params only — no
+  raw email/PII is forwarded to the Pixel.
+- Lead fires in `NewsletterStrip.handleSubscribe` on a successful submit. **Note:**
+  the newsletter currently persists nothing server-side (client-only placeholder),
+  but the submit is a real user action with a success state, so a free-signup Lead
+  is the correct standard event. The raw email is never sent to the Pixel.
+- Contact fires on storefront WhatsApp customer-service links (`FloatingWhatsApp`,
+  `Footer` ×2, `FaqPage`, `NewsletterStrip`). Admin-side WhatsApp actions
+  (`OrderDetailModal`) are **not** tracked, and there is no storefront
+  "order via WhatsApp" button, so Contact never overlaps with checkout/Purchase.
 - Server CAPI: `server/metaCapiClient.js` (transport + hashing) and
   `server/metaPurchase.js` (Purchase builders), wired at `POST /api/meta/purchase`
   in `server/index.js`.
@@ -121,7 +154,8 @@ Meta deduplicates when a Pixel event and its CAPI twin arrive with the same
 from CAPI only (no browser Purchase), it can never double from the Pixel. The
 deterministic per-order `event_id` still guarantees that CAPI **retries** for the
 same order collapse into one Purchase. Pixel-only events (ViewContent,
-AddToCart, InitiateCheckout, Search) each get a fresh id per fire.
+AddToCart, InitiateCheckout, Search, AddToWishlist, CompleteRegistration, Lead,
+Contact) are browser-only with no CAPI twin, so they need no shared event_id.
 
 ### Safeguards implemented
 
@@ -148,6 +182,10 @@ AddToCart, InitiateCheckout, Search) each get a fresh id per fire.
 - [ ] AddToCart fires from **both** the card quick-add and the PDP add button.
 - [ ] InitiateCheckout has all cart skus, `value`, and `num_items`.
 - [ ] Search fires with `search_string` after the term settles.
+- [ ] AddToWishlist fires when hearting a product (card + PDP) with `content_ids:[sku]`; it does **not** fire on un-hearting.
+- [ ] CompleteRegistration fires once after OTP verification; no email/PII in the payload.
+- [ ] Lead fires on newsletter submit with `content_name:"Newsletter Signup"`; no email in the payload.
+- [ ] Contact fires on the floating/footer/FAQ/newsletter WhatsApp links; it does **not** fire on order submission.
 - [ ] Purchase appears **only** server-side; none from the browser.
 - [ ] Purchase `event_id` equals the order's `meta_event_id`.
 - [ ] Re-hitting `/api/meta/purchase` for the same order returns `deduped:true`.

@@ -11,6 +11,16 @@
 
 const SITE_BASE = process.env.MINIYO_SITE_BASE || 'https://miniyokids.com';
 
+// Canonical SKU normalizer for the Meta boundary: uppercase + trim so the feed
+// `id` can never mismatch the Pixel/CAPI content_ids on casing or whitespace
+// (Meta catalog matching is CASE-SENSITIVE). Null-safe → '' for a missing sku.
+// KEEP IN SYNC with normalizeSku in src/lib/metaEventParams.js — identical logic
+// (frontend ESM/Vite bundle and Node backend can't easily share one module).
+export function normalizeSku(sku) {
+  if (sku == null) return '';
+  return String(sku).trim().toUpperCase();
+}
+
 // Column order for the CSV header + every row.
 export const FEED_COLUMNS = [
   'id', 'title', 'description', 'availability', 'condition', 'price', 'sale_price',
@@ -94,7 +104,7 @@ export function buildFeedRow(product) {
   const hasRealDiscount = Number.isFinite(compareAt) && Number.isFinite(price) && compareAt > price;
 
   return {
-    id: sku,
+    id: normalizeSku(sku),
     title: product.name || '',
     description: stripHtml(product.description || product.short_description || product.name || ''),
     availability: mapAvailability(product),

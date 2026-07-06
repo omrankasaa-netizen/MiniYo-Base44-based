@@ -2,13 +2,13 @@ import React from 'react';
 import { Heart } from 'lucide-react';
 import { useWishlist } from '@/contexts/WishlistContext';
 
-export default function WishlistHeart({ productId, className = '' }) {
+export default function WishlistHeart({ productId, product = null, className = '' }) {
   const { isWishlisted, toggle } = useWishlist();
   const active = isWishlisted(productId);
 
   return (
     <button
-      onClick={e => { e.preventDefault(); e.stopPropagation(); toggle(productId); }}
+      onClick={e => { e.preventDefault(); e.stopPropagation(); toggle(productId, product); }}
       className={`flex items-center justify-center transition-all ${className}`}
       aria-label={active ? 'Remove from wishlist' : 'Add to wishlist'}
     >
