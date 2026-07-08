@@ -66,7 +66,27 @@
     },
     "discount_usd": {
       "type": "number",
-      "default": 0
+      "default": 0,
+      "description": "Order-level discount amount applied to the subtotal (computed from discount_type + discount_value)."
+    },
+    "discount_type": {
+      "type": "string",
+      "enum": [
+        "fixed_amount",
+        "percentage"
+      ],
+      "default": "fixed_amount",
+      "description": "Whether the order-level discount value is a fixed $ amount or a % of subtotal."
+    },
+    "discount_value": {
+      "type": "number",
+      "default": 0,
+      "description": "Raw order-level discount value entered by the admin ($ or %, per discount_type)."
+    },
+    "total_overridden": {
+      "type": "boolean",
+      "default": false,
+      "description": "True when the admin manually overrode the auto-calculated grand total on a manual order."
     },
     "delivery_fee_usd": {
       "type": "number",

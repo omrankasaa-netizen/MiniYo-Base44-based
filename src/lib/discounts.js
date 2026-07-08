@@ -110,3 +110,42 @@ export function calcPromoDiscount(code, cartItems, subtotal) {
   if (code.type === 'fixed_amount') return Math.min(code.value, subtotal);
   return 0;
 }
+
+// ── Manual/admin order pricing math ───────────────────────────────────────────
+// Pure helpers shared by the admin manual-order form so the stored order total
+// (and therefore reported revenue) matches what the admin sees on screen.
+
+export function round2(n) {
+  return Math.round((parseFloat(n) || 0) * 100) / 100;
+}
+
+/**
+ * Order-level discount amount from a type ('fixed_amount' | 'percentage') and a
+ * raw value, clamped to the subtotal so a discount can never exceed it.
+ */
+export function calcOrderDiscount(discountType, discountValue, subtotal) {
+  const val = parseFloat(discountValue) || 0;
+  const sub = parseFloat(subtotal) || 0;
+  if (val <= 0 || sub <= 0) return 0;
+  const amount = discountType === 'percentage' ? (sub * val) / 100 : val;
+  return round2(Math.min(Math.max(amount, 0), sub));
+}
+
+/**
+ * Full money breakdown for a manual order.
+ *   items: [{ unit_price_usd, quantity }]
+ * Returns { subtotal, discount, delivery, grandTotal } — grandTotal is the
+ * AUTO total = subtotal − order discount + delivery, floored at 0. Callers may
+ * override grandTotal with an admin-entered final total, but subtotal/discount/
+ * delivery remain the audit trail.
+ */
+export function calcManualOrderTotals({ items = [], deliveryFee = 0, discountType = 'fixed_amount', discountValue = 0 } = {}) {
+  const subtotal = round2(items.reduce(
+    (s, i) => s + (parseFloat(i.unit_price_usd) || 0) * (parseInt(i.quantity, 10) || 0),
+    0,
+  ));
+  const discount = calcOrderDiscount(discountType, discountValue, subtotal);
+  const delivery = round2(deliveryFee);
+  const grandTotal = round2(Math.max(0, subtotal - discount + delivery));
+  return { subtotal, discount, delivery, grandTotal };
+}
