@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { Scale, Save, ExternalLink } from 'lucide-react';
-import { Link } from 'react-router-dom';
 
 const LEGAL_PAGES = [
   { key: 'legal_shipping', label: 'Shipping Policy',      labelAr: 'سياسة الشحن',        slug: 'shipping' },

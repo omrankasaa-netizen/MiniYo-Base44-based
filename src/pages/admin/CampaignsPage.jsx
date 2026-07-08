@@ -6,7 +6,6 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { logAction } from '@/lib/auditLog';
 import AccessDenied from './AccessDenied';
 import { Plus, Pencil, Trash2, Megaphone, ToggleLeft, ToggleRight, Image } from 'lucide-react';
-import { isCampaignLive } from '@/lib/discounts';
 
 const EMPTY = { name: '', name_ar: '', description: '', hero_headline: '', hero_headline_ar: '', banner_image: '', banner_link: '', linked_discount_id: '', starts_at: '', ends_at: '', is_active: true, placement: 'homepage_hero' };
 

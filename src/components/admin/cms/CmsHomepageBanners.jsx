@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
 import { logAction } from '@/lib/auditLog';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
-import { Plus, Trash2, Upload, GripVertical, ChevronDown, ChevronUp, Eye, EyeOff } from 'lucide-react';
+import { Plus, Trash2, Upload, GripVertical, ChevronDown, ChevronUp } from 'lucide-react';
 
 /* ─── Shared helpers ─────────────────────────────────── */
 function Toggle({ value, onChange }) {

@@ -6,7 +6,6 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { logAction } from '@/lib/auditLog';
 import AccessDenied from './AccessDenied';
 import { Plus, Pencil, Trash2, Percent, ToggleLeft, ToggleRight, Zap } from 'lucide-react';
-import { isDiscountLive } from '@/lib/discounts';
 
 const EMPTY = { name: '', name_ar: '', type: 'percentage', value: '', applies_to: 'all_products', target: '', starts_at: '', ends_at: '', is_active: true, badge_label: 'SALE', badge_label_ar: 'تخفيض' };
 

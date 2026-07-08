@@ -3,9 +3,8 @@ import AdminLayout from '@/components/admin/AdminLayout';
 import { useAuthUser } from '@/contexts/AuthUserContext';
 import { base44 } from '@/api/base44Client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { logAction } from '@/lib/auditLog';
 import AccessDenied from './AccessDenied';
-import { ShoppingBag, Plus, Search, Eye, ChevronRight, X } from 'lucide-react';
+import { ShoppingBag, Plus, Search, ChevronRight, X } from 'lucide-react';
 import NewOrderModal from '@/components/admin/NewOrderModal';
 import OrderDetailModal from '@/components/admin/OrderDetailModal';
 

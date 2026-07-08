@@ -1,5 +1,5 @@
 import React from 'react';
-import { Crown, Gift, Percent, TrendingUp } from 'lucide-react';
+import { Gift, Percent } from 'lucide-react';
 
 const tierInfo = {
   Bronze: { icon: '🥉', color: 'bg-amber-50 text-amber-700' },

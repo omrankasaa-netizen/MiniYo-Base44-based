@@ -3,7 +3,7 @@ import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import { logAction } from '@/lib/auditLog';
 import { useAuthUser } from '@/contexts/AuthUserContext';
-import { X, Plus, Upload, GripVertical, Star, Trash2, ImageIcon, Crop as CropIcon } from 'lucide-react';
+import { X, Upload, Star, Trash2, ImageIcon, Crop as CropIcon } from 'lucide-react';
 import ImageFramingEditor from './ImageFramingEditor';
 import { framingStyle } from '@/lib/imageFraming';
 
