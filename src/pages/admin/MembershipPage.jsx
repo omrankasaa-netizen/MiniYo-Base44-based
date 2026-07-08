@@ -3,7 +3,7 @@ import AdminLayout from '@/components/admin/AdminLayout';
 import { useAuthUser } from '@/contexts/AuthUserContext';
 import { base44 } from '@/api/base44Client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Save, Search, Crown, User } from 'lucide-react';
+import { Save, Search } from 'lucide-react';
 
 export default function MembershipPage() {
   const { currentUser, canAccess } = useAuthUser();

@@ -6,7 +6,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { logAction } from '@/lib/auditLog';
 import AccessDenied from './AccessDenied';
 import ProductForm from '@/components/admin/ProductForm';
-import { Plus, Search, Filter, Pencil, Copy, Trash2, Eye, EyeOff, Star, Download, Printer } from 'lucide-react';
+import { Plus, Search, Pencil, Copy, Trash2, Eye, EyeOff, Star, Download, Printer } from 'lucide-react';
 import { stockStatus } from '@/lib/inventory';
 import { downloadCsv, printTable } from '@/lib/adminExport';
 

@@ -5,7 +5,7 @@ import { base44 } from '@/api/base44Client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { logAction } from '@/lib/auditLog';
 import AccessDenied from './AccessDenied';
-import { Plus, Pencil, Trash2, Upload, ChevronRight, Eye, EyeOff, GripVertical, Wand2, ArrowRight } from 'lucide-react';
+import { Plus, Pencil, Trash2, Upload, ChevronRight, Wand2, ArrowRight } from 'lucide-react';
 
 function Toggle({ value, onChange }) {
   return (

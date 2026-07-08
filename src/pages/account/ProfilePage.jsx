@@ -4,7 +4,6 @@ import { useLang } from '@/contexts/LanguageContext';
 import { base44 } from '@/api/base44Client';
 import { User, Save, Lock, Eye, EyeOff } from 'lucide-react';
 import { useCustomerTier } from '@/hooks/useCustomerTier';
-import MembershipWidget from '@/components/account/MembershipWidget';
 import { useQuery } from '@tanstack/react-query';
 
 export default function ProfilePage() {

@@ -3,7 +3,6 @@ import AdminLayout from '@/components/admin/AdminLayout';
 import { useAuthUser } from '@/contexts/AuthUserContext';
 import { base44 } from '@/api/base44Client';
 import { Settings, Key } from 'lucide-react';
-import AccessDenied from './AccessDenied';
 
 export default function AdminSettings() {
   const { currentUser, canAccess } = useAuthUser();

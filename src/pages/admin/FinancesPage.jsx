@@ -6,7 +6,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { logAction } from '@/lib/auditLog';
 import AccessDenied from './AccessDenied';
 import { BarChart2, Plus, Pencil, Trash2, X, Receipt, TrendingUp, Tag } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 
 const TABS = ['Summary', 'Projected Revenue', 'Purchases', 'Overhead', 'Promo Codes'];
 const PURCHASE_CATS = ['Stock', 'Shipping', 'Packaging', 'Marketing', 'Other'];

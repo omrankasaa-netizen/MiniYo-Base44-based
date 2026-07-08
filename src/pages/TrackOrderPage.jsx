@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useLang } from '@/contexts/LanguageContext';
 import { useAuthUser } from '@/contexts/AuthUserContext';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
-import { Search, Package, ChevronRight } from 'lucide-react';
+import { Search, Package } from 'lucide-react';
 
 const STATUS_STEPS = ['New', 'Confirmed', 'Packed', 'Out for Delivery', 'Delivered'];
 const STATUS_COLORS = {

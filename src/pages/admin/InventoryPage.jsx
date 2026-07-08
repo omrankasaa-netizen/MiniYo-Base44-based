@@ -5,7 +5,7 @@ import { base44 } from '@/api/base44Client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { manualStockAdjust, stockStatus } from '@/lib/inventory';
 import { logAction } from '@/lib/auditLog';
-import { Warehouse, ChevronDown, ChevronUp, Plus, Minus, PackagePlus, Filter, Search, Wrench, Download, Printer } from 'lucide-react';
+import { Warehouse, ChevronDown, ChevronUp, Plus, Minus, PackagePlus, Search, Wrench, Download, Printer } from 'lucide-react';
 import AccessDenied from './AccessDenied';
 import { downloadCsv, printTable } from '@/lib/adminExport';
 
