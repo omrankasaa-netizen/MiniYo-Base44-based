@@ -10,7 +10,7 @@ import crypto from 'node:crypto';
 
 import {
   normalizeEmail, normalizePhone, sha256, buildUserData, buildContents,
-  buildEventPayload,
+  buildEventPayload, sendCapiEvent,
 } from '../server/metaCapiClient.js';
 import {
   derivePurchaseEventId, buildPurchaseCustomData, buildPurchaseUserData,
@@ -141,6 +141,21 @@ test('isSendableValue requires a positive number', () => {
   assert.equal(isSendableValue(0), false);
   assert.equal(isSendableValue(-1), false);
   assert.equal(isSendableValue('nan'), false);
+});
+
+test('sendCapiEvent no-ops (never hits the network) without an access token', async () => {
+  const prev = process.env.MINIYO_META_CAPI_ACCESS_TOKEN;
+  delete process.env.MINIYO_META_CAPI_ACCESS_TOKEN;
+  // Fail loudly if the sender ever tries to fetch while disabled.
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = () => { throw new Error('network must not be called when token is unset'); };
+  try {
+    const result = await sendCapiEvent({ eventName: 'ViewContent', customData: {}, userData: {} });
+    assert.deepEqual(result, { ok: false, skipped: 'no_token' });
+  } finally {
+    globalThis.fetch = realFetch;
+    if (prev !== undefined) process.env.MINIYO_META_CAPI_ACCESS_TOKEN = prev;
+  }
 });
 
 test('buildPurchaseUserData maps order contact + request signals', () => {
