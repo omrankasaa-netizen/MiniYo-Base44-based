@@ -23,11 +23,12 @@ import { getStorage } from './storage.js';
 import { optimizeAndStore, bufferFromBase64 } from './imageOptimize.js';
 import { getProductBySlug, injectProductMeta } from './productMeta.js';
 import { buildFeedCsv } from './metaFeed.js';
-import { sendCapiEvent } from './metaCapiClient.js';
+import { sendCapiEvent, buildUserData } from './metaCapiClient.js';
 import {
   derivePurchaseEventId, buildPurchaseCustomData, buildPurchaseUserData,
   purchaseConsentAllowed, isSendableValue,
 } from './metaPurchase.js';
+import { isTrackEvent, buildTrackCustomData } from './metaTrack.js';
 
 // Build the verification-code email HTML.
 function otpEmailHtml(code) {
@@ -480,6 +481,41 @@ app.post('/api/meta/purchase', async (req, res) => {
     // Tracking must never surface as a checkout error.
     console.error('[metaCapi] purchase route error:', e?.message);
     res.json({ ok: false, error: 'purchase_capi_failed' });
+  }
+});
+
+// ─── Meta Conversions API: client-originated events ─────────────────────────
+// Server-side twin for the browser Pixel's ViewContent / AddToCart /
+// InitiateCheckout. The storefront posts the SAME event_id it passed to fbq so
+// Meta dedups the two. Only NON-PII custom_data is accepted from the client;
+// user_data (ip/ua/fbp/fbc) is derived server-side. Purchase is NOT accepted
+// here — it fires only from the trusted order flow above. Fire-and-forget: the
+// response never waits on Meta and tracking can never break a page load.
+app.post('/api/meta/track', (req, res) => {
+  try {
+    const body = req.body || {};
+    const eventName = body.event_name;
+    if (!isTrackEvent(eventName)) {
+      return res.status(400).json({ error: 'unsupported_event' });
+    }
+
+    const customData = buildTrackCustomData(body);
+    // PII is never trusted from the client; only request-derived signals.
+    const userData = buildUserData(metaClientSignals(req));
+
+    sendCapiEvent({
+      eventName,
+      eventId: body.event_id ? String(body.event_id) : undefined,
+      eventSourceUrl: typeof body.event_source_url === 'string' ? body.event_source_url : undefined,
+      actionSource: 'website',
+      userData,
+      customData,
+    }).catch((e) => console.error('[metaCapi] track send error:', e?.message));
+
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[metaCapi] track route error:', e?.message);
+    res.json({ ok: false });
   }
 });
 

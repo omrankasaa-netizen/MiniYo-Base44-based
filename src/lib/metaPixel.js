@@ -30,12 +30,46 @@ function toNumber(v) {
   return Number.isFinite(n) ? n : 0;
 }
 
+// Hand a browser event off to the server-side CAPI twin (POST /api/meta/track)
+// using the SAME event_id passed to fbq so Meta dedups the pair. Only non-PII
+// custom_data is forwarded; the server derives ip/ua/fbp/fbc itself. Purchase
+// never flows through here — it fires from the trusted server order flow.
+function postCapiTrack(eventName, eventId, params) {
+  try {
+    fetch('/api/meta/track', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        event_name: eventName,
+        event_id: eventId,
+        event_source_url: typeof window !== 'undefined' ? window.location?.href : undefined,
+        content_ids: params.content_ids,
+        contents: params.contents,
+        content_type: params.content_type,
+        value: params.value,
+        currency: params.currency,
+        num_items: params.num_items,
+      }),
+      keepalive: true,
+    }).catch(() => { /* tracking must never break the UX */ });
+  } catch { /* never throw into a render/click handler */ }
+}
+
+// Fire a Pixel event with a shared dedup event_id, then (only when marketing
+// consent is granted, matching the Pixel gate) hand the same id to the server
+// CAPI twin. Keeps existing Pixel params untouched — just adds dedup + CAPI.
+function trackDeduped(eventName, params) {
+  const eventId = genEventId();
+  track(eventName, params, eventId);
+  if (hasMarketingConsent()) postCapiTrack(eventName, eventId, params);
+}
+
 // PDP view. content_ids:[sku], value, currency, content_name.
 export function trackViewContent(product) {
   const id = contentId(product);
   if (!id) return;
   const price = toNumber(product.price_usd);
-  track('ViewContent', {
+  trackDeduped('ViewContent', {
     content_ids: [id],
     content_type: 'product',
     content_name: product.name,
@@ -52,7 +86,7 @@ export function trackAddToCart({ product, variant, quantity = 1 }) {
   const id = contentId(product);
   if (!id) return;
   const unitPrice = toNumber(variant?.price_usd ?? product?.price_usd);
-  track('AddToCart', {
+  trackDeduped('AddToCart', {
     content_ids: [id],
     content_type: 'product',
     content_name: product.name,
@@ -71,7 +105,7 @@ export function trackInitiateCheckout({ items = [], value }) {
       return id ? { id, quantity: i.quantity, item_price: toNumber(i.price) } : null;
     })
     .filter(Boolean);
-  track('InitiateCheckout', {
+  trackDeduped('InitiateCheckout', {
     content_ids: contents.map((c) => c.id),
     content_type: 'product',
     contents,
