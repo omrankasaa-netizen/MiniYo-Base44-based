@@ -107,5 +107,41 @@ test('attribute values are HTML-escaped (no injection breakout)', () => {
   });
   const html = buildProductMetaBlock(evil);
   assert.ok(!html.includes('<script>alert(1)</script>'));
-  assert.match(html, /content="X&quot;&gt;&lt;script&gt;/);
+  assert.ok(!html.includes('<SCRIPT>ALERT(1)</SCRIPT>'));
+  // sku is normalized (uppercased) at the Meta boundary before escaping.
+  assert.match(html, /content="X&quot;&gt;&lt;SCRIPT&gt;/);
+});
+
+test('retailer_item_id + JSON-LD id are normalized (uppercased) to match the feed', () => {
+  const lower = db.createRecord('Product', {
+    sku: 'moonstar-53183',
+    name: 'Lowercase Sku Product',
+    price_usd: 12,
+    status: 'Active',
+    slug: 'lowercase-sku-product',
+  });
+  const html = buildProductMetaBlock(lower);
+  // Meta catalog matching is case-sensitive: the microdata id MUST equal the
+  // feed id (normalizeSku → uppercase), never the raw stored casing.
+  assert.match(html, /<meta property="product:retailer_item_id" content="MOONSTAR-53183" \/>/);
+  const data = JSON.parse(html.match(/ld\+json">(.+?)<\/script>/)[1]);
+  assert.equal(data.sku, 'MOONSTAR-53183');
+  assert.equal(data.productID, 'MOONSTAR-53183');
+});
+
+test('sku-less product omits the catalog id microdata instead of emitting the DB id', () => {
+  const noSku = db.createRecord('Product', {
+    name: 'No Sku Product',
+    price_usd: 7,
+    status: 'Active',
+    slug: 'no-sku-product',
+  });
+  const html = buildProductMetaBlock(noSku);
+  // Absent from the feed → must not emit a phantom (DB id) catalog identifier.
+  assert.ok(!html.includes('product:retailer_item_id'));
+  const data = JSON.parse(html.match(/ld\+json">(.+?)<\/script>/)[1]);
+  assert.equal(data.sku, undefined);
+  assert.equal(data.productID, undefined);
+  // The rest of the SEO/OG block is still emitted so the page is not bare.
+  assert.match(html, /<meta property="og:type" content="product" \/>/);
 });
