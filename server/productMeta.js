@@ -12,6 +12,7 @@
 // og:type or canonical is left behind.
 
 import { queryRecords } from './db.js';
+import { normalizeSku } from './metaFeed.js';
 
 const SITE_BASE = process.env.MINIYO_SITE_BASE || 'https://miniyokids.com';
 const DEFAULT_SHARE_IMAGE = `${SITE_BASE}/miniyo-share.jpg`;
@@ -49,7 +50,13 @@ function formatPrice(value) {
 export function buildProductMetaBlock(product) {
   const slug = product.slug || product.id;
   const url = `${SITE_BASE}/product/${slug}`;
-  const sku = product.sku || product.id;
+  // Catalog identifier for Meta's crawler / Pixel microdata scanner. MUST equal
+  // the feed `id` exactly (Meta catalog matching is case-sensitive), so use the
+  // SAME normalizeSku the feed applies — never the raw sku or the internal DB id.
+  // Empty when the product has no sku; such products are absent from the feed
+  // (see buildFeedCsv), so we omit the catalog-id microdata rather than emit a
+  // non-feed value that could only ever land as an unmatched event.
+  const sku = normalizeSku(product.sku);
   const name = product.name || 'MiniYo';
   const socialDesc = product.short_description || product.description || '';
   const jsonLdDesc = product.description || product.short_description || '';
@@ -77,7 +84,7 @@ export function buildProductMetaBlock(product) {
   lines.push(`<meta property="og:image" content="${escapeAttr(image)}" />`);
   lines.push('<meta property="og:locale" content="en_US" />');
   lines.push('<meta property="og:locale:alternate" content="ar_LB" />');
-  lines.push(`<meta property="product:retailer_item_id" content="${escapeAttr(sku)}" />`);
+  if (sku) lines.push(`<meta property="product:retailer_item_id" content="${escapeAttr(sku)}" />`);
   if (price) {
     lines.push(`<meta property="product:price:amount" content="${escapeAttr(price)}" />`);
     lines.push('<meta property="product:price:currency" content="USD" />');
@@ -96,8 +103,7 @@ export function buildProductMetaBlock(product) {
   const jsonLd = {
     '@context': 'https://schema.org/',
     '@type': 'Product',
-    productID: sku,
-    sku,
+    ...(sku ? { productID: sku, sku } : {}),
     name,
     ...(jsonLdDesc ? { description: jsonLdDesc } : {}),
     ...(product.image_url ? { image: product.image_url } : {}),

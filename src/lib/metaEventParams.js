@@ -4,9 +4,12 @@
 // unit-tested directly under node:test (same rationale as metaConsent.js). The
 // side-effecting fbq calls + consent gating live in metaPixel.js / pixel.js.
 //
-// The canonical content identifier is the product `sku` (matching the catalog
-// feed, JSON-LD and server CAPI); we fall back to the internal id only so we
-// never emit undefined.
+// The canonical content identifier is the product `sku` — the exact value the
+// catalog feed exports as `id` (and the JSON-LD / server CAPI use). We NEVER
+// fall back to the internal DB id: sku-less products are absent from the feed
+// (see buildFeedCsv), so any id we emit for them could only ever land as an
+// unmatched catalog event. When there is no sku we return null and the caller
+// skips firing (matching how the feed + server CAPI skip sku-less items).
 
 // Canonical SKU normalizer for the Meta boundary: uppercase + trim so the value
 // placed into content_ids / contents[].id can never mismatch the catalog feed on
@@ -20,7 +23,7 @@ export function normalizeSku(sku) {
 }
 
 export function contentId(product) {
-  const raw = product?.sku || product?.id;
+  const raw = product?.sku;
   return raw ? normalizeSku(raw) : null;
 }
 

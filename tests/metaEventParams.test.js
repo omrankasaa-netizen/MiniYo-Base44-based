@@ -24,12 +24,31 @@ test('normalizeSku uppercases + trims and is null-safe', () => {
   assert.equal(normalizeSku(undefined), '');
 });
 
-test('contentId prefers sku, falls back to id, else null — always normalized', () => {
+test('contentId uses the normalized sku only — never the internal DB id', () => {
   assert.equal(contentId({ sku: 'MNY-1', id: 'abc' }), 'MNY-1');
-  assert.equal(contentId({ sku: 'moonstar-53183-Pink', id: 'abc' }), 'MOONSTAR-53183-PINK');
-  assert.equal(contentId({ id: 'abc' }), 'ABC');
+  assert.equal(contentId({ sku: 'moonstar-53183', id: 'abc' }), 'MOONSTAR-53183');
+  // No sku → null (sku-less products are absent from the feed, so we must not
+  // emit the DB id as a phantom content_id that can only be an unmatched event).
+  assert.equal(contentId({ id: 'abc' }), null);
   assert.equal(contentId({}), null);
   assert.equal(contentId(null), null);
+});
+
+test('contentId sends the bare product SKU, ignoring variant color/size/index', () => {
+  // Regression guard for the catalog match-rate bug: the Pixel must send the
+  // feed-level SKU (e.g. MOONSTAR-53183), never a variant-composed string like
+  // MOONSTAR-53183-PINK-2. content_ids are built from product.sku alone, so
+  // decorating the product with color/size/variant fields must not change it.
+  const product = {
+    sku: 'MOONSTAR-53183',
+    id: 'db-uuid-123',
+    color: 'Pink',
+    size: '2',
+    variant_sku: 'MOONSTAR-53183-PINK-2',
+    selectedVariant: { color: 'Pink', variant_sku: 'MOONSTAR-53183-PINK-2' },
+  };
+  assert.equal(contentId(product), 'MOONSTAR-53183');
+  assert.deepEqual(buildAddToWishlistParams(product).content_ids, ['MOONSTAR-53183']);
 });
 
 test('content_ids come out uppercase for a mixed-case sku', () => {
