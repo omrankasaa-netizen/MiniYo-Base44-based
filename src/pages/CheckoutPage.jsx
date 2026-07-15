@@ -9,6 +9,7 @@ import { ShoppingBag, CheckCircle2, Tag, X, Loader2, Gift } from 'lucide-react';
 import { validatePromoCode, calcPromoDiscount } from '@/lib/discounts';
 import { useQuery } from '@tanstack/react-query';
 import { trackInitiateCheckout, notifyPurchase, genEventId, hasMarketingConsent } from '@/lib/metaPixel';
+import { ttInitiateCheckout, ttNotifyPurchase } from '@/lib/tiktokPixel';
 
 const ScrollToTop = ({ trigger }) => {
   useEffect(() => {
@@ -205,6 +206,7 @@ export default function CheckoutPage() {
     if (initiateCheckoutFired.current || !items?.length) return;
     initiateCheckoutFired.current = true;
     trackInitiateCheckout({ items, value: Number(subtotal) || 0 });
+    ttInitiateCheckout({ items, value: Number(subtotal) || 0 });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items?.length]);
 
@@ -474,6 +476,7 @@ export default function CheckoutPage() {
       // its line items are persisted. The backend reads the trusted values from
       // the DB; this is a best-effort trigger that never blocks confirmation.
       notifyPurchase(order.id);
+      ttNotifyPurchase(order.id);
 
       clearCart();
       setSuccess(order.order_number);

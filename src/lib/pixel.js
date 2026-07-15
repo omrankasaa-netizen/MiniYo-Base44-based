@@ -55,9 +55,10 @@ export function applyStoredConsent() {
 export function grantConsent() {
   safeLocalStorage.setItem(CONSENT_KEY, 'granted');
   setFbqConsent(true);
-  // Count the page the visitor accepted on (the initial PageView was withheld
-  // while consent was still revoked).
+  // Count the page the visitor accepted on (the initial page view was withheld
+  // while consent was still revoked) — for both the Meta and TikTok pixels.
   track('PageView');
+  trackTikTokPage();
 }
 
 export function denyConsent() {
@@ -82,14 +83,48 @@ export function track(event, params, eventID) {
   }
 }
 
+// ── TikTok Pixel (ttq) low-level helpers ─────────────────────────────────────
+// Installed ALONGSIDE the Meta Pixel (never replacing it). The base ttq loader
+// lives in index.html; these helpers only *send* events and are gated behind the
+// SAME marketing-consent check as the Meta Pixel so nothing fires until the
+// visitor accepts. TikTok has no fbq-style consent('revoke') API, so the consent
+// gate here is the mechanism that withholds ttq events until acceptance. Written
+// so nothing throws if the script is blocked, still loading, or running in SSR.
+
+// Fire a TikTok Pixel event. No-ops unless marketing consent is granted AND ttq
+// is present. When an `eventId` is passed it is forwarded via ttq's options arg
+// (ttq.track(name, props, { event_id })) so TikTok dedups this browser event
+// against the matching server-side (Events API) event.
+export function trackTikTok(event, props, eventId) {
+  if (!hasMarketingConsent()) return;
+  if (typeof window === 'undefined' || typeof window.ttq?.track !== 'function') return;
+  const opts = eventId ? { event_id: eventId } : undefined;
+  if (props && opts) {
+    window.ttq.track(event, props, opts);
+  } else if (props) {
+    window.ttq.track(event, props);
+  } else {
+    window.ttq.track(event);
+  }
+}
+
+// Fire a TikTok page view (ttq.page()). Same consent gate as trackTikTok.
+export function trackTikTokPage() {
+  if (!hasMarketingConsent()) return;
+  if (typeof window === 'undefined' || typeof window.ttq?.page !== 'function') return;
+  window.ttq.page();
+}
+
 // Fires a PageView on the initial load and on every client-side route change.
-// index.html intentionally does NOT call fbq('track','PageView') so this hook is
-// the single source of PageViews and there is no double-count on first load.
-// track() gates on consent, so PageViews are withheld until the visitor accepts.
+// index.html intentionally does NOT call fbq('track','PageView') or ttq.page()
+// so this hook is the single source of page views and there is no double-count
+// on first load. track()/trackTikTokPage() gate on consent, so page views are
+// withheld until the visitor accepts. Both pixels fire from the same place.
 export function usePageViewTracking() {
   const { pathname } = useLocation();
   useEffect(() => {
     track('PageView');
+    trackTikTokPage();
   }, [pathname]);
 }
 

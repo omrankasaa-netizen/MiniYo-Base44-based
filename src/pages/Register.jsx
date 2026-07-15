@@ -9,6 +9,7 @@ import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp
 import AuthLayout from "@/components/AuthLayout";
 import { toast } from "@/components/ui/use-toast";
 import { trackCompleteRegistration } from "@/lib/metaPixel";
+import { ttCompleteRegistration } from "@/lib/tiktokPixel";
 
 export default function Register() {
   const [email, setEmail] = useState("");
@@ -48,6 +49,7 @@ export default function Register() {
         // Account is now verified & created — fire CompleteRegistration
         // (standard params only; no raw email/PII forwarded to the Pixel).
         trackCompleteRegistration();
+        ttCompleteRegistration();
 
         // Create customer record and grant Bronze tier
         try {

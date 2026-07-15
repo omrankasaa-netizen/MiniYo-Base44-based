@@ -13,6 +13,7 @@ import RelatedProducts from '@/components/storefront/RelatedProducts';
 import { useQueryClient } from '@tanstack/react-query';
 import { normalizeImages, imageSrc, imageSrcSet, DETAIL_SIZES, handleImageError } from '@/lib/imageFraming';
 import { trackViewContent } from '@/lib/metaPixel';
+import { ttViewContent } from '@/lib/tiktokPixel';
 
 export default function ProductPage() {
   const { slug } = useParams();
@@ -61,10 +62,12 @@ export default function ProductPage() {
     enabled: !!product?.id,
   });
 
-  // Meta Pixel ViewContent — fire once each time a product is loaded/changed.
+  // Meta + TikTok Pixel ViewContent — fire once each time a product is
+  // loaded/changed.
   useEffect(() => {
     if (!product?.id) return;
     trackViewContent(product);
+    ttViewContent(product);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [product?.id]);
 

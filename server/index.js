@@ -29,6 +29,18 @@ import {
   purchaseConsentAllowed, isSendableValue,
 } from './metaPurchase.js';
 import { isTrackEvent, buildTrackCustomData } from './metaTrack.js';
+import { sendTikTokEvent, buildUserData as buildTikTokUserData } from './tiktokEventsClient.js';
+import {
+  derivePurchaseEventId as deriveTikTokPurchaseEventId,
+  buildPurchaseProperties as buildTikTokPurchaseProperties,
+  buildPurchaseUserData as buildTikTokPurchaseUserData,
+  purchaseConsentAllowed as tiktokPurchaseConsentAllowed,
+  isSendableValue as isTikTokSendableValue,
+} from './tiktokPurchase.js';
+import {
+  isTrackEvent as isTikTokTrackEvent,
+  buildTrackProperties as buildTikTokTrackProperties,
+} from './tiktokTrack.js';
 
 // Build the verification-code email HTML.
 function otpEmailHtml(code) {
@@ -58,6 +70,14 @@ fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 // Initialize the storage backend at boot so the chosen backend (R2 vs local
 // disk) is logged once and ready before the first upload.
 getStorage().catch((e) => console.error('[storage] init error:', e.message));
+
+// Log once at boot whether the server-side TikTok Events API is active. When the
+// access token is unset every TikTok send silently no-ops (never throws, never
+// hits the network) — this line makes that state visible without exposing the
+// secret. Mirrors the Meta CAPI token pattern.
+if (!process.env.MINIYO_TIKTOK_ACCESS_TOKEN) {
+  console.warn('[tiktokEvents] TikTok Events API disabled: no access token');
+}
 
 const app = express();
 // Limit is generous so the bulk-import endpoint can accept a base64 spreadsheet
@@ -515,6 +535,103 @@ app.post('/api/meta/track', (req, res) => {
     res.json({ ok: true });
   } catch (e) {
     console.error('[metaCapi] track route error:', e?.message);
+    res.json({ ok: false });
+  }
+});
+
+// ─── TikTok Events API: CompletePayment ─────────────────────────────────────
+// The TikTok twin of /api/meta/purchase. Fires the server-side CompletePayment
+// from TRUSTED order data. The client only passes an order_id; all money/contact
+// values are read from the DB (never from the request body) so the event can't
+// be spoofed. Idempotent (tiktok_purchase_sent) + consent-gated. Reuses the same
+// deterministic event_id per order as Meta so the two platforms dedup cleanly.
+function tiktokClientSignals(req) {
+  const xff = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+  return {
+    ttp: req.cookies?._ttp,
+    ttclid: req.cookies?.ttclid,
+    clientIp: req.headers['cf-connecting-ip'] || xff || req.socket?.remoteAddress,
+    userAgent: req.headers['user-agent'],
+  };
+}
+
+app.post('/api/tiktok/purchase', async (req, res) => {
+  try {
+    const orderId = req.body?.order_id;
+    if (!orderId) return res.status(400).json({ error: 'order_id required' });
+    const order = getRecord('Order', orderId);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+
+    // Idempotent: never fire twice for the same order.
+    if (order.tiktok_purchase_sent) return res.json({ ok: true, deduped: true });
+
+    // Consent gate: skip when the buyer declined marketing.
+    if (!tiktokPurchaseConsentAllowed(order)) return res.json({ ok: true, skipped: 'no_consent' });
+
+    const items = queryRecords('OrderItem', { query: { order_id: orderId }, limit: 5000 });
+    const { properties, value } = buildTikTokPurchaseProperties(order, items);
+
+    // Only send for a real sale (value > 0).
+    if (!isTikTokSendableValue(value)) return res.json({ ok: true, skipped: 'invalid_value' });
+
+    const userData = buildTikTokPurchaseUserData(order, tiktokClientSignals(req));
+    const eventId = deriveTikTokPurchaseEventId(order);
+    const eventTime = order.created_date
+      ? Math.floor(Date.parse(order.created_date) / 1000) || Math.floor(Date.now() / 1000)
+      : Math.floor(Date.now() / 1000);
+
+    const result = await sendTikTokEvent({
+      eventName: 'CompletePayment',
+      eventId,
+      eventTime,
+      pageUrl: `${SITE_BASE}/checkout`,
+      userData,
+      properties,
+    });
+
+    // Mark as sent only on a confirmed send so a transient failure (or a
+    // not-yet-configured token) can retry with the SAME deterministic event_id.
+    if (result.ok) {
+      updateRecord('Order', orderId, { tiktok_purchase_sent: nowIso() });
+    }
+    res.json({ ok: result.ok, skipped: result.skipped });
+  } catch (e) {
+    // Tracking must never surface as a checkout error.
+    console.error('[tiktokEvents] purchase route error:', e?.message);
+    res.json({ ok: false, error: 'purchase_tiktok_failed' });
+  }
+});
+
+// ─── TikTok Events API: client-originated events ─────────────────────────────
+// Server-side twin for the browser Pixel's ViewContent / AddToCart /
+// InitiateCheckout. The storefront posts the SAME event_id it passed to ttq so
+// TikTok dedups the two. Only NON-PII properties are accepted from the client;
+// user (ip/ua/ttp/ttclid) is derived server-side. CompletePayment is NOT accepted
+// here — it fires only from the trusted order flow above. Fire-and-forget: the
+// response never waits on TikTok and tracking can never break a page load.
+app.post('/api/tiktok/track', (req, res) => {
+  try {
+    const body = req.body || {};
+    const eventName = body.event_name;
+    if (!isTikTokTrackEvent(eventName)) {
+      return res.status(400).json({ error: 'unsupported_event' });
+    }
+
+    const properties = buildTikTokTrackProperties(body);
+    // PII is never trusted from the client; only request-derived signals.
+    const userData = buildTikTokUserData(tiktokClientSignals(req));
+
+    sendTikTokEvent({
+      eventName,
+      eventId: body.event_id ? String(body.event_id) : undefined,
+      pageUrl: typeof body.event_source_url === 'string' ? body.event_source_url : undefined,
+      userData,
+      properties,
+    }).catch((e) => console.error('[tiktokEvents] track send error:', e?.message));
+
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[tiktokEvents] track route error:', e?.message);
     res.json({ ok: false });
   }
 });
