@@ -5,6 +5,7 @@ import { useSiteSettings } from '@/hooks/useSiteSettings';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import { trackLead, trackContact } from '@/lib/metaPixel';
+import { ttContact } from '@/lib/tiktokPixel';
 import { MessageCircle, Mail, Check } from 'lucide-react';
 
 export default function NewsletterStrip() {
@@ -81,7 +82,7 @@ export default function NewsletterStrip() {
 
           {waLink && (
             <a href={waLink} target="_blank" rel="noopener"
-              onClick={() => trackContact('WhatsApp')}
+              onClick={() => { trackContact('WhatsApp'); ttContact('WhatsApp'); }}
               className="inline-flex items-center gap-2 bg-[#25D366] text-white px-6 py-3 rounded-full font-semibold text-sm hover:opacity-90 transition-opacity shadow-sm">
               <MessageCircle className="w-4 h-4" />
               {t('Chat on WhatsApp', 'تحدث على واتساب')}

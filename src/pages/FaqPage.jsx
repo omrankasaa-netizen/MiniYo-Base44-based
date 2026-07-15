@@ -7,6 +7,7 @@ import { ArrowLeft, ChevronDown, ChevronUp, MessageCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSiteSettings } from '@/hooks/useSiteSettings';
 import { trackContact } from '@/lib/metaPixel';
+import { ttContact } from '@/lib/tiktokPixel';
 
 const CATEGORY_ORDER = ['Orders', 'Shipping & Delivery', 'Payment', 'Returns & Exchanges', 'Products & Sizing', 'Account'];
 
@@ -134,7 +135,7 @@ export default function FaqPage() {
             <a
               href={`https://wa.me/${settings.whatsappNumber.replace(/\D/g, '')}`}
               target="_blank" rel="noopener noreferrer"
-              onClick={() => trackContact('WhatsApp')}
+              onClick={() => { trackContact('WhatsApp'); ttContact('WhatsApp'); }}
               className="inline-flex items-center gap-2 bg-primary text-primary-foreground px-6 py-2.5 rounded-full text-sm font-semibold hover:bg-primary/90 transition-colors"
             >
               <MessageCircle className="w-4 h-4" />

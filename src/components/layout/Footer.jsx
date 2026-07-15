@@ -4,6 +4,7 @@ import { Heart, Lock, MessageCircle, Instagram, Facebook } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useSiteSettings } from '@/hooks/useSiteSettings';
 import { trackContact } from '@/lib/metaPixel';
+import { ttContact } from '@/lib/tiktokPixel';
 
 export default function Footer() {
   const { t, lang } = useLang();
@@ -22,7 +23,7 @@ export default function Footer() {
             <div className="flex gap-3 mt-1">
               {settings.whatsappNumber && (
                 <a href={`https://wa.me/${settings.whatsappNumber.replace(/\D/g,'')}`} target="_blank" rel="noopener"
-                  onClick={() => trackContact('WhatsApp')}
+                  onClick={() => { trackContact('WhatsApp'); ttContact('WhatsApp'); }}
                   className="w-8 h-8 bg-white/10 rounded-full flex items-center justify-center hover:bg-white/20 transition-colors">
                   <MessageCircle className="w-4 h-4" />
                 </a>
@@ -57,7 +58,7 @@ export default function Footer() {
             <div className="flex flex-col gap-2">
               {settings.whatsappNumber && (
                 <a href={`https://wa.me/${settings.whatsappNumber.replace(/\D/g,'')}`} target="_blank" rel="noopener"
-                  onClick={() => trackContact('WhatsApp')}
+                  onClick={() => { trackContact('WhatsApp'); ttContact('WhatsApp'); }}
                   className="inline-block py-1.5 text-xs opacity-70 hover:opacity-100 transition-opacity">
                   {t('WhatsApp Us', 'تواصل عبر واتساب')}
                 </a>

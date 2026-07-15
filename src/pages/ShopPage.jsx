@@ -1,6 +1,7 @@
 import React, { useMemo, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { trackSearch } from '@/lib/metaPixel';
+import { ttSearch } from '@/lib/tiktokPixel';
 import { useLang } from '@/contexts/LanguageContext';
 import { useDiscounts } from '@/contexts/DiscountContext';
 import { base44 } from '@/api/base44Client';
@@ -249,7 +250,9 @@ export default function ShopPage() {
     if (!q || q === lastSearchFired.current) return;
     const timer = setTimeout(() => {
       lastSearchFired.current = q;
-      trackSearch(q, filtered.slice(0, 20).map(p => p.sku || p.id));
+      const resultSkus = filtered.slice(0, 20).map(p => p.sku || p.id);
+      trackSearch(q, resultSkus);
+      ttSearch(q, resultSkus);
     }, 700);
     return () => clearTimeout(timer);
   }, [search, filtered]);

@@ -65,6 +65,20 @@
       fbq('init', '1480243427454221');
     </script>
     <!-- End Meta Pixel -->
+
+    <!-- TikTok Pixel — loader only. Installed ALONGSIDE the Meta Pixel. The page
+         view (ttq.page()) is fired from the React router (src/lib/pixel.js) on
+         first load and every route change, so we do NOT call ttq.page() here — it
+         would double-count. TikTok has no fbq-style consent('revoke') API, so
+         ttq.page()/ttq.track() are gated behind the same marketing-consent check
+         as the Meta Pixel and fire only after the visitor accepts the banner. -->
+    <script>
+      !function (w, d, t) {
+        w.TiktokAnalyticsObject=t;var ttq=w[t]=w[t]||[];ttq.methods=["page","track","identify","instances","debug","on","off","once","ready","alias","group","enableCookie","disableCookie","holdConsent","revokeConsent","grantConsent"];ttq.setAndDefer=function(t,e){t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}};for(var i=0;i<ttq.methods.length;i++)ttq.setAndDefer(ttq,ttq.methods[i]);ttq.instance=function(t){for(var e=ttq._i[t]||[],n=0;n<ttq.methods.length;n++)ttq.setAndDefer(e,ttq.methods[n]);return e},ttq.load=function(e,n){var r="https://analytics.tiktok.com/i18n/pixel/events.js",o=n&&n.partner;ttq._i=ttq._i||{},ttq._i[e]=[],ttq._i[e]._u=r,ttq._t=ttq._t||{},ttq._t[e]=+new Date,ttq._o=ttq._o||{},ttq._o[e]=n||{};n=document.createElement("script");n.type="text/javascript",n.async=!0,n.src=r+"?sdkid="+e+"&lib="+t;e=document.getElementsByTagName("script")[0];e.parentNode.insertBefore(n,e)};
+        ttq.load('D9BP18JC77U1026616UG');
+      }(window, document, 'ttq');
+    </script>
+    <!-- End TikTok Pixel -->
   </head>
   <body>
     <!-- Meta Pixel <noscript> fallback -->

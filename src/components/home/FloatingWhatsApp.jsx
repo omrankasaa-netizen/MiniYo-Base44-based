@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useLang } from '@/contexts/LanguageContext';
 import { useSiteSettings } from '@/hooks/useSiteSettings';
 import { trackContact } from '@/lib/metaPixel';
+import { ttContact } from '@/lib/tiktokPixel';
 import { MessageCircle, X } from 'lucide-react';
 
 export default function FloatingWhatsApp() {
@@ -35,7 +36,7 @@ export default function FloatingWhatsApp() {
         href={waLink}
         target="_blank"
         rel="noopener"
-        onClick={() => trackContact('WhatsApp')}
+        onClick={() => { trackContact('WhatsApp'); ttContact('WhatsApp'); }}
         whileHover={{ scale: 1.08 }}
         whileTap={{ scale: 0.95 }}
         className="w-14 h-14 bg-[#25D366] text-white rounded-full flex items-center justify-center shadow-xl hover:shadow-2xl transition-shadow"
