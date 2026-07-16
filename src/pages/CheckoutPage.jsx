@@ -7,6 +7,7 @@ import { base44 } from '@/api/base44Client';
 import { useNavigate, Link } from 'react-router-dom';
 import { ShoppingBag, CheckCircle2, Tag, X, Loader2, Gift } from 'lucide-react';
 import { validatePromoCode, calcPromoDiscount } from '@/lib/discounts';
+import { reserveOrderStock } from '@/lib/inventory';
 import { useQuery } from '@tanstack/react-query';
 import { trackInitiateCheckout, notifyPurchase, genEventId, hasMarketingConsent } from '@/lib/metaPixel';
 import { ttInitiateCheckout, ttNotifyPurchase } from '@/lib/tiktokPixel';
@@ -403,6 +404,43 @@ export default function CheckoutPage() {
         gift_message: gift.is_gift ? gift.gift_message.slice(0, GIFT_MSG_MAX) : '',
       });
 
+      // Persist line items first so the server can see them when reserving.
+      await Promise.all(items.map(item =>
+        base44.entities.OrderItem.create({
+          order_id: order.id,
+          product_id: item.product.id,
+          product_name: item.product.name,
+          sku: item.product.sku || '',
+          size: item.variant?.size || '',
+          color: item.variant?.color || '',
+          quantity: item.quantity,
+          unit_price_usd: Number(item.price),
+          line_total_usd: Number(item.price) * item.quantity,
+        })
+      ));
+
+      // Reserve inventory IMMEDIATELY at placement (atomic check + hold on the
+      // server). If anything is short the server cancels the order and we stop
+      // here — nothing else (credits, spend, emails, tracking) runs for a failed
+      // order, and the cart is preserved so the customer can adjust it.
+      let reserveResult;
+      try {
+        reserveResult = await reserveOrderStock(order.id);
+      } catch (reserveErr) {
+        reserveResult = reserveErr?.data?.data || reserveErr?.data || { ok: false };
+      }
+      if (!reserveResult || reserveResult.ok !== true) {
+        const shortNames = (reserveResult?.shortages || []).map(s => s.name).filter(Boolean);
+        setStockError(
+          shortNames.length
+            ? t(`Sorry, these items were just reserved by another customer or are out of stock: ${shortNames.join(', ')}.`,
+                `عذراً، تم حجز هذه المنتجات للتو من قبل عميل آخر أو نفدت من المخزون: ${shortNames.join('، ')}.`)
+            : t('Sorry, some items are no longer available. Please review your cart and try again.',
+                'عذراً، بعض المنتجات لم تعد متوفرة. يرجى مراجعة سلتك والمحاولة مرة أخرى.')
+        );
+        return;
+      }
+
       // Handle free delivery credit consumption (if under $50 and member wants it)
       if (customer && customer.free_delivery_credits_remaining > 0 && effectiveDelivery > 0 && subtotal < 50) {
         try {
@@ -445,20 +483,6 @@ export default function CheckoutPage() {
           await base44.auth.updateMe({ preferred_payment: form.payment_method });
         } catch (_) { /* non-critical */ }
       }
-
-      await Promise.all(items.map(item =>
-        base44.entities.OrderItem.create({
-          order_id: order.id,
-          product_id: item.product.id,
-          product_name: item.product.name,
-          sku: item.product.sku || '',
-          size: item.variant?.size || '',
-          color: item.variant?.color || '',
-          quantity: item.quantity,
-          unit_price_usd: Number(item.price),
-          line_total_usd: Number(item.price) * item.quantity,
-        })
-      ));
 
       // Fire confirmation (customer) + notification (admin) emails. Best effort.
       try {

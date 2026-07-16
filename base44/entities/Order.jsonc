@@ -116,10 +116,15 @@
       ],
       "default": "New"
     },
+    "stock_reserved": {
+      "type": "boolean",
+      "default": false,
+      "description": "True when inventory is held (qty_reserved incremented) at order placement, before confirmation. Prevents double-reservation and marks non-legacy orders."
+    },
     "stock_committed": {
       "type": "boolean",
       "default": false,
-      "description": "True when stock has been deducted for this order. Prevents double-deduction."
+      "description": "True when stock has been deducted (qty_on_hand) for this order at confirmation. Prevents double-deduction."
     },
     "promo_code": {
       "type": "string"

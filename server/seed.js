@@ -207,6 +207,7 @@ function seedCatalog() {
       compare_at_price_usd: compareRaw ? parseFloat(compareRaw) || null : null,
       currency: get(r, 'currency') || 'USD',
       stock_quantity: Number.isFinite(stockQty) ? stockQty : 0,
+      qty_reserved: 0,
       has_variants: hasVariants,
       is_new: toBool(get(r, 'is_new')),
       is_featured: toBool(get(r, 'is_featured')),
