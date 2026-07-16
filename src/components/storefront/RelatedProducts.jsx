@@ -4,6 +4,7 @@ import { base44 } from '@/api/base44Client';
 import { useLang } from '@/contexts/LanguageContext';
 import ProductCard from '@/components/storefront/ProductCard';
 import { buildImagesByProduct } from '@/lib/imageFraming';
+import { productAvailableQty } from '@/lib/inventory';
 
 /**
  * "You might also like" — recommended products shown under a product card.
@@ -89,12 +90,12 @@ export default function RelatedProducts({ product, limit = 4 }) {
 
   const recommended = useMemo(() => {
     // Enrich exactly like ShopPage so ProductCard gets per-product images + stock.
+    // availableStock subtracts qty_reserved (via availableQty) so a fully-reserved
+    // recommendation renders as sold out.
     return picked.map(p => {
       const pvs = variantsByProduct[p.id] || [];
-      const totalStock = p.has_variants && pvs.length > 0
-        ? pvs.reduce((s, v) => s + (v.qty_on_hand || 0), 0)
-        : (p.stock_quantity || 0);
-      return { ...p, primaryImage: imgMap[p.id] || null, images: imagesByProduct[p.id] || [], totalStock };
+      const availableStock = productAvailableQty(p, pvs);
+      return { ...p, primaryImage: imgMap[p.id] || null, images: imagesByProduct[p.id] || [], availableStock };
     });
   }, [picked, imgMap, imagesByProduct, variantsByProduct]);
 
