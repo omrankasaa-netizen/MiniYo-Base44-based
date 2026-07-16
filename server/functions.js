@@ -1,4 +1,4 @@
-import { createRecord, getRecord, updateRecord, deleteRecord, queryRecords, bulkCreate, nowIso, kvGet, kvSet } from './db.js';
+import { db, createRecord, getRecord, updateRecord, deleteRecord, queryRecords, bulkCreate, nowIso, kvGet, kvSet } from './db.js';
 import { sendEmail } from './email.js';
 import { bulkImportProducts as runBulkImport, cleanupSeedProducts as runSeedCleanup } from './bulkImport.js';
 import { getDashboardMetrics as computeDashboardMetrics, buildOrdersCsv, invalidateDashboardCache } from './dashboard.js';
@@ -84,15 +84,27 @@ async function getVariant(productId, size, color) {
   ) || null;
 }
 
+// True when a line item targets a specific variant (variant products only).
+function isVariantLine(product, item) {
+  return !!(product.has_variants && (item.size || item.color));
+}
+
+function findVariant(product_id, size, color) {
+  return queryRecords('ProductVariant', { query: { product_id } })
+    .find((v) => (size ? v.size === size : true) && (color ? v.color === color : true)) || null;
+}
+
+// Available = on-hand − reserved, for BOTH variant and simple products. The
+// reserved counter (ProductVariant.qty_reserved / Product.qty_reserved) is what
+// makes a placed-but-unconfirmed order's stock unavailable to everyone else.
 function checkStock({ order_id }) {
   const items = queryRecords('OrderItem', { query: { order_id } });
   const shortages = [];
   for (const item of items) {
     const product = queryRecords('Product', { query: { id: item.product_id }, limit: 1 })[0];
     if (!product) continue;
-    if ((product.has_variants && item.size) || item.color) {
-      const variant = queryRecords('ProductVariant', { query: { product_id: item.product_id } })
-        .find((v) => (item.size ? v.size === item.size : true) && (item.color ? v.color === item.color : true));
+    if (isVariantLine(product, item)) {
+      const variant = findVariant(item.product_id, item.size, item.color);
       if (!variant) {
         shortages.push({ name: item.product_name, available: 0, needed: item.quantity, reason: 'Variant not found' });
         continue;
@@ -102,7 +114,7 @@ function checkStock({ order_id }) {
         shortages.push({ name: `${item.product_name} (${[item.size, item.color].filter(Boolean).join(', ')})`, available, needed: item.quantity });
       }
     } else {
-      const available = product.stock_quantity || 0;
+      const available = (product.stock_quantity || 0) - (product.qty_reserved || 0);
       if (available < item.quantity) {
         shortages.push({ name: item.product_name, available, needed: item.quantity });
       }
@@ -111,73 +123,201 @@ function checkStock({ order_id }) {
   return { ok: shortages.length === 0, shortages };
 }
 
+// ─── Reserve stock at order PLACEMENT (the race fix) ─────────────────────────
+// Atomically re-checks availability AND holds inventory for every line in one
+// critical section. Atomicity mechanism: better-sqlite3 is fully synchronous and
+// this server is single-process, so the db.transaction() closure below runs to
+// completion with no interleaving of other requests (Node never yields inside a
+// synchronous callback). Every read of qty_on_hand/qty_reserved therefore sees a
+// consistent snapshot, and if ANY line is short the whole transaction throws and
+// rolls back — no partial reservations. Two concurrent placements for the last
+// unit are serialized: the first reserves it, the second sees available=0 and is
+// rejected. On shortage the order is marked Cancelled so no dangling unreserved
+// order can later be confirmed and oversell.
+function reserveStock({ order_id }, user) {
+  const o = queryRecords('Order', { query: { id: order_id }, limit: 1 })[0];
+  if (!o) return { _status: 404, error: 'Order not found' };
+  if (o.stock_committed) return { ok: true, message: 'Stock already committed' };
+  if (o.stock_reserved) return { ok: true, message: 'Stock already reserved' };
+
+  const items = queryRecords('OrderItem', { query: { order_id } });
+  const reason = `Order ${o.order_number || order_id} placed`;
+  const by = user?.email || 'system';
+
+  const runReservation = db.transaction(() => {
+    // Pass 1: re-read fresh counts and validate EVERY line before mutating.
+    const plan = [];
+    const shortages = [];
+    for (const item of items) {
+      const product = queryRecords('Product', { query: { id: item.product_id }, limit: 1 })[0];
+      if (!product) {
+        shortages.push({ name: item.product_name, available: 0, needed: item.quantity, reason: 'Product not found' });
+        continue;
+      }
+      if (isVariantLine(product, item)) {
+        const variant = findVariant(item.product_id, item.size, item.color);
+        if (!variant) {
+          shortages.push({ name: item.product_name, available: 0, needed: item.quantity, reason: 'Variant not found' });
+          continue;
+        }
+        const reservedBefore = variant.qty_reserved || 0;
+        const available = (variant.qty_on_hand || 0) - reservedBefore;
+        if (available < item.quantity) {
+          shortages.push({ name: `${item.product_name} (${[item.size, item.color].filter(Boolean).join(', ')})`, available, needed: item.quantity });
+        } else {
+          plan.push({ kind: 'variant', id: variant.id, product_id: item.product_id, variant_sku: variant.variant_sku, qty: item.quantity, reservedBefore, available });
+        }
+      } else {
+        const reservedBefore = product.qty_reserved || 0;
+        const available = (product.stock_quantity || 0) - reservedBefore;
+        if (available < item.quantity) {
+          shortages.push({ name: item.product_name, available, needed: item.quantity });
+        } else {
+          plan.push({ kind: 'product', id: item.product_id, product_id: item.product_id, qty: item.quantity, reservedBefore, available });
+        }
+      }
+    }
+    if (shortages.length) {
+      const err = new Error('Insufficient stock');
+      err._shortages = shortages;
+      throw err; // rolls back the transaction — nothing reserved
+    }
+
+    // Pass 2: apply the holds. qty_on_hand is NOT touched — only qty_reserved.
+    const movements = [];
+    for (const p of plan) {
+      const reservedAfter = p.reservedBefore + p.qty;
+      if (p.kind === 'variant') {
+        updateRecord('ProductVariant', p.id, { qty_reserved: reservedAfter });
+        movements.push({ product_id: p.product_id, variant_sku: p.variant_sku, type: 'Reserved', quantity: -p.qty, previous_stock: p.available, new_stock: p.available - p.qty, reason, created_at: nowIso(), created_by: by });
+      } else {
+        updateRecord('Product', p.id, { qty_reserved: reservedAfter });
+        movements.push({ product_id: p.product_id, type: 'Reserved', quantity: -p.qty, previous_stock: p.available, new_stock: p.available - p.qty, reason, created_at: nowIso(), created_by: by });
+      }
+    }
+    if (movements.length) bulkCreate('InventoryMovement', movements);
+    updateRecord('Order', order_id, { stock_reserved: true });
+    return movements.length;
+  });
+
+  try {
+    const created = runReservation();
+    return { ok: true, movements_created: created };
+  } catch (e) {
+    if (e && e._shortages) {
+      // Reject the placement: cancel the order so it can never be confirmed.
+      try { updateRecord('Order', order_id, { order_status: 'Cancelled', stock_reserved: false }); } catch { /* order may be gone */ }
+      return { _status: 409, ok: false, shortages: e._shortages };
+    }
+    throw e;
+  }
+}
+
+// ─── Commit stock at CONFIRMATION (reservation → sale) ───────────────────────
+// Converts a held reservation into a sale: qty_on_hand -= qty AND qty_reserved
+// -= qty, so net availability is unchanged (the unit was already unavailable).
+// Legacy fallback: an order placed before reservations existed has no
+// stock_reserved flag — for those we run the OLD behavior (validate then just
+// decrement qty_on_hand) so historical/in-flight orders are never double-counted.
 function commitStock({ order_id }, user) {
   const o = queryRecords('Order', { query: { id: order_id }, limit: 1 })[0];
   if (!o) return { _status: 404, error: 'Order not found' };
   if (o.stock_committed) return { ok: true, message: 'Stock already committed' };
 
-  const check = checkStock({ order_id });
-  if (!check.ok) return { _status: 409, ok: false, shortages: check.shortages };
+  const wasReserved = !!o.stock_reserved;
+  // Only re-validate for legacy (unreserved) orders. A reserved order's own hold
+  // is already counted in qty_reserved, so checkStock would falsely report it as
+  // short against itself.
+  if (!wasReserved) {
+    const check = checkStock({ order_id });
+    if (!check.ok) return { _status: 409, ok: false, shortages: check.shortages };
+  }
 
   const items = queryRecords('OrderItem', { query: { order_id } });
-  const movements = [];
   const reason = `Order ${o.order_number || order_id} confirmed`;
   const by = user?.email || 'system';
 
-  for (const item of items) {
-    const product = queryRecords('Product', { query: { id: item.product_id }, limit: 1 })[0];
-    if (!product) continue;
-    if (product.has_variants && (item.size || item.color)) {
-      const variant = queryRecords('ProductVariant', { query: { product_id: item.product_id } })
-        .find((v) => (item.size ? v.size === item.size : true) && (item.color ? v.color === item.color : true));
-      if (!variant) continue;
-      const prev = variant.qty_on_hand || 0;
-      const next = prev - item.quantity;
-      updateRecord('ProductVariant', variant.id, { qty_on_hand: next });
-      movements.push({ product_id: item.product_id, variant_sku: variant.variant_sku, type: 'Sold', quantity: -item.quantity, previous_stock: prev, new_stock: next, reason, created_at: nowIso(), created_by: by });
-    } else {
-      const prev = product.stock_quantity || 0;
-      const next = prev - item.quantity;
-      updateRecord('Product', item.product_id, { stock_quantity: next });
-      movements.push({ product_id: item.product_id, type: 'Sold', quantity: -item.quantity, previous_stock: prev, new_stock: next, reason, created_at: nowIso(), created_by: by });
+  const runCommit = db.transaction(() => {
+    const movements = [];
+    for (const item of items) {
+      const product = queryRecords('Product', { query: { id: item.product_id }, limit: 1 })[0];
+      if (!product) continue;
+      if (isVariantLine(product, item)) {
+        const variant = findVariant(item.product_id, item.size, item.color);
+        if (!variant) continue;
+        const prev = variant.qty_on_hand || 0;
+        const next = Math.max(0, prev - item.quantity);
+        if (prev - item.quantity < 0) console.warn(`[inventory] commit would drive variant ${variant.variant_sku} on-hand negative; clamped to 0`);
+        const patch = { qty_on_hand: next };
+        if (wasReserved) patch.qty_reserved = Math.max(0, (variant.qty_reserved || 0) - item.quantity);
+        updateRecord('ProductVariant', variant.id, patch);
+        movements.push({ product_id: item.product_id, variant_sku: variant.variant_sku, type: 'Sold', quantity: -item.quantity, previous_stock: prev, new_stock: next, reason, created_at: nowIso(), created_by: by });
+      } else {
+        const prev = product.stock_quantity || 0;
+        const next = Math.max(0, prev - item.quantity);
+        if (prev - item.quantity < 0) console.warn(`[inventory] commit would drive product ${item.product_id} stock negative; clamped to 0`);
+        const patch = { stock_quantity: next };
+        if (wasReserved) patch.qty_reserved = Math.max(0, (product.qty_reserved || 0) - item.quantity);
+        updateRecord('Product', item.product_id, patch);
+        movements.push({ product_id: item.product_id, type: 'Sold', quantity: -item.quantity, previous_stock: prev, new_stock: next, reason, created_at: nowIso(), created_by: by });
+      }
     }
-  }
-  if (movements.length) bulkCreate('InventoryMovement', movements);
-  updateRecord('Order', order_id, { stock_committed: true });
-  return { ok: true, movements_created: movements.length };
+    if (movements.length) bulkCreate('InventoryMovement', movements);
+    updateRecord('Order', order_id, { stock_committed: true, stock_reserved: false });
+    return movements.length;
+  });
+
+  return { ok: true, movements_created: runCommit() };
 }
 
+// ─── Release stock at CANCELLATION (the only path that frees stock) ───────────
+// Three cases:
+//   • committed → cancelled: restore qty_on_hand (unchanged legacy behavior).
+//   • reserved (not yet committed) → cancelled: drop the hold (qty_reserved -=).
+//   • legacy order never reserved/committed: nothing to release.
 function releaseStock({ order_id }, user) {
   const o = queryRecords('Order', { query: { id: order_id }, limit: 1 })[0];
   if (!o) return { _status: 404, error: 'Order not found' };
-  if (!o.stock_committed) return { ok: true, message: 'Stock was never committed, nothing to release' };
+  if (!o.stock_committed && !o.stock_reserved) {
+    return { ok: true, message: 'Stock was never reserved or committed, nothing to release' };
+  }
 
+  const committed = !!o.stock_committed;
   const items = queryRecords('OrderItem', { query: { order_id } });
-  const movements = [];
   const reason = `Order ${o.order_number || order_id} cancelled`;
   const by = user?.email || 'system';
 
-  for (const item of items) {
-    const product = queryRecords('Product', { query: { id: item.product_id }, limit: 1 })[0];
-    if (!product) continue;
-    if (product.has_variants && (item.size || item.color)) {
-      const variant = queryRecords('ProductVariant', { query: { product_id: item.product_id } })
-        .find((v) => (item.size ? v.size === item.size : true) && (item.color ? v.color === item.color : true));
-      if (!variant) continue;
-      const prev = variant.qty_on_hand || 0;
-      const next = prev + item.quantity;
-      updateRecord('ProductVariant', variant.id, { qty_on_hand: next });
-      movements.push({ product_id: item.product_id, variant_sku: variant.variant_sku, type: 'Returned', quantity: item.quantity, previous_stock: prev, new_stock: next, reason, created_at: nowIso(), created_by: by });
-    } else {
-      const prev = product.stock_quantity || 0;
-      const next = prev + item.quantity;
-      updateRecord('Product', item.product_id, { stock_quantity: next });
-      movements.push({ product_id: item.product_id, type: 'Returned', quantity: item.quantity, previous_stock: prev, new_stock: next, reason, created_at: nowIso(), created_by: by });
+  const runRelease = db.transaction(() => {
+    const movements = [];
+    for (const item of items) {
+      const product = queryRecords('Product', { query: { id: item.product_id }, limit: 1 })[0];
+      if (!product) continue;
+      const isVariant = isVariantLine(product, item);
+      const target = isVariant ? findVariant(item.product_id, item.size, item.color) : product;
+      if (!target) continue;
+      if (committed) {
+        // Return sold units to on-hand.
+        const prev = isVariant ? (target.qty_on_hand || 0) : (target.stock_quantity || 0);
+        const next = prev + item.quantity;
+        const patch = isVariant ? { qty_on_hand: next } : { stock_quantity: next };
+        updateRecord(isVariant ? 'ProductVariant' : 'Product', target.id, patch);
+        movements.push({ product_id: item.product_id, variant_sku: isVariant ? target.variant_sku : undefined, type: 'Returned', quantity: item.quantity, previous_stock: prev, new_stock: next, reason, created_at: nowIso(), created_by: by });
+      } else {
+        // Drop the reservation hold; on-hand never changed.
+        const reservedPrev = target.qty_reserved || 0;
+        const reservedNext = Math.max(0, reservedPrev - item.quantity);
+        if (reservedPrev - item.quantity < 0) console.warn(`[inventory] release would drive reserved negative for ${item.product_id}; clamped to 0`);
+        updateRecord(isVariant ? 'ProductVariant' : 'Product', target.id, { qty_reserved: reservedNext });
+        const availPrev = (isVariant ? (target.qty_on_hand || 0) : (target.stock_quantity || 0)) - reservedPrev;
+        movements.push({ product_id: item.product_id, variant_sku: isVariant ? target.variant_sku : undefined, type: 'Released', quantity: item.quantity, previous_stock: availPrev, new_stock: availPrev + item.quantity, reason, created_at: nowIso(), created_by: by });
+      }
     }
-  }
-  if (movements.length) bulkCreate('InventoryMovement', movements);
-  updateRecord('Order', order_id, { stock_committed: false });
-  return { ok: true, movements_created: movements.length };
+    if (movements.length) bulkCreate('InventoryMovement', movements);
+    updateRecord('Order', order_id, { stock_committed: false, stock_reserved: false });
+    return movements.length;
+  });
+
+  return { ok: true, movements_created: runRelease() };
 }
 
 function manualAdjust({ product_id, variant_sku, new_qty, movement_type, reason }, user) {
@@ -212,12 +352,24 @@ function manualAdjust({ product_id, variant_sku, new_qty, movement_type, reason 
   return { ok: true, previous_stock: prev, new_stock: new_qty, delta };
 }
 
+// The engine itself is registered as 'public' (guest checkout must reserve at
+// placement without a login), so per-action authorization is enforced here:
+//   check_stock / reserve_stock : public (read + placement-time hold)
+//   commit_stock / release_stock / manual_adjust : admin only
+// This is STRICTER than before for the mutating actions (they were previously
+// reachable by any authenticated customer under the 'auth' guard).
 function inventoryEngine(body, user) {
   const { action } = body;
   if (action === 'check_stock') return checkStock(body);
-  if (action === 'commit_stock') return commitStock(body, user);
-  if (action === 'release_stock') return releaseStock(body, user);
-  if (action === 'manual_adjust') return manualAdjust(body, user);
+  if (action === 'reserve_stock') return reserveStock(body, user);
+  if (action === 'commit_stock' || action === 'release_stock' || action === 'manual_adjust') {
+    if (!isAdmin(user)) {
+      return { _status: user ? 403 : 401, error: user ? 'Forbidden: admin access required' : 'Authentication required' };
+    }
+    if (action === 'commit_stock') return commitStock(body, user);
+    if (action === 'release_stock') return releaseStock(body, user);
+    return manualAdjust(body, user);
+  }
   return { _status: 400, error: 'Unknown action' };
 }
 
@@ -1147,7 +1299,7 @@ const REGISTRY = {
 //   'super_admin' — super_admin only (finance + user management)
 // Unknown/unlisted functions default to 'admin' (fail-safe, never 'public').
 const GUARDS = {
-  inventoryEngine: 'auth',
+  inventoryEngine: 'public',
   membershipEngine: 'public',
   sendOrderConfirmation: 'public',
   sendOrderNotification: 'public',

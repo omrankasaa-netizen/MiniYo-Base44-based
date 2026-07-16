@@ -83,7 +83,12 @@
     "stock_quantity": {
       "type": "number",
       "default": 0,
-      "description": "Used when has_variants=false"
+      "description": "On-hand count for simple products (has_variants=false)"
+    },
+    "qty_reserved": {
+      "type": "number",
+      "default": 0,
+      "description": "Units held for placed-but-unconfirmed orders (simple products). available = stock_quantity - qty_reserved"
     },
     "reorder_level": {
       "type": "number",

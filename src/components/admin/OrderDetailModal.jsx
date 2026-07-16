@@ -36,11 +36,14 @@ export default function OrderDetailModal({ order, onClose, onUpdated, currentUse
     setUpdating(true);
     setErr('');
     try {
-      // Inventory logic
+      // Inventory logic. Confirming converts the placement-time reservation into
+      // a sale (or, for legacy unreserved orders, deducts on-hand directly).
+      // Cancelling frees stock whether it is merely reserved (New order) or has
+      // already been committed (Confirmed → Cancelled).
       if (newStatus === 'Confirmed' && !order.stock_committed) {
         await commitStock({ orderId: order.id, items });
       }
-      if (newStatus === 'Cancelled' && order.stock_committed) {
+      if (newStatus === 'Cancelled' && (order.stock_committed || order.stock_reserved)) {
         await releaseStock({ orderId: order.id, items });
       }
 

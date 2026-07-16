@@ -16,6 +16,8 @@ const MOVEMENT_COLORS = {
   Received:   'bg-blue-50 text-blue-700',
   Correction: 'bg-amber-50 text-amber-700',
   Damaged:    'bg-orange-50 text-orange-700',
+  Reserved:   'bg-purple-50 text-purple-700',
+  Released:   'bg-teal-50 text-teal-700',
 };
 
 // ── Adjust Modal ──────────────────────────────────────────────────────────────
@@ -498,7 +500,7 @@ export default function InventoryPage() {
               <select value={movFilter.type} onChange={e => setMovFilter(f => ({ ...f, type: e.target.value }))}
                 className="bg-muted rounded-xl px-3 py-2 text-xs text-foreground outline-none border-0 cursor-pointer">
                 <option value="">All types</option>
-                {['Sold','Returned','Received','Correction','Damaged'].map(t => <option key={t}>{t}</option>)}
+                {['Sold','Returned','Received','Correction','Damaged','Reserved','Released'].map(t => <option key={t}>{t}</option>)}
               </select>
               <input type="date" value={movFilter.dateFrom} onChange={e => setMovFilter(f => ({ ...f, dateFrom: e.target.value }))}
                 className="bg-muted rounded-xl px-3 py-2 text-xs text-foreground outline-none border-0 cursor-pointer" />

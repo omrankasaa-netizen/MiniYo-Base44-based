@@ -9,6 +9,16 @@ export async function checkOrderStock(orderId) {
   return res.data;
 }
 
+/**
+ * Reserve stock at order placement (atomic check + hold). Call right after the
+ * Order + OrderItems are created. Returns { ok, shortages } — on ok:false the
+ * server has already cancelled the order.
+ */
+export async function reserveOrderStock(orderId) {
+  const res = await base44.functions.invoke('inventoryEngine', { action: 'reserve_stock', order_id: orderId });
+  return res.data;
+}
+
 export async function commitOrderStock(orderId) {
   const res = await base44.functions.invoke('inventoryEngine', { action: 'commit_stock', order_id: orderId });
   return res.data;
