@@ -26,10 +26,14 @@ export default function GiftGuidePage() {
     queryFn: () => base44.entities.Product.filter({ status: 'Active' }, '-created_date', 500),
   });
 
+  const productIds = React.useMemo(() => rawProducts.map(p => p.id), [rawProducts]);
+
   const { data: images = [] } = useQuery({
-    queryKey: ['gift-guide-images'],
-    queryFn: () => base44.entities.ProductImage.list('-created_date', 3000),
-    enabled: rawProducts.length > 0,
+    queryKey: ['gift-guide-images', productIds.join(',')],
+    queryFn: () => productIds.length === 0
+      ? []
+      : base44.entities.ProductImage.filter({ product_id: productIds }, '-created_date'),
+    enabled: productIds.length > 0,
     staleTime: 60_000,
   });
 
