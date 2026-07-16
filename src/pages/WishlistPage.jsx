@@ -20,7 +20,7 @@ export default function WishlistPage() {
       if (wishlistIds.length === 0) return [];
       const [prods, imgs] = await Promise.all([
         base44.entities.Product.list('-created_date', 200),
-        base44.entities.ProductImage.list('-created_date', 2000),
+        base44.entities.ProductImage.filter({ product_id: wishlistIds }, '-created_date'),
       ]);
       const imgMap = {};
       for (const img of imgs) { if (!imgMap[img.product_id] || img.is_primary) imgMap[img.product_id] = img.url; }
