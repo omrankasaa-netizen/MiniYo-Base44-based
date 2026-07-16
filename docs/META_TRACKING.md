@@ -230,6 +230,10 @@ Decisions / conservative mappings:
    together for dynamic ads.
 4. Verify the feed `id` matches `content_ids` — this is what powers matching.
 
+> **TikTok** uses a parallel feed at `GET /tiktok-feed.csv` (same product data,
+> TikTok column names, USD price, populated `google_product_category`). See
+> [TIKTOK_FEED.md](./TIKTOK_FEED.md).
+
 ---
 
 ## 6. Consent gating

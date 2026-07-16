@@ -23,6 +23,7 @@ import { getStorage } from './storage.js';
 import { optimizeAndStore, bufferFromBase64 } from './imageOptimize.js';
 import { getProductBySlug, injectProductMeta } from './productMeta.js';
 import { buildFeedCsv } from './metaFeed.js';
+import { buildTiktokFeedCsv } from './tiktokFeed.js';
 import { sendCapiEvent, buildUserData } from './metaCapiClient.js';
 import {
   derivePurchaseEventId, buildPurchaseCustomData, buildPurchaseUserData,
@@ -438,6 +439,29 @@ app.get('/meta-feed.csv', (req, res) => {
     res.send(csv);
   } catch (e) {
     console.error('[metaFeed] generation failed:', e?.message);
+    res.status(500).type('text/plain').send('feed generation error');
+  }
+});
+
+// ─── TikTok catalog feed ──────────────────────────────────────────────────────
+// TikTok Catalog CSV product feed. Mirrors the Meta feed (same product query,
+// price/availability logic, image URL, and CSV escaping) but uses TikTok's column
+// names and populates google_product_category/product_type from the DB category.
+// `sku_id` == Product.sku so catalog entries match the same identifier used
+// everywhere else. Cached so TikTok's scheduled fetch is cheap.
+app.get('/tiktok-feed.csv', (req, res) => {
+  try {
+    const products = queryRecords('Product', { limit: 100000 });
+    const categoriesById = new Map(
+      queryRecords('Category', { limit: 100000 }).map((c) => [c.id, c]),
+    );
+    const csv = buildTiktokFeedCsv(products, categoriesById);
+    res.set('Content-Type', 'text/csv; charset=utf-8');
+    res.set('Content-Disposition', 'inline; filename="tiktok-feed.csv"');
+    res.set('Cache-Control', 'public, max-age=3600');
+    res.send(csv);
+  } catch (e) {
+    console.error('[tiktokFeed] generation failed:', e?.message);
     res.status(500).type('text/plain').send('feed generation error');
   }
 });
