@@ -7,6 +7,7 @@ import { Link } from 'react-router-dom';
 import { X, Minus, Plus, ShoppingBag, Truck } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { cmsImageSrc } from '@/lib/imageFraming';
+import { availableQty } from '@/lib/inventory';
 
 export default function CartDrawer() {
   const { isOpen, setIsOpen, items, updateQty, removeItem, subtotal: total, totalQty: count, addItem } = useCart();
@@ -54,7 +55,7 @@ export default function CartDrawer() {
       
       return results
         .filter(p => !recIds.has(p.id) && (catIds.includes(p.category_id) || p.is_featured || p.is_new))
-        .filter(p => (p.stock_quantity || 0) > 0 || (p.has_variants && Math.random() > 0.5))
+        .filter(p => availableQty(p) > 0 || (p.has_variants && Math.random() > 0.5))
         .slice(0, 6);
     },
     enabled: isOpen && items.length > 0
@@ -92,9 +93,9 @@ export default function CartDrawer() {
 
   const getStockQty = (product) => {
     if (product.has_variants && variantMap[product.id]?.length > 0) {
-      return variantMap[product.id].reduce((s, v) => s + (v.qty_on_hand || 0), 0);
+      return variantMap[product.id].reduce((s, v) => s + availableQty(v), 0);
     }
-    return product.stock_quantity || 0;
+    return availableQty(product);
   };
 
   const handleAddRecommendation = (product) => {

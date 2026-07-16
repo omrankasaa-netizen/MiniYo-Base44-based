@@ -4,6 +4,11 @@ import { base44 } from '@/api/base44Client';
  * Inventory helper — wraps the inventoryEngine backend function.
  */
 
+// Shared storefront availability helpers (on-hand minus qty_reserved). Defined
+// in a dependency-free module so they stay unit-testable; re-exported here so
+// storefront code imports them from the single inventory lib.
+export { availableQty, productAvailableQty } from './availableQty';
+
 export async function checkOrderStock(orderId) {
   const res = await base44.functions.invoke('inventoryEngine', { action: 'check_stock', order_id: orderId });
   return res.data;

@@ -7,6 +7,7 @@ import { useDiscounts } from '@/contexts/DiscountContext';
 import { motion } from 'framer-motion';
 import WishlistHeart from './WishlistHeart';
 import { framingStyle, normalizeImages, imageSrc, imageSrcSet, CARD_SIZES, handleImageError } from '@/lib/imageFraming';
+import { availableQty } from '@/lib/inventory';
 
 // Renders one framed image inside the 3:4 box, honoring its focal/crop metadata.
 // Cropped images are absolutely sized via `style`; focal-only images fill the box.
@@ -100,11 +101,18 @@ export default function ProductCard({ product }) {
   const name = lang === 'ar' ? (product.name_ar || product.name) : product.name;
   // A product is unavailable if it's been deactivated (status set to anything
   // other than "Active"; a missing status is treated as Active for back-compat)
-  // or, for simple products, sold out. Variant products track stock per-variant,
-  // so their product-level stock_quantity is not a sell-out signal here.
+  // or sold out. Availability subtracts qty_reserved from on-hand: simple
+  // products compute it from their own fields, while variant products track
+  // stock per-variant, so the parent (ShopPage/RelatedProducts) enriches
+  // `availableStock` = sum of per-variant availability. When that enrichment is
+  // absent (unknown), variant products keep their prior "browse-through"
+  // behavior and are not treated as sold out at the card level.
   const isInactive = !!product.status && product.status !== 'Active';
-  const isOutOfStock = isInactive || ((product.stock_quantity || 0) <= 0 && !product.has_variants);
-  const isLowStock = !isOutOfStock && (product.stock_quantity || 0) > 0 && (product.stock_quantity || 0) <= 3;
+  const available = product.has_variants
+    ? (product.availableStock ?? null)
+    : availableQty(product);
+  const isOutOfStock = isInactive || (available !== null && available <= 0);
+  const isLowStock = !isOutOfStock && available !== null && available > 0 && available <= 3;
   const hasCompareDiscount = product.compare_at_price_usd > product.price_usd;
   const autoDiscount = getProductDiscount(product);
   const discountedPrice = autoDiscount ? getDiscountedPrice(product) : null;
@@ -147,7 +155,7 @@ export default function ProductCard({ product }) {
               {product.is_featured && <span className="bg-accent text-accent-foreground text-xs font-semibold px-2.5 py-1 rounded-full flex items-center gap-1"><Star className="w-2.5 h-2.5 fill-current" /> {t('Featured', 'مميز')}</span>}
               {badgeLabel && <span className="bg-destructive text-destructive-foreground text-xs font-semibold px-2.5 py-1 rounded-full">{badgeLabel}</span>}
               {!badgeLabel && hasDiscount && <span className="bg-destructive text-destructive-foreground text-xs font-semibold px-2.5 py-1 rounded-full">{t('Sale', 'تخفيض')}</span>}
-              {isLowStock && <span className="bg-amber-500 text-white text-xs font-semibold px-2.5 py-1 rounded-full">{t('Only', 'فقط')} {product.stock_quantity} {t('left', 'متبقي')}</span>}
+              {isLowStock && <span className="bg-amber-500 text-white text-xs font-semibold px-2.5 py-1 rounded-full">{t('Only', 'فقط')} {available} {t('left', 'متبقي')}</span>}
             </div>
             {/* Wishlist */}
             <WishlistHeart productId={product.id} product={product} className="absolute top-2.5 right-2.5 w-8 h-8 rounded-full bg-white/80 backdrop-blur shadow-sm" />

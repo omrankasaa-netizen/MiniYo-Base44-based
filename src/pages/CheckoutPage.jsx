@@ -7,7 +7,7 @@ import { base44 } from '@/api/base44Client';
 import { useNavigate, Link } from 'react-router-dom';
 import { ShoppingBag, CheckCircle2, Tag, X, Loader2, Gift } from 'lucide-react';
 import { validatePromoCode, calcPromoDiscount } from '@/lib/discounts';
-import { reserveOrderStock } from '@/lib/inventory';
+import { reserveOrderStock, availableQty } from '@/lib/inventory';
 import { useQuery } from '@tanstack/react-query';
 import { trackInitiateCheckout, notifyPurchase, genEventId, hasMarketingConsent } from '@/lib/metaPixel';
 import { ttInitiateCheckout, ttNotifyPurchase } from '@/lib/tiktokPixel';
@@ -252,25 +252,29 @@ export default function CheckoutPage() {
   }
 
   async function revalidateStock() {
-    // Check live stock for all items
+    // Pre-check live AVAILABILITY (on-hand minus qty_reserved) so the shopper
+    // sees an "only N left / reserved" warning here, BEFORE submit — instead of
+    // only discovering it when the server rejects the reservation. The final
+    // reserveOrderStock() call below remains the source of truth.
     const issues = [];
     for (const item of items) {
       try {
         const currentProduct = await base44.entities.Product.get(item.product.id);
         if (!currentProduct) {
-          issues.push(`${item.product.name} is no longer available`);
+          issues.push(`${item.product.name} ${t('is no longer available', 'لم يعد متوفراً')}`);
         } else if (currentProduct.has_variants) {
-          // Check variant stock
+          // Check variant availability
           const variant = await base44.entities.ProductVariant?.filter?.(
             { product_id: item.product.id, size: item.variant?.size, color: item.variant?.color },
             'id',
             1
           );
-          if (!variant?.length || variant[0].stock_quantity < item.quantity) {
-            issues.push(`${item.product.name} (${item.variant?.size}/${item.variant?.color}): only ${variant?.[0]?.stock_quantity || 0} left`);
+          const avail = variant?.length ? availableQty(variant[0]) : 0;
+          if (avail < item.quantity) {
+            issues.push(`${item.product.name} (${item.variant?.size}/${item.variant?.color}): ${t('only', 'فقط')} ${avail} ${t('left', 'متبقٍ')}`);
           }
-        } else if (currentProduct.stock_quantity < item.quantity) {
-          issues.push(`${item.product.name}: only ${currentProduct.stock_quantity} left`);
+        } else if (availableQty(currentProduct) < item.quantity) {
+          issues.push(`${item.product.name}: ${t('only', 'فقط')} ${availableQty(currentProduct)} ${t('left', 'متبقٍ')}`);
         }
       } catch (e) {
         console.error('Stock check failed:', e);

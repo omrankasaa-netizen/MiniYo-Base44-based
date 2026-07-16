@@ -14,6 +14,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { normalizeImages, imageSrc, imageSrcSet, DETAIL_SIZES, handleImageError } from '@/lib/imageFraming';
 import { trackViewContent } from '@/lib/metaPixel';
 import { ttViewContent } from '@/lib/tiktokPixel';
+import { availableQty } from '@/lib/inventory';
 
 export default function ProductPage() {
   const { slug } = useParams();
@@ -80,7 +81,7 @@ export default function ProductPage() {
     const vColors = [...new Set(variants.map(v => v.color).filter(Boolean))];
     const stockFor = (size, color) => variants
       .filter(v => (!vSizes.length || v.size === size) && (!vColors.length || v.color === color))
-      .reduce((s, v) => s + (v.qty_on_hand || 0), 0);
+      .reduce((s, v) => s + availableQty(v), 0);
     if (vSizes.length && !selectedSize) {
       setSelectedSize(vSizes.find(s => stockFor(s, vColors.length ? selectedColor : undefined) > 0) || vSizes[0]);
     }
@@ -132,7 +133,7 @@ export default function ProductPage() {
   function variantStockFor({ size, color } = {}) {
     return variants
       .filter(v => (size === undefined || v.size === size) && (color === undefined || v.color === color))
-      .reduce((s, v) => s + (v.qty_on_hand || 0), 0);
+      .reduce((s, v) => s + availableQty(v), 0);
   }
 
   // Resolve the chosen variant only once every required dimension is picked.
@@ -141,8 +142,8 @@ export default function ProductPage() {
     : null;
 
   const stockQty = usesVariants
-    ? (selectedVariant ? (selectedVariant.qty_on_hand || 0) : 0)
-    : (product.stock_quantity || 0);
+    ? (selectedVariant ? availableQty(selectedVariant) : 0)
+    : availableQty(product);
   const canAdd = usesVariants ? !!selectedVariant && stockQty > 0 : stockQty > 0;
 
   function handleAdd() {

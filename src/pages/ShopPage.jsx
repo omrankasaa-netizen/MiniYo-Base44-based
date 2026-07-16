@@ -8,6 +8,7 @@ import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import ProductCard from '@/components/storefront/ProductCard';
 import { buildImagesByProduct } from '@/lib/imageFraming';
+import { productAvailableQty } from '@/lib/inventory';
 import {
   productSizeBuckets,
   normalizeAge,
@@ -184,13 +185,13 @@ export default function ShopPage() {
   const availableAges = useMemo(() => availableAgeBuckets(products), [products]);
   const availableGenders = useMemo(() => availableGenderBuckets(products), [products]);
 
-  // Enrich products with images and stock
+  // Enrich products with images and availability. availableStock subtracts
+  // qty_reserved (via availableQty) so out-of-stock / in-stock filtering and the
+  // ProductCard reflect what a new shopper can actually order, not raw on-hand.
   const enriched = useMemo(() => products.map(p => {
     const pvs = variantsByProduct[p.id] || [];
-    const totalStock = p.has_variants && pvs.length > 0
-      ? pvs.reduce((s, v) => s + (v.qty_on_hand || 0), 0)
-      : (p.stock_quantity || 0);
-    return { ...p, primaryImage: imgMap[p.id] || null, images: imagesByProduct[p.id] || [], totalStock };
+    const availableStock = productAvailableQty(p, pvs);
+    return { ...p, primaryImage: imgMap[p.id] || null, images: imagesByProduct[p.id] || [], availableStock };
   }), [products, imgMap, imagesByProduct, variantsByProduct]);
 
   // Check if product is on sale
@@ -226,7 +227,7 @@ export default function ShopPage() {
         if (!filterSizes.some(s => pBuckets.includes(s))) return false;
       }
       if (filterOnSale && !isOnSale(p)) return false;
-      if (filterInStock && p.totalStock <= 0) return false;
+      if (filterInStock && p.availableStock <= 0) return false;
       const effectivePrice = getDiscountedPrice(p);
       if (effectivePrice < filterPriceMin || effectivePrice > filterPriceMax) return false;
       return true;
