@@ -6,6 +6,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="manifest" href="/manifest.json" />
 
+    <!-- Preconnect to third-party origins used on first paint: Meta Pixel loader,
+         TikTok Pixel loader, and the product-image CDN. Warming the TLS/DNS
+         handshake early speeds up Facebook-ad mobile traffic on cellular. -->
+    <link rel="preconnect" href="https://connect.facebook.net" crossorigin />
+    <link rel="preconnect" href="https://analytics.tiktok.com" crossorigin />
+    <link rel="preconnect" href="https://images.miniyokids.com" crossorigin />
+
     <!-- Facebook app id (site-wide, required for Meta catalog / pixel linkage) -->
     <meta property="fb:app_id" content="1056890613436446" />
 
