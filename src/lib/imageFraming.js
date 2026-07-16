@@ -89,8 +89,24 @@ export function normalizeImage(image) {
 // zone only). Verified live: a 3.26MB original returns ~11KB at width=320.
 const CF_IMAGE_RESIZE = true;
 
-// Hosts whose images can be safely routed through Cloudflare resizing.
+// Cloudflare-proxied custom domain (same R2 bucket, Image Resizing enabled) that
+// all product images should be served through. Resized URLs are always emitted
+// on this origin.
+const CF_RESIZE_ORIGIN = 'https://images.miniyokids.com';
+
+// Hosts whose images can be safely routed through Cloudflare resizing. This is
+// the CDN custom domain itself (already-correct URLs).
 const CF_RESIZE_HOSTS = new Set(['images.miniyokids.com']);
+
+// Raw R2 public bucket hosts (e.g. pub-<hash>.r2.dev). These serve the SAME
+// objects under the SAME keys as CF_RESIZE_ORIGIN, but bypass Cloudflare Image
+// Resizing — so a card/thumb/large derivative referenced by its raw r2.dev URL
+// ships full-size and, on constrained connections, stalls the page. We rewrite
+// such URLs onto CF_RESIZE_ORIGIN so they get the same optimization the custom
+// domain provides. The object key (u.pathname) is identical on both hosts.
+function isRawR2Host(host) {
+  return /(^|\.)r2\.dev$/i.test(host);
+}
 
 // Target widths (CSS px) per logical size. Cloudflare caps the height to keep
 // aspect ratio; quality 80 is visually lossless for photos at these sizes.
@@ -99,17 +115,22 @@ const CF_SIZE_WIDTH = { thumb: 320, card: 600, large: 1200 };
 // Wrap an absolute R2 URL with a Cloudflare resizing transform. Returns the URL
 // unchanged when resizing is disabled, the host isn't ours, the URL is already
 // transformed, or it's not a plain http(s) image (data:/blob:/relative upload).
+// URLs already on the CDN keep their origin; raw r2.dev URLs are re-homed onto
+// CF_RESIZE_ORIGIN (same bucket/key) so they benefit from resizing too.
 function cfResize(url, size) {
   if (!CF_IMAGE_RESIZE || !url) return url;
   if (!/^https?:\/\//i.test(url)) return url;            // skip data:/blob:/relative
   if (url.includes('/cdn-cgi/image/')) return url;        // already transformed
   let u;
   try { u = new URL(url); } catch { return url; }
-  if (!CF_RESIZE_HOSTS.has(u.host)) return url;           // only our R2 host
+  const onCdn = CF_RESIZE_HOSTS.has(u.host);
+  const onRawR2 = isRawR2Host(u.host);
+  if (!onCdn && !onRawR2) return url;                     // only our own images
+  const origin = onCdn ? u.origin : CF_RESIZE_ORIGIN;
   const width = CF_SIZE_WIDTH[size] || CF_SIZE_WIDTH.card;
   const opts = `width=${width},quality=80,format=auto,fit=scale-down`;
   // /cdn-cgi/image/<opts>/<path-with-leading-slash>
-  return `${u.origin}/cdn-cgi/image/${opts}${u.pathname}${u.search}`;
+  return `${origin}/cdn-cgi/image/${opts}${u.pathname}${u.search}`;
 }
 
 // CMS sections (hero, banners, category icons) store only a single canonical
@@ -144,7 +165,10 @@ export function imageSrc(normalized, size = 'card') {
       card: ['card', 'large', 'thumb'],
       thumb: ['thumb', 'card', 'large'],
     }[size] || ['card', 'large', 'thumb'];
-    for (const k of order) if (v[k]) return v[k];
+    // Route the chosen derivative through Cloudflare resizing too: the stored
+    // variant URL may point at the raw r2.dev bucket (unoptimized, ~4x larger),
+    // so cfResize re-homes it onto the CDN and right-sizes it for this context.
+    for (const k of order) if (v[k]) return cfResize(v[k], size);
   }
   // Single-URL image (e.g. bulk-imported originals): resize on the fly.
   return cfResize(normalized.url, size);
@@ -170,7 +194,14 @@ export function imageSrcSet(normalized) {
   const entries = [];
   if (v) {
     for (const k of ['thumb', 'card', 'large']) {
-      if (v[k]) entries.push(`${v[k]} ${SRCSET_VARIANT_WIDTH[k]}w`);
+      if (!v[k]) continue;
+      // Route each derivative through Cloudflare resizing (re-homing raw r2.dev
+      // URLs onto the CDN). When rewritten, the served width is capped to
+      // CF_SIZE_WIDTH[k], so the `w` descriptor must reflect that; otherwise the
+      // pre-generated variant keeps its intrinsic-width descriptor.
+      const u = cfResize(v[k], k);
+      const w = u !== v[k] ? (CF_SIZE_WIDTH[k] || CF_SIZE_WIDTH.card) : SRCSET_VARIANT_WIDTH[k];
+      entries.push(`${u} ${w}w`);
     }
   } else if (normalized.url && /^https?:\/\//i.test(normalized.url)) {
     for (const k of ['thumb', 'card', 'large']) {
