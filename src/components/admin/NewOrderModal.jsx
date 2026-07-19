@@ -5,6 +5,20 @@ import { X, Plus, Trash2, RotateCcw } from 'lucide-react';
 import { logAction } from '@/lib/auditLog';
 import { useLang } from '@/contexts/LanguageContext';
 import { isDiscountLive, getEffectiveUnitPrice, calcManualOrderTotals } from '@/lib/discounts';
+import { normalizeImage, imageSrc, IMAGE_PLACEHOLDER, handleImageError } from '@/lib/imageFraming';
+
+// Resolve a small thumbnail URL for a product using the app's canonical image
+// helper (Cloudflare-resized `thumb` derivative). Prefers the product's legacy
+// single `image_url` (kept in sync with the primary image), then any images[]
+// entry. Returns '' when nothing usable so callers render the placeholder.
+function productThumbSrc(product) {
+  if (!product) return '';
+  const raw = product.image_url
+    || (Array.isArray(product.images) ? product.images[0] : null)
+    || product.primaryImage;
+  const n = normalizeImage(raw);
+  return n ? imageSrc(n, 'thumb') : '';
+}
 
 const DELIVERY_FEES = { 'Inside Tripoli': 3, 'Outside Tripoli': 5 };
 const CHANNELS = ['Website', 'Instagram', 'Facebook', 'WhatsApp', 'Other'];
@@ -58,6 +72,9 @@ export default function NewOrderModal({ onClose, onSaved, currentUser }) {
     if (!variantsByProduct[v.product_id]) variantsByProduct[v.product_id] = [];
     variantsByProduct[v.product_id].push(v);
   }
+
+  const productsById = {};
+  for (const p of products) productsById[p.id] = p;
 
   const totals = calcManualOrderTotals({
     items,
@@ -297,13 +314,25 @@ export default function NewOrderModal({ onClose, onSaved, currentUser }) {
                   placeholder={t('Search product…', 'ابحث عن منتج…')}
                   className="w-full px-3 py-2 rounded-xl border border-input bg-background text-sm" />
                 <div className="max-h-40 overflow-y-auto space-y-0.5">
-                  {filteredProducts.map(p => (
+                  {filteredProducts.map(p => {
+                    const thumb = productThumbSrc(p);
+                    return (
                     <button key={p.id} onClick={() => addProductToOrder(p)}
-                      className="w-full text-left px-3 py-2 rounded-xl hover:bg-card text-sm transition-colors">
-                      <span className="font-medium text-foreground">{p.name}</span>
-                      <span className="text-muted-foreground ml-2">${p.price_usd?.toFixed(2)}</span>
+                      className="w-full flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-card text-sm transition-colors text-start">
+                      <img
+                        src={thumb || IMAGE_PLACEHOLDER}
+                        onError={handleImageError}
+                        alt={p.name || ''}
+                        className="w-10 h-10 rounded-lg object-cover bg-muted border border-border shrink-0"
+                      />
+                      <span className="flex-1 min-w-0">
+                        <span className="block font-medium text-foreground truncate">{p.name}</span>
+                        {p.sku && <span className="block text-xs text-muted-foreground truncate">{p.sku}</span>}
+                      </span>
+                      <span className="text-muted-foreground shrink-0">${p.price_usd?.toFixed(2)}</span>
                     </button>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -312,10 +341,23 @@ export default function NewOrderModal({ onClose, onSaved, currentUser }) {
               {items.length === 0 && <p className="text-sm text-muted-foreground text-center py-4 bg-muted/30 rounded-xl">{t('No products added yet', 'لم تتم إضافة منتجات بعد')}</p>}
               {items.map(item => {
                 const discounted = item.base_price_usd != null && item.unit_price_usd < item.base_price_usd;
+                const thumb = productThumbSrc(productsById[item.product_id]);
+                // Prefer the size/color variant's SKU when a size is selected,
+                // else fall back to the product-level SKU snapshotted on the item.
+                const variant = (variantsByProduct[item.product_id] || [])
+                  .find(v => v.size === item.size && (!item.color || v.color === item.color));
+                const sku = variant?.variant_sku || item.sku || '';
                 return (
                   <div key={item._id} className="flex items-center gap-3 bg-muted/30 border border-border rounded-xl p-3">
+                    <img
+                      src={thumb || IMAGE_PLACEHOLDER}
+                      onError={handleImageError}
+                      alt={item.product_name || ''}
+                      className="w-11 h-11 rounded-lg object-cover bg-muted border border-border shrink-0"
+                    />
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-foreground">{item.product_name}</p>
+                      {sku && <p className="text-xs text-muted-foreground truncate">{sku}</p>}
                       <div className="flex gap-2 mt-1 flex-wrap items-center">
                         {item.availableSizes.length > 0 && (
                           <select value={item.size} onChange={e => updateItem(item._id, 'size', e.target.value)}

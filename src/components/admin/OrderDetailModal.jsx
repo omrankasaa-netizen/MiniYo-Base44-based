@@ -4,6 +4,20 @@ import { useQuery } from '@tanstack/react-query';
 import { X, Printer, MessageCircle, ChevronRight, Gift } from 'lucide-react';
 import { logAction } from '@/lib/auditLog';
 import { commitStock, releaseStock } from '@/lib/inventory';
+import { normalizeImage, imageSrc, IMAGE_PLACEHOLDER, handleImageError } from '@/lib/imageFraming';
+
+// Resolve a small thumbnail URL for a product using the app's canonical image
+// helper (Cloudflare-resized `thumb` derivative). Prefers the product's legacy
+// single `image_url` (kept in sync with the primary image), then any images[]
+// entry. Returns '' when nothing usable so callers render the placeholder.
+function productThumbSrc(product) {
+  if (!product) return '';
+  const raw = product.image_url
+    || (Array.isArray(product.images) ? product.images[0] : null)
+    || product.primaryImage;
+  const n = normalizeImage(raw);
+  return n ? imageSrc(n, 'thumb') : '';
+}
 
 const STATUS_FLOW = ['New', 'Confirmed', 'Packed', 'Out for Delivery', 'Delivered'];
 const STATUS_COLORS = {
@@ -27,6 +41,24 @@ export default function OrderDetailModal({ order, onClose, onUpdated, currentUse
   const { data: history = [] } = useQuery({
     queryKey: ['order-history', order.id],
     queryFn: () => base44.entities.OrderStatusHistory.filter({ order_id: order.id }, '-changed_at'),
+  });
+
+  // Line items don't snapshot a product image, so resolve the referenced
+  // products (by id, only those in this order) to show a mini thumbnail. Fetched
+  // by id so inactive/hidden products still resolve. SKU stays sourced from the
+  // line-item snapshot; the product is a fallback when a legacy item lacks one.
+  const productIds = [...new Set(items.map(i => i.product_id).filter(Boolean))];
+  const { data: productsById = {} } = useQuery({
+    queryKey: ['order-item-products', productIds.slice().sort().join(',')],
+    enabled: productIds.length > 0,
+    queryFn: async () => {
+      const results = await Promise.all(
+        productIds.map(id => base44.entities.Product.get(id).catch(() => null)),
+      );
+      const map = {};
+      for (const p of results) if (p) map[p.id] = p;
+      return map;
+    },
   });
 
   const currentIdx = STATUS_FLOW.indexOf(order.order_status);
@@ -169,16 +201,27 @@ export default function OrderDetailModal({ order, onClose, onUpdated, currentUse
           <div>
             <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Items</h4>
             <div className="bg-muted/30 rounded-xl overflow-hidden">
-              {items.map((item, i) => (
+              {items.map((item, i) => {
+                const product = productsById[item.product_id];
+                const thumb = productThumbSrc(product);
+                const sku = item.sku || product?.sku || '';
+                return (
                 <div key={item.id} className={`flex items-center gap-3 px-4 py-3 ${i > 0 ? 'border-t border-border' : ''}`}>
-                  <div className="flex-1">
+                  <img
+                    src={thumb || IMAGE_PLACEHOLDER}
+                    onError={handleImageError}
+                    alt={item.product_name || ''}
+                    className="w-11 h-11 rounded-lg object-cover bg-muted border border-border shrink-0"
+                  />
+                  <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-foreground">{item.product_name}</p>
-                    <p className="text-xs text-muted-foreground">{[item.size, item.color].filter(Boolean).join(' / ')} {item.sku && `· ${item.sku}`}</p>
+                    <p className="text-xs text-muted-foreground">{[item.size, item.color].filter(Boolean).join(' / ')} {sku && `· ${sku}`}</p>
                   </div>
                   <span className="text-xs text-muted-foreground">×{item.quantity}</span>
                   <span className="text-sm font-semibold text-foreground">${(item.line_total_usd || item.unit_price_usd * item.quantity).toFixed(2)}</span>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
