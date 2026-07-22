@@ -81,6 +81,19 @@ if (!process.env.MINIYO_TIKTOK_ACCESS_TOKEN) {
 }
 
 const app = express();
+app.disable('x-powered-by');
+
+// Baseline security headers. NOTE: a Content-Security-Policy is intentionally
+// NOT set yet — Meta/TikTok pixels and Google Fonts make a correct CSP risky;
+// TODO: introduce one in report-only mode first (Content-Security-Policy-Report-Only)
+// and tighten from observed violations.
+app.use((req, res, next) => {
+  res.set('X-Content-Type-Options', 'nosniff');
+  res.set('X-Frame-Options', 'SAMEORIGIN');
+  res.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  next();
+});
 // Limit is generous so the bulk-import endpoint can accept a base64 spreadsheet
 // plus a base64 images zip in a single JSON body.
 app.use(express.json({ limit: '150mb' }));
@@ -758,8 +771,10 @@ if (fs.existsSync(DIST)) {
   app.get('/product/:slug', (req, res, next) => {
     try {
       const product = getProductBySlug(req.params.slug);
-      if (!product) return next();
       const template = fs.readFileSync(INDEX_HTML, 'utf8');
+      // Unknown slug: serve the SPA shell (the client renders its own NotFound
+      // UI) but with a real HTTP 404 so crawlers stop indexing dead URLs.
+      if (!product) return res.status(404).type('html').send(template);
       res.type('html').send(injectProductMeta(template, product));
     } catch (e) {
       console.error('[productMeta] inject failed:', e?.message);
