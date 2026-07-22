@@ -19,6 +19,7 @@ import { invokeFunction, invalidateDashboardCache } from './functions.js';
 import { sendEmail } from './email.js';
 import { runSeed } from './seed.js';
 import { repairDuplicateSlugs } from './repairSlugs.js';
+import { runR2HostMigration } from './r2HostMigration.js';
 import { getStorage } from './storage.js';
 import { optimizeAndStore, bufferFromBase64 } from './imageOptimize.js';
 import { getProductBySlug, injectProductMeta } from './productMeta.js';
@@ -65,6 +66,9 @@ runSeed();
 // Repair any pre-existing duplicate product slugs so each product page resolves
 // to the correct item. Idempotent — a no-op once slugs are unique.
 repairDuplicateSlugs();
+// Rewrite any image URLs still pointing at the bucket's raw r2.dev host onto
+// the runtime R2_PUBLIC_BASE_URL custom domain. Idempotent, never throws.
+runR2HostMigration();
 
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
