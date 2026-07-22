@@ -466,6 +466,74 @@ app.get('/tiktok-feed.csv', (req, res) => {
   }
 });
 
+// ─── Sitemap ────────────────────────────────────────────────────────────────
+// Dynamic XML sitemap for search crawlers (robots.txt points here). Registered
+// before the SPA fallback. Reuses SITE_BASE so absolute URLs stay consistent
+// with the OG/meta-feed base URL (MINIYO_SITE_BASE env override).
+function xmlEscape(v) {
+  return String(v)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+// Public, indexable storefront pages (from src/App.jsx). Excludes cart,
+// checkout, account, admin, and auth-utility pages (register/reset-password).
+const SITEMAP_STATIC_PAGES = [
+  { loc: '/', priority: '1.0' },
+  { loc: '/shop', priority: '0.5' },
+  { loc: '/gifts', priority: '0.5' },
+  { loc: '/faq', priority: '0.5' },
+  { loc: '/about', priority: '0.5' },
+  { loc: '/track', priority: '0.5' },
+  { loc: '/wishlist', priority: '0.5' },
+  { loc: '/login', priority: '0.5' },
+  { loc: '/legal/contact', priority: '0.5' },
+  { loc: '/legal/shipping', priority: '0.5' },
+  { loc: '/legal/returns', priority: '0.5' },
+  { loc: '/legal/privacy', priority: '0.5' },
+  { loc: '/legal/terms', priority: '0.5' },
+];
+
+function isoDate(v) {
+  const t = Date.parse(v || '');
+  return Number.isFinite(t) ? new Date(t).toISOString().slice(0, 10) : null;
+}
+
+app.get('/sitemap.xml', (req, res) => {
+  try {
+    const products = queryRecords('Product', { limit: 100000 })
+      .filter((p) => p && p.slug && p.status === 'Active');
+    const urls = [];
+    for (const page of SITEMAP_STATIC_PAGES) {
+      urls.push(
+        `  <url><loc>${xmlEscape(SITE_BASE + page.loc)}</loc>`
+        + `<changefreq>weekly</changefreq><priority>${page.priority}</priority></url>`,
+      );
+    }
+    for (const p of products) {
+      const lastmod = isoDate(p.updated_date);
+      urls.push(
+        `  <url><loc>${xmlEscape(`${SITE_BASE}/product/${p.slug}`)}</loc>`
+        + (lastmod ? `<lastmod>${lastmod}</lastmod>` : '')
+        + '<changefreq>weekly</changefreq><priority>0.8</priority></url>',
+      );
+    }
+    const xml = '<?xml version="1.0" encoding="UTF-8"?>\n'
+      + '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+      + urls.join('\n')
+      + '\n</urlset>\n';
+    res.set('Content-Type', 'application/xml; charset=utf-8');
+    res.set('Cache-Control', 'public, max-age=3600');
+    res.send(xml);
+  } catch (e) {
+    console.error('[sitemap] generation failed:', e?.message);
+    res.status(500).type('text/plain').send('sitemap generation error');
+  }
+});
+
 // ─── Meta Conversions API: Purchase ─────────────────────────────────────────
 // Fires the server-side Purchase event from TRUSTED order data. The client only
 // passes an order_id; all money/contact values are read from the DB (never from
