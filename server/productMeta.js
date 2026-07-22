@@ -57,13 +57,24 @@ export function buildProductMetaBlock(product) {
   // (see buildFeedCsv), so we omit the catalog-id microdata rather than emit a
   // non-feed value that could only ever land as an unmatched event.
   const sku = normalizeSku(product.sku);
-  const name = product.name || 'MiniYo';
-  const socialDesc = product.short_description || product.description || '';
-  const jsonLdDesc = product.description || product.short_description || '';
-  const image = product.image_url || DEFAULT_SHARE_IMAGE;
+  // Trim catalog values — trailing spaces in DB fields (e.g. "Boys 2-Piece
+  // Hooded Set ") otherwise leak straight into og:title / JSON-LD.
+  const name = (product.name || 'MiniYo').trim();
+  const socialDesc = (product.short_description || product.description || '').trim();
+  const jsonLdDesc = (product.description || product.short_description || '').trim();
+  // JSON-LD/OG image must be absolute.
+  const rawImage = (product.image_url || '').trim();
+  const image = rawImage
+    ? (/^https?:\/\//i.test(rawImage) ? rawImage : `${SITE_BASE}${rawImage.startsWith('/') ? '' : '/'}${rawImage}`)
+    : DEFAULT_SHARE_IMAGE;
+  // Availability from the stock fields (mirrors metaFeed.js mapAvailability,
+  // with one legacy tolerance: an Active product whose stock_quantity was never
+  // set at all is treated as available — only an explicit 0 marks it out).
   const isActive = product.status === 'Active';
-  const availabilityOg = isActive ? 'in stock' : 'out of stock';
-  const availabilitySchema = isActive
+  const stockQty = product.stock_quantity;
+  const inStock = isActive && (product.has_variants || stockQty == null || Number(stockQty) > 0);
+  const availabilityOg = inStock ? 'in stock' : 'out of stock';
+  const availabilitySchema = inStock
     ? 'https://schema.org/InStock'
     : 'https://schema.org/OutOfStock';
   const price = formatPrice(product.price_usd);
@@ -83,7 +94,7 @@ export function buildProductMetaBlock(product) {
   if (socialDesc) lines.push(`<meta property="og:description" content="${escapeAttr(socialDesc)}" />`);
   lines.push(`<meta property="og:image" content="${escapeAttr(image)}" />`);
   lines.push('<meta property="og:locale" content="en_US" />');
-  lines.push('<meta property="og:locale:alternate" content="ar_LB" />');
+  lines.push('<meta property="og:locale:alternate" content="ar_AR" />');
   if (sku) lines.push(`<meta property="product:retailer_item_id" content="${escapeAttr(sku)}" />`);
   if (price) {
     lines.push(`<meta property="product:price:amount" content="${escapeAttr(price)}" />`);
@@ -106,7 +117,7 @@ export function buildProductMetaBlock(product) {
     ...(sku ? { productID: sku, sku } : {}),
     name,
     ...(jsonLdDesc ? { description: jsonLdDesc } : {}),
-    ...(product.image_url ? { image: product.image_url } : {}),
+    ...(product.image_url ? { image } : {}),
     brand: { '@type': 'Brand', name: 'MiniYo' },
     offers: {
       '@type': 'Offer',
