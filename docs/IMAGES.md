@@ -92,6 +92,16 @@ logs the error (the storefront never goes down because of a storage misconfig).
 6. **Verify** the boot log shows `[storage] backend=r2 bucket=… endpoint=…`.
    New uploads now resolve to `R2_PUBLIC_BASE_URL/...`.
 
+> **Existing databases / host changes:** image URLs are stored ABSOLUTE at
+> upload time. If older rows still point at the bucket's raw
+> `https://pub-*.r2.dev` host, you do NOT need manual SQL — at every boot
+> `server/r2HostMigration.js` runs an idempotent `REPLACE` across every
+> image-bearing table (`Product`, `ProductImage`, `ProductVariant`, `Category`,
+> `Collection`, `CmsSection`, `MediaAsset`, `SiteSetting`, `Review`, `Campaign`)
+> rewriting the legacy prefix onto the runtime `R2_PUBLIC_BASE_URL`. Just set
+> the variable to the custom domain and redeploy; the boot log prints
+> `[r2-host-migration] … rewrote N row(s)`.
+
 ### Optional: Cloudflare Image Resizing
 
 If you enable Cloudflare Image Resizing on the custom domain you can also request
