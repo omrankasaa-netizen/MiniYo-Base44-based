@@ -5,7 +5,7 @@ import { useLang } from '@/contexts/LanguageContext';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import { Heart } from 'lucide-react';
-import { cmsImageSrc } from '@/lib/imageFraming';
+import { cmsImageSrc, handleImageError } from '@/lib/imageFraming';
 
 export default function StoryBlock() {
   const { t, lang } = useLang();
@@ -34,7 +34,7 @@ export default function StoryBlock() {
               className="flex-1 w-full max-w-sm"
             >
               <div className="rounded-3xl overflow-hidden shadow-xl aspect-square">
-                <img src={cmsImageSrc(imgUrl, 'large')} alt={title} loading="lazy" decoding="async" className="w-full h-full object-cover" />
+                <img src={cmsImageSrc(imgUrl, 'large')} alt={title} loading="lazy" decoding="async" onError={handleImageError} className="w-full h-full object-cover" />
               </div>
             </motion.div>
           )}
