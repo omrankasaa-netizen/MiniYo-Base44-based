@@ -66,10 +66,24 @@ function normPipe(v) {
 function seedAdmin() {
   const email = 'admin@miniyo.store';
   // Initial super-admin password. Set MINIYO_ADMIN_PASSWORD in the environment
-  // (Railway variables) before first boot. The fallback below is a documented
-  // default used ONLY when the env var is unset and MUST be changed immediately
-  // after first login. See SECURITY.md.
-  const password = process.env.MINIYO_ADMIN_PASSWORD || 'change-me-on-first-login';
+  // (Railway variables) before first boot. Outside production we fall back to a
+  // clearly-labeled dev-only password that MUST be changed immediately after
+  // first login. In production the env var is REQUIRED: without it we skip
+  // seeding rather than create a super-admin with a public, predictable
+  // password (seeding is idempotent — it runs again on the next boot once the
+  // variable is set). See SECURITY.md.
+  let password = process.env.MINIYO_ADMIN_PASSWORD;
+  if (!password) {
+    if (process.env.NODE_ENV === 'production') {
+      console.error(
+        '[seed] MINIYO_ADMIN_PASSWORD is not set — skipping super-admin seeding '
+        + 'in production. Set MINIYO_ADMIN_PASSWORD (Railway → Variables) and '
+        + 'restart to create admin@miniyo.store with a strong password.',
+      );
+      return;
+    }
+    password = 'miniyo-dev-only-insecure-password';
+  }
   if (!findUserByEmail(email)) {
     registerUser({
       email,
