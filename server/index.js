@@ -741,15 +741,32 @@ app.post('/api/tiktok/track', (req, res) => {
   }
 });
 
-app.use('/uploads', express.static(UPLOAD_DIR));
+// Uploaded files are stored under content-random filenames (uuid), so they can
+// be cached hard at the edge/browser.
+app.use('/uploads', express.static(UPLOAD_DIR, { maxAge: '30d', immutable: true }));
 
 // ─── Serve SPA with history fallback ──────────────────────────────────────────
 if (fs.existsSync(DIST)) {
-  // Serve the PWA manifest and robots.txt with their correct content types,
-  // ahead of both express.static and the SPA history fallback. Without these,
-  // /manifest.json and /robots.txt fall through to the catch-all and return the
-  // index.html shell as text/html — an invalid manifest that some in-app
-  // WebViews (e.g. Facebook) choke on.
+  // Cache policy (Lighthouse "use efficient cache lifetimes"):
+  //  • /assets/* — Vite content-hashed bundles: cache for a year, immutable.
+  //  • index.html — never cached, so deploys take effect immediately.
+  //  • everything else (logo, manifest, share image) — 1 day.
+  const setStaticCacheHeaders = (res, filePath) => {
+    const p = filePath.replace(/\\/g, '/');
+    if (p.includes('/assets/')) {
+      res.set('Cache-Control', 'public, max-age=31536000, immutable');
+    } else if (p.endsWith('/index.html')) {
+      res.set('Cache-Control', 'no-cache');
+    } else {
+      res.set('Cache-Control', 'public, max-age=86400');
+    }
+  };
+
+  // Serve the PWA manifest, robots.txt and llms.txt with their correct content
+  // types, ahead of both express.static and the SPA history fallback. Without
+  // these, they fall through to the catch-all and return the index.html shell
+  // as text/html — an invalid manifest that some in-app WebViews (e.g.
+  // Facebook) choke on.
   app.get('/manifest.json', (req, res) => {
     res.type('application/manifest+json');
     res.sendFile(path.join(DIST, 'manifest.json'));
@@ -758,8 +775,12 @@ if (fs.existsSync(DIST)) {
     res.type('text/plain');
     res.sendFile(path.join(DIST, 'robots.txt'));
   });
+  app.get('/llms.txt', (req, res) => {
+    res.type('text/plain');
+    res.sendFile(path.join(DIST, 'llms.txt'));
+  });
 
-  app.use(express.static(DIST));
+  app.use(express.static(DIST, { setHeaders: setStaticCacheHeaders }));
 
   // Server-inject per-product structured data for product detail pages so
   // Meta's non-JS crawler / Pixel catalog scanner sees per-product OG product
@@ -772,6 +793,7 @@ if (fs.existsSync(DIST)) {
     try {
       const product = getProductBySlug(req.params.slug);
       const template = fs.readFileSync(INDEX_HTML, 'utf8');
+      res.set('Cache-Control', 'no-cache');
       // Unknown slug: serve the SPA shell (the client renders its own NotFound
       // UI) but with a real HTTP 404 so crawlers stop indexing dead URLs.
       if (!product) return res.status(404).type('html').send(template);
@@ -783,6 +805,7 @@ if (fs.existsSync(DIST)) {
   });
 
   app.get(/^(?!\/api\/).*/, (req, res) => {
+    res.set('Cache-Control', 'no-cache');
     res.sendFile(INDEX_HTML);
   });
 } else {

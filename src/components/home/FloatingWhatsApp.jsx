@@ -26,7 +26,7 @@ export default function FloatingWhatsApp() {
             className="bg-card border border-border rounded-2xl shadow-lg px-4 py-3 flex items-center gap-3 max-w-[220px]"
           >
             <p className="text-xs text-muted-foreground leading-tight flex-1">{t('Need help? Chat with us!', 'تحتاج مساعدة؟ راسلنا!')}</p>
-            <button onClick={() => setShow(false)} className="text-muted-foreground hover:text-foreground shrink-0">
+            <button onClick={() => setShow(false)} aria-label={t('Dismiss chat prompt', 'إغلاق رسالة المحادثة')} className="text-muted-foreground hover:text-foreground shrink-0">
               <X className="w-3.5 h-3.5" />
             </button>
           </motion.div>

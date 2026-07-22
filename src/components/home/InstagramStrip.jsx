@@ -78,7 +78,7 @@ export default function InstagramStrip() {
                 className="aspect-square rounded-2xl overflow-hidden bg-accent/25 group cursor-pointer"
               >
                 {url
-                  ? <img src={cmsImageSrc(url, 'card')} alt="" loading="lazy" decoding="async" onError={handleImageError} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                  ? <img src={cmsImageSrc(url, 'card')} alt="" width={320} height={320} loading="lazy" decoding="async" onError={handleImageError} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                   : (
                     <div className="w-full h-full flex items-center justify-center bg-accent/20 group-hover:bg-accent/35 transition-colors">
                       <Instagram className="w-6 h-6 text-muted-foreground/30" />
@@ -89,7 +89,7 @@ export default function InstagramStrip() {
             );
             // Make populated tiles open the Instagram profile in a new tab.
             return url && igUrl
-              ? <a key={i} href={igUrl} target="_blank" rel="noopener" className="block">{tile}</a>
+              ? <a key={i} href={igUrl} target="_blank" rel="noopener" aria-label={handle} className="block">{tile}</a>
               : tile;
           })}
         </div>

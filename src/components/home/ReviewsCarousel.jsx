@@ -90,11 +90,11 @@ export default function ReviewsCarousel() {
             </AnimatePresence>
             {total > 1 && (
               <div className="flex items-center justify-center gap-3 mt-6">
-                <button onClick={prev} className="w-9 h-9 rounded-full border border-border flex items-center justify-center hover:bg-muted transition-colors">
+                <button onClick={prev} aria-label={t('Previous review', 'التقييم السابق')} className="w-9 h-9 rounded-full border border-border flex items-center justify-center hover:bg-muted transition-colors">
                   <ChevronLeft className="w-4 h-4 text-muted-foreground" />
                 </button>
                 <span className="text-xs text-muted-foreground">{idx + 1} / {total}</span>
-                <button onClick={next} className="w-9 h-9 rounded-full border border-border flex items-center justify-center hover:bg-muted transition-colors">
+                <button onClick={next} aria-label={t('Next review', 'التقييم التالي')} className="w-9 h-9 rounded-full border border-border flex items-center justify-center hover:bg-muted transition-colors">
                   <ChevronRight className="w-4 h-4 text-muted-foreground" />
                 </button>
               </div>
