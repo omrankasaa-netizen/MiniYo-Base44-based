@@ -34,7 +34,7 @@ We do not sell your personal data. We share it only with delivery partners as ne
 We retain your data for as long as your account is active, or as needed to provide services.
 
 ### 5. Contact
-Questions? Reach us on WhatsApp or Instagram @miniyo.lb
+Questions? Reach us on WhatsApp or Instagram @miniyo.store.lb
 `,
     body_ar: `## سياسة الخصوصية
 
@@ -55,7 +55,7 @@ Questions? Reach us on WhatsApp or Instagram @miniyo.lb
 نحتفظ ببياناتك طالما حسابك نشط، أو حسب الحاجة لتقديم الخدمات.
 
 ### 5. تواصل معنا
-أسئلة؟ تواصل معنا عبر واتساب أو انستغرام @miniyo.lb
+أسئلة؟ تواصل معنا عبر واتساب أو انستغرام @miniyo.store.lb
 `,
   },
   {
@@ -330,7 +330,7 @@ export const FAQS = [
     category: 'Orders',
     question: 'How can I contact you?',
     question_ar: 'كيف يمكنني التواصل معكم؟',
-    answer: 'The fastest way is WhatsApp. You can also email management@miniyo.store or reach us on Instagram @miniyo.lb.',
-    answer_ar: 'أسرع طريقة هي واتساب. يمكنك أيضاً مراسلتنا على management@miniyo.store أو عبر انستغرام @miniyo.lb.',
+    answer: 'The fastest way is WhatsApp. You can also email management@miniyo.store or reach us on Instagram @miniyo.store.lb.',
+    answer_ar: 'أسرع طريقة هي واتساب. يمكنك أيضاً مراسلتنا على management@miniyo.store أو عبر انستغرام @miniyo.store.lb.',
   },
 ];

@@ -5,7 +5,7 @@ import { useLang } from '@/contexts/LanguageContext';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import { ChevronRight, ChevronLeft } from 'lucide-react';
-import { cmsImageSrc } from '@/lib/imageFraming';
+import { cmsImageSrc, handleImageError } from '@/lib/imageFraming';
 
 export default function FeaturedCategories() {
   const { t, lang } = useLang();
@@ -68,7 +68,7 @@ export default function FeaturedCategories() {
                 >
                   <div className="w-36 h-36 sm:w-44 sm:h-44 rounded-3xl overflow-hidden bg-accent/20 border border-border/60 shadow-sm group-hover:shadow-md group-hover:-translate-y-1 transition-all duration-300">
                     {cat.image_url
-                      ? <img src={cmsImageSrc(cat.image_url, 'card')} alt={name} loading="lazy" decoding="async" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                      ? <img src={cmsImageSrc(cat.image_url, 'card')} alt={name} loading="lazy" decoding="async" onError={handleImageError} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                       : <div className="w-full h-full flex items-center justify-center text-3xl">👶</div>}
                   </div>
                   <span className="text-sm font-semibold text-foreground text-center leading-tight">{name}</span>

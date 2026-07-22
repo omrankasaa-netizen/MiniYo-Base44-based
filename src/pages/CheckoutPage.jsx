@@ -290,14 +290,9 @@ export default function CheckoutPage() {
     setStockError('');
     setSubmitting(true);
 
-    // Validate email
-    if (!form.customer_email || !form.customer_email.trim()) {
-      setEmailError(t('Email is required', 'البريد الإلكتروني مطلوب'));
-      setSubmitting(false);
-      return;
-    }
-
-    if (!validateEmail(form.customer_email)) {
+    // Validate email — OPTIONAL for COD checkout, but when provided it must be
+    // well-formed (order confirmation emails depend on it).
+    if (form.customer_email && form.customer_email.trim() && !validateEmail(form.customer_email)) {
       setEmailError(t('Please enter a valid email address', 'يرجى إدخال عنوان بريد إلكتروني صحيح'));
       setSubmitting(false);
       return;
@@ -326,9 +321,10 @@ export default function CheckoutPage() {
     }
 
     try {
-      // Create guest account if opted in
+      // Create guest account if opted in (requires an email — the account is
+      // keyed on it and the welcome email needs somewhere to go).
       let guestCustomerId = currentUser?.id || '';
-      if (!currentUser && createAccount) {
+      if (!currentUser && createAccount && form.customer_email && form.customer_email.trim()) {
         try {
           const existingCustomers = await base44.entities.Customer.filter(
             { email: form.customer_email },
@@ -489,10 +485,14 @@ export default function CheckoutPage() {
       }
 
       // Fire confirmation (customer) + notification (admin) emails. Best effort.
-      try {
-        await base44.functions.invoke('sendOrderConfirmation', { order_id: order.id });
-      } catch (e) {
-        console.error('Order confirmation email failed:', e);
+      // The customer confirmation is skipped when no email was provided (email
+      // is optional at COD checkout).
+      if (form.customer_email && form.customer_email.trim()) {
+        try {
+          await base44.functions.invoke('sendOrderConfirmation', { order_id: order.id });
+        } catch (e) {
+          console.error('Order confirmation email failed:', e);
+        }
       }
       try {
         await base44.functions.invoke('sendOrderNotification', { order_id: order.id });
@@ -588,7 +588,7 @@ export default function CheckoutPage() {
               {[
                 { k: 'customer_name', label: t('Full Name *', 'الاسم الكامل *'), required: true, autoComplete: 'name' },
                 { k: 'customer_phone', label: t('Phone *', 'الهاتف *'), required: true, type: 'tel', inputMode: 'tel', autoComplete: 'tel' },
-                { k: 'customer_email', label: t('Email Address *', 'عنوان البريد الإلكتروني *'), required: true, type: 'email', inputMode: 'email', autoComplete: 'email', readOnly: !!currentUser },
+                { k: 'customer_email', label: t('Email Address (optional)', 'عنوان البريد الإلكتروني (اختياري)'), required: false, type: 'email', inputMode: 'email', autoComplete: 'email', readOnly: !!currentUser },
               ].map(({ k, label, required, type, inputMode, autoComplete, readOnly }) => (
                 <div key={k}>
                   <label className="text-xs text-muted-foreground block mb-1">{label}</label>

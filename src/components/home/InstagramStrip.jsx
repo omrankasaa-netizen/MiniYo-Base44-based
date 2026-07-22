@@ -5,7 +5,7 @@ import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import { useSiteSettings } from '@/hooks/useSiteSettings';
 import { Instagram } from 'lucide-react';
-import { cmsImageSrc } from '@/lib/imageFraming';
+import { cmsImageSrc, handleImageError } from '@/lib/imageFraming';
 
 export default function InstagramStrip() {
   const { t, lang } = useLang();
@@ -26,7 +26,7 @@ export default function InstagramStrip() {
   if (section && section.is_active === false) return null;
 
   const heading = (section && (lang === 'ar' ? (section.title_ar || section.title) : section.title)) || t('Our community', 'مجتمعنا');
-  const handle = (section && (lang === 'ar' ? (section.body_ar || section.body) : section.body)) || t('Follow @miniyo.lb', 'تابع @miniyo.lb');
+  const handle = (section && (lang === 'ar' ? (section.body_ar || section.body) : section.body)) || t('Follow @miniyo.store.lb', 'تابع @miniyo.store.lb');
   const igUrl = section?.link_url || settings.instagramUrl;
 
   // Photos are manually curated in the CMS (Homepage Sections → Instagram Strip)
@@ -78,7 +78,7 @@ export default function InstagramStrip() {
                 className="aspect-square rounded-2xl overflow-hidden bg-accent/25 group cursor-pointer"
               >
                 {url
-                  ? <img src={cmsImageSrc(url, 'card')} alt="" loading="lazy" decoding="async" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                  ? <img src={cmsImageSrc(url, 'card')} alt="" loading="lazy" decoding="async" onError={handleImageError} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                   : (
                     <div className="w-full h-full flex items-center justify-center bg-accent/20 group-hover:bg-accent/35 transition-colors">
                       <Instagram className="w-6 h-6 text-muted-foreground/30" />

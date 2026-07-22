@@ -5,7 +5,7 @@ import { useLang } from '@/contexts/LanguageContext';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowRight } from 'lucide-react';
-import { cmsImageSrc } from '@/lib/imageFraming';
+import { cmsImageSrc, handleImageError } from '@/lib/imageFraming';
 
 export default function HeroSection() {
   const { lang, t } = useLang();
@@ -30,11 +30,10 @@ export default function HeroSection() {
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-14 sm:py-20 lg:py-24">
         <div className={`flex flex-col ${imgUrl ? 'lg:flex-row' : ''} items-center gap-10 lg:gap-16`}>
-          {/* Text side */}
-          <motion.div
-            initial={{ opacity: 0, y: 28 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.7, ease: 'easeOut' }}
+          {/* Text side — renders immediately at full opacity (no fade-in tied
+              to the hero image load), so the headline never washes out on a
+              slow first paint. */}
+          <div
             className={`flex-1 text-center ${imgUrl ? 'lg:text-start' : ''} max-w-2xl`}
             dir={lang === 'ar' ? 'rtl' : 'ltr'}
           >
@@ -67,9 +66,11 @@ export default function HeroSection() {
               <span>{t('✓ Delivery across Lebanon', '✓ توصيل في كل لبنان')}</span>
               <span>{t('✓ Made with love', '✓ صُنع بحب')}</span>
             </p>
-          </motion.div>
+          </div>
 
-          {/* Image side */}
+          {/* Image side — keeps the entrance animation (image only), and sits
+              on a solid placeholder tone so the box is never blank while the
+              image streams in. */}
           {imgUrl && (
             <motion.div
               initial={{ opacity: 0, scale: 0.96 }}
@@ -77,8 +78,9 @@ export default function HeroSection() {
               transition={{ duration: 0.7, delay: 0.15, ease: 'easeOut' }}
               className="flex-1 w-full max-w-md lg:max-w-lg"
             >
-              <div className="relative rounded-3xl overflow-hidden shadow-2xl aspect-[4/5]">
-                <img src={cmsImageSrc(imgUrl, 'large')} alt={title} loading="eager" decoding="async" className="w-full h-full object-cover" />
+              <div className="relative rounded-3xl overflow-hidden shadow-2xl aspect-[4/5] bg-secondary">
+                <img src={cmsImageSrc(imgUrl, 'large')} alt={title} loading="eager" fetchpriority="high" decoding="async"
+                  onError={handleImageError} className="w-full h-full object-cover" />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/10 to-transparent" />
               </div>
             </motion.div>

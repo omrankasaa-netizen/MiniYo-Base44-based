@@ -37,7 +37,7 @@ We do not sell your personal data. We share it only with delivery partners as ne
 We retain your data for as long as your account is active, or as needed to provide services.
 
 ### 5. Contact
-Questions? Reach us on WhatsApp or Instagram @miniyo.lb
+Questions? Reach us on WhatsApp or Instagram @miniyo.store.lb
 `,
     default_ar: `## سياسة الخصوصية
 
@@ -58,7 +58,7 @@ Questions? Reach us on WhatsApp or Instagram @miniyo.lb
 نحتفظ ببياناتك طالما حسابك نشط، أو حسب الحاجة لتقديم الخدمات.
 
 ### 5. تواصل معنا
-أسئلة؟ تواصل معنا عبر واتساب أو انستغرام @miniyo.lb
+أسئلة؟ تواصل معنا عبر واتساب أو انستغرام @miniyo.store.lb
 `
   },
   terms: {

@@ -28,7 +28,7 @@ const SECTIONS = [
     label: 'Instagram Strip — "Our community"',
     fields: { title: true, body: true, link: true, gallery: true },
     titleHint: 'Section heading',
-    bodyHint: 'Handle label (e.g. @miniyo.lb)',
+    bodyHint: 'Handle label (e.g. @miniyo.store.lb)',
     linkHint: 'Instagram profile URL',
     galleryHint: 'Photos shown in the strip (up to 6). These do NOT sync from Instagram — upload the images you want to show here.',
     preview: '/',
