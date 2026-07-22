@@ -27,6 +27,13 @@
     <meta name="author" content="MiniYo" />
     <link rel="canonical" href="https://miniyokids.com/" />
 
+    <!-- hreflang: the SPA has a client-side EN/AR toggle with no separate URLs,
+         so both alternates point at the single canonical URL. An "ar" hreflang
+         is intentionally NOT declared — Arabic routing would need dedicated
+         /ar/ URLs in a future iteration before it can be. -->
+    <link rel="alternate" hreflang="x-default" href="https://miniyokids.com/" />
+    <link rel="alternate" hreflang="en" href="https://miniyokids.com/" />
+
     <!-- Open Graph / Facebook -->
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://miniyokids.com/" />
