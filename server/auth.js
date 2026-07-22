@@ -9,7 +9,19 @@ import {
 const OTP_TTL_MS = 10 * 60 * 1000; // 10 minutes
 const OTP_MAX_ATTEMPTS = 5;
 
-const JWT_SECRET = process.env.MINIYO_JWT_SECRET || 'miniyo-dev-secret-change-me';
+// Dev/test-only fallback secret. NEVER acceptable in production: it is public
+// in this repository, so any deployment relying on it lets anyone forge sessions.
+const DEV_JWT_SECRET = 'miniyo-dev-only-insecure-secret';
+
+if (process.env.NODE_ENV === 'production' && !process.env.MINIYO_JWT_SECRET) {
+  throw new Error(
+    '[auth] MINIYO_JWT_SECRET is not set. Refusing to start in production with '
+    + 'the public dev fallback secret. Set MINIYO_JWT_SECRET to a long random '
+    + 'value (Railway → Variables) and redeploy.',
+  );
+}
+
+const JWT_SECRET = process.env.MINIYO_JWT_SECRET || DEV_JWT_SECRET;
 const COOKIE_NAME = 'miniyo_session';
 const TOKEN_TTL = '30d';
 

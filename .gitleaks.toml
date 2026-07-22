@@ -24,4 +24,6 @@ regexes = [
   '''<set-a-long-random-secret>''',
   '''change-me-on-first-login''',
   '''miniyo-dev-secret-change-me''',
+  '''miniyo-dev-only-insecure-secret''',
+  '''miniyo-dev-only-insecure-password''',
 ]
