@@ -20,11 +20,16 @@ import { WishlistProvider } from '@/contexts/WishlistContext';
 // Layout
 import Layout from '@/components/layout/Layout';
 
-// Critical-path storefront pages (home / shop / product detail) — kept eager
-// so they ship in the initial bundle for fastest first paint.
+// Critical-path storefront page — kept eager so the homepage ships in the
+// initial bundle for fastest first paint.
 import Home from '@/pages/Home';
-import ShopPage from '@/pages/ShopPage';
-import ProductPage from '@/pages/ProductPage';
+
+// Shop and product detail are lazy-loaded: on the tested landing route (home)
+// their code was ~half of the "unused JavaScript" in the initial bundle.
+// Both still render inside the same <Suspense> below (RouteFallback), and
+// their chunks are small since shared deps stay in the main bundle.
+const ShopPage = lazy(() => import('@/pages/ShopPage'));
+const ProductPage = lazy(() => import('@/pages/ProductPage'));
 
 // Non-critical storefront pages — lazy-loaded on demand.
 const CartPage = lazy(() => import('@/pages/CartPage'));

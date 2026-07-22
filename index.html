@@ -6,25 +6,34 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="manifest" href="/manifest.json" />
 
-    <!-- Preconnect to third-party origins used on first paint: Meta Pixel loader,
-         TikTok Pixel loader, and the product-image CDN. Warming the TLS/DNS
-         handshake early speeds up Facebook-ad mobile traffic on cellular. -->
-    <link rel="preconnect" href="https://connect.facebook.net" crossorigin />
-    <link rel="preconnect" href="https://analytics.tiktok.com" crossorigin />
+    <!-- Preconnect only to origins on the CRITICAL first-paint path (Lighthouse
+         warns on >4 preconnects — each one costs a socket on slow cellular):
+         the image CDN (LCP hero + all product images) and the font origins.
+         The Meta/TikTok pixel loaders are async and consent-gated, so warming
+         them is wasted work on first paint — they connect when they load. -->
     <link rel="preconnect" href="https://images.miniyokids.com" crossorigin />
-    <!-- dns-prefetch fallbacks for browsers that ignore preconnect (older WebViews) -->
-    <link rel="dns-prefetch" href="https://connect.facebook.net" />
-    <link rel="dns-prefetch" href="https://analytics.tiktok.com" />
-    <link rel="dns-prefetch" href="https://images.miniyokids.com" />
-
-    <!-- Google Fonts: loaded as parallel <link> stylesheets (with preconnect)
-         instead of a chained CSS @import inside the bundle — the @import forced
-         a sequential CSS→CSS→font fetch that was render-blocking for ~1s on
-         slow 4G. display=swap keeps text visible with fallback metrics while
-         the webfonts stream in. -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&family=Poppins:wght@300;400;500;600&family=Cairo:wght@400;500;600;700&family=Tajawal:wght@300;400;500;700&display=swap" />
+
+    <!-- LCP request discovery: the hero <img> URL comes from a CMS fetch after
+         React mounts (HTML → JS → API → img = 3+ round trips on slow 4G). This
+         preload mirrors HeroSection's srcset/sizes exactly so the browser can
+         start fetching the correct hero derivative with the FIRST request batch.
+         NOTE: if the home_hero CMS image is changed in the admin, update this
+         URL too (same object path, /thumb|card|large.webp derivatives). -->
+    <link rel="preload" as="image" fetchpriority="high"
+      href="https://images.miniyokids.com/cdn-cgi/image/width=1200,quality=80,format=auto,fit=scale-down/products/1782179528314-1295c75d-miniyo_story/large.webp"
+      imagesrcset="https://images.miniyokids.com/cdn-cgi/image/width=320,quality=80,format=auto,fit=scale-down/products/1782179528314-1295c75d-miniyo_story/thumb.webp 320w, https://images.miniyokids.com/cdn-cgi/image/width=600,quality=80,format=auto,fit=scale-down/products/1782179528314-1295c75d-miniyo_story/card.webp 600w, https://images.miniyokids.com/cdn-cgi/image/width=1200,quality=80,format=auto,fit=scale-down/products/1782179528314-1295c75d-miniyo_story/large.webp 1200w"
+      imagesizes="(max-width: 1024px) 448px, 512px" />
+
+    <!-- Google Fonts: non-render-blocking load. The stylesheet is applied with
+         media="print" (not render-blocking) and flipped to "all" onload; the
+         preload warms the fetch in parallel. The splash uses system fonts and
+         app text has display=swap fallbacks, so nothing waits on the fonts.
+         noscript keeps a plain stylesheet for no-JS clients. -->
+    <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&family=Poppins:wght@300;400;500;600&family=Cairo:wght@400;500;600;700&family=Tajawal:wght@300;400;500;700&display=swap" />
+    <link rel="stylesheet" media="print" onload="this.media='all'" href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&family=Poppins:wght@300;400;500;600&family=Cairo:wght@400;500;600;700&family=Tajawal:wght@300;400;500;700&display=swap" />
+    <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&family=Poppins:wght@300;400;500;600&family=Cairo:wght@400;500;600;700&family=Tajawal:wght@300;400;500;700&display=swap" /></noscript>
 
     <!-- Branded splash shown inside #root until React mounts and replaces it.
          Pure inline CSS, zero requests, system fonts. Colors match the app
