@@ -9,6 +9,7 @@ import { ShoppingBag, ArrowLeft, ChevronLeft, ChevronRight } from 'lucide-react'
 import ImageLightbox from '@/components/storefront/ImageLightbox';
 import WishlistHeart from '@/components/storefront/WishlistHeart';
 import { ReviewList, ReviewForm } from '@/components/storefront/ReviewCard';
+import RatingStars from '@/components/storefront/RatingStars';
 import RelatedProducts from '@/components/storefront/RelatedProducts';
 import { useQueryClient } from '@tanstack/react-query';
 import { normalizeImages, imageSrc, imageSrcSet, DETAIL_SIZES, handleImageError } from '@/lib/imageFraming';
@@ -120,6 +121,14 @@ export default function ProductPage() {
   const colors = variantColors.length > 0 ? variantColors : stringColors;
   const displayImages = normalizeImages(images);
 
+  // Aggregate rating from published reviews only (guest submissions stay hidden
+  // until an admin publishes them).
+  const publishedReviews = reviews.filter(r => r.is_published);
+  const reviewCount = publishedReviews.length;
+  const reviewAvg = reviewCount
+    ? publishedReviews.reduce((s, r) => s + (Number(r.rating) || 0), 0) / reviewCount
+    : 0;
+
   // Which selection dimensions this product actually uses.
   const usesVariants = product.has_variants && variants.length > 0;
   const needsSize = usesVariants && sizes.length > 0;
@@ -217,6 +226,11 @@ export default function ProductPage() {
                 {originalPrice && <span className="text-muted-foreground line-through text-lg">${originalPrice?.toFixed(2)}</span>}
                 {badgeLabel && <span className="bg-destructive text-destructive-foreground text-xs font-bold px-2.5 py-1 rounded-full">{badgeLabel}</span>}
               </div>
+              {reviewCount > 0 && (
+                <a href="#reviews" className="inline-block mt-2 hover:opacity-80">
+                  <RatingStars avg={reviewAvg} count={reviewCount} size="md" />
+                </a>
+              )}
             </div>
 
             {/* Variant picker */}
@@ -287,8 +301,8 @@ export default function ProductPage() {
           </div>
         </div>
 
-        {/* Reviews section */}
-        <div className="border-t border-border pt-8">
+        {/* Reviews section — id="reviews" is the anchor WhatsApp review links scroll to */}
+        <div id="reviews" className="border-t border-border pt-8 scroll-mt-24">
           <h3 className="text-lg font-heading font-bold text-foreground mb-6">{t('Customer Reviews', 'تقييمات العملاء')}</h3>
           <div className="space-y-6">
             <ReviewList reviews={reviews} />
