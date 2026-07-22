@@ -18,7 +18,7 @@ function SinglePromoBanner({ section }) {
       className="relative rounded-3xl overflow-hidden shadow-md group cursor-pointer">
       <div className="aspect-[16/5] sm:aspect-[16/4] w-full bg-muted">
         {section.image_url
-          ? <img src={cmsImageSrc(section.image_url, 'large')} alt={title} loading="lazy" decoding="async" onError={handleImageError} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+          ? <img src={cmsImageSrc(section.image_url, 'large')} alt={title} width={1280} height={400} loading="lazy" decoding="async" onError={handleImageError} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
           : <div className="w-full h-full bg-gradient-to-r from-accent/30 to-secondary/30" />}
       </div>
       <div className="absolute inset-0 bg-gradient-to-r from-black/50 to-transparent flex items-center px-8">

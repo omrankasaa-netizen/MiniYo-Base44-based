@@ -34,7 +34,7 @@ export default function Header() {
         <div className="flex items-center justify-between h-16 sm:h-20 gap-4">
           {/* Logo */}
           <Link to="/" className="flex items-center gap-2 shrink-0">
-            <img src={LOGO_URL} alt="MiniYo" className="h-10 sm:h-14 w-auto object-contain" />
+            <img src={LOGO_URL} alt="MiniYo" width={215} height={200} className="h-10 sm:h-14 w-auto object-contain" />
           </Link>
 
           {/* Desktop nav */}

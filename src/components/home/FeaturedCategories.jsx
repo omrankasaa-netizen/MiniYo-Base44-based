@@ -37,10 +37,10 @@ export default function FeaturedCategories() {
             {t('Shop by category', 'تسوق حسب الفئة')}
           </h2>
           <div className="hidden sm:flex gap-2">
-            <button onClick={() => scroll(-1)} className="w-9 h-9 rounded-full border border-border flex items-center justify-center hover:bg-muted transition-colors">
+            <button onClick={() => scroll(-1)} aria-label={t('Scroll categories back', 'مرر الفئات للخلف')} className="w-9 h-9 rounded-full border border-border flex items-center justify-center hover:bg-muted transition-colors">
               <ChevronLeft className="w-4 h-4 text-muted-foreground" />
             </button>
-            <button onClick={() => scroll(1)} className="w-9 h-9 rounded-full border border-border flex items-center justify-center hover:bg-muted transition-colors">
+            <button onClick={() => scroll(1)} aria-label={t('Scroll categories forward', 'مرر الفئات للأمام')} className="w-9 h-9 rounded-full border border-border flex items-center justify-center hover:bg-muted transition-colors">
               <ChevronRight className="w-4 h-4 text-muted-foreground" />
             </button>
           </div>
@@ -68,7 +68,7 @@ export default function FeaturedCategories() {
                 >
                   <div className="w-36 h-36 sm:w-44 sm:h-44 rounded-3xl overflow-hidden bg-accent/20 border border-border/60 shadow-sm group-hover:shadow-md group-hover:-translate-y-1 transition-all duration-300">
                     {cat.image_url
-                      ? <img src={cmsImageSrc(cat.image_url, 'card')} alt={name} loading="lazy" decoding="async" onError={handleImageError} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                      ? <img src={cmsImageSrc(cat.image_url, 'card')} alt={name} width={176} height={176} loading="lazy" decoding="async" onError={handleImageError} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                       : <div className="w-full h-full flex items-center justify-center text-3xl">👶</div>}
                   </div>
                   <span className="text-sm font-semibold text-foreground text-center leading-tight">{name}</span>

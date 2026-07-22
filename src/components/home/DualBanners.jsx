@@ -16,7 +16,7 @@ function DualCard({ section }) {
       className="relative rounded-3xl overflow-hidden shadow-md group cursor-pointer flex-1">
       <div className="aspect-square sm:aspect-[4/3] w-full bg-muted">
         {section.image_url
-          ? <img src={cmsImageSrc(section.image_url, 'large')} alt={title} loading="lazy" decoding="async" onError={handleImageError} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+          ? <img src={cmsImageSrc(section.image_url, 'large')} alt={title} width={800} height={600} loading="lazy" decoding="async" onError={handleImageError} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
           : <div className="w-full h-full bg-gradient-to-br from-accent/30 to-secondary/20" />}
       </div>
       {title && (

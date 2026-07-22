@@ -23,6 +23,7 @@ export default function Footer() {
             <div className="flex gap-3 mt-1">
               {settings.whatsappNumber && (
                 <a href={`https://wa.me/${settings.whatsappNumber.replace(/\D/g,'')}`} target="_blank" rel="noopener"
+                  aria-label={t('Chat with us on WhatsApp', 'تواصل معنا عبر واتساب')}
                   onClick={() => { trackContact('WhatsApp'); ttContact('WhatsApp'); }}
                   className="w-8 h-8 bg-white/10 rounded-full flex items-center justify-center hover:bg-white/20 transition-colors">
                   <MessageCircle className="w-4 h-4" />
@@ -30,12 +31,14 @@ export default function Footer() {
               )}
               {settings.instagramUrl && (
                 <a href={settings.instagramUrl} target="_blank" rel="noopener"
+                  aria-label={t('MiniYo on Instagram', 'ميني يو على إنستغرام')}
                   className="w-8 h-8 bg-white/10 rounded-full flex items-center justify-center hover:bg-white/20 transition-colors">
                   <Instagram className="w-4 h-4" />
                 </a>
               )}
               {settings.facebookUrl && (
                 <a href={settings.facebookUrl} target="_blank" rel="noopener"
+                  aria-label={t('MiniYo on Facebook', 'ميني يو على فيسبوك')}
                   className="w-8 h-8 bg-white/10 rounded-full flex items-center justify-center hover:bg-white/20 transition-colors">
                   <Facebook className="w-4 h-4" />
                 </a>

@@ -36,7 +36,7 @@ export default function GiftingCallout() {
           <div className={`flex flex-col ${imgUrl ? 'md:flex-row' : ''} items-center gap-0`}>
             {imgUrl && (
               <div className="w-full md:w-2/5 aspect-video md:aspect-auto md:h-full overflow-hidden">
-                <img src={cmsImageSrc(imgUrl, 'large')} alt={title} loading="lazy" decoding="async" onError={handleImageError} className="w-full h-full object-cover min-h-[220px]" />
+                <img src={cmsImageSrc(imgUrl, 'large')} alt={title} width={800} height={450} loading="lazy" decoding="async" onError={handleImageError} className="w-full h-full object-cover min-h-[220px]" />
               </div>
             )}
             <div className="flex-1 p-8 sm:p-12 text-center md:text-start">

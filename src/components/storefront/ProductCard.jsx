@@ -23,6 +23,7 @@ function FramedImage({ image, alt, eager }) {
       srcSet={imageSrcSet(image)}
       sizes={CARD_SIZES}
       alt={alt}
+      width={600} height={800}
       loading={eager ? 'eager' : 'lazy'}
       decoding="async"
       onError={handleImageError}

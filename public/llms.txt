@@ -1,0 +1,34 @@
+# MiniYo
+
+> MiniYo (miniyokids.com) is a baby & kids clothing store based in Lebanon.
+> It sells soft, thoughtful clothing for newborns, babies, toddlers and kids,
+> with delivery across Lebanon and Cash on Delivery. The site is bilingual
+> (English / Arabic).
+
+## Storefront
+
+- [Homepage](https://miniyokids.com/): featured categories, new arrivals, sale campaigns
+- [Shop all products](https://miniyokids.com/shop): full catalog with filters (gender, category, price, sale)
+- [Track order](https://miniyokids.com/track): order status lookup by order number
+- [About](https://miniyokids.com/about): brand story
+- [FAQ](https://miniyokids.com/faq): delivery, payment, sizing and returns answers
+- [Gift guide](https://miniyokids.com/gift-guide): curated newborn and baby-shower gift sets
+
+## Product data
+
+- [Meta catalog feed (CSV)](https://miniyokids.com/meta-feed.csv): full product feed — id (SKU), title, description, price USD, availability, image link, product page link
+- [TikTok catalog feed (CSV)](https://miniyokids.com/tiktok-feed.csv): same products with TikTok column names and Google product categories
+- Product pages live at `https://miniyokids.com/product/{slug}` and carry OpenGraph product tags plus JSON-LD (price, availability, aggregateRating).
+
+## Policies
+
+- Payment: Cash on Delivery across Lebanon; no card required.
+- Delivery: nationwide Lebanon; free delivery on orders over $50.
+- Support: WhatsApp (linked in the site footer) and the FAQ page.
+- Legal pages (privacy, returns, terms) are linked from the site footer.
+
+## Notes for agents
+
+- Prices are in USD; Cash on Delivery is settled in USD or LBP at delivery.
+- Images are served from the images.miniyokids.com CDN (Cloudflare R2) with on-the-fly resizing.
+- The storefront is bilingual: most content has English and Arabic variants.

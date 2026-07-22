@@ -79,7 +79,11 @@ export default function HeroSection() {
               className="flex-1 w-full max-w-md lg:max-w-lg"
             >
               <div className="relative rounded-3xl overflow-hidden shadow-2xl aspect-[4/5] bg-secondary">
-                <img src={cmsImageSrc(imgUrl, 'large')} alt={title} loading="eager" fetchpriority="high" decoding="async"
+                <img src={cmsImageSrc(imgUrl, 'large')}
+                  srcSet={`${cmsImageSrc(imgUrl, 'thumb')} 320w, ${cmsImageSrc(imgUrl, 'card')} 600w, ${cmsImageSrc(imgUrl, 'large')} 1200w`}
+                  sizes="(max-width: 1024px) 448px, 512px"
+                  width={1200} height={1500}
+                  alt={title} loading="eager" fetchpriority="high" decoding="async"
                   onError={handleImageError} className="w-full h-full object-cover" />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/10 to-transparent" />
               </div>
