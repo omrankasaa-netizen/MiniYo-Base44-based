@@ -36,6 +36,21 @@ export function getProductBySlug(slug) {
   return rows[0] || null;
 }
 
+// Aggregate rating from published reviews for JSON-LD. Returns null when the
+// product has no published reviews (schema omitted entirely in that case) or
+// when the Review table is unavailable. ratingValue is rounded to 1 decimal.
+function getAggregateRating(productId) {
+  try {
+    const reviews = queryRecords('Review', { query: { product_id: productId }, limit: 5000 })
+      .filter((r) => r.is_published && Number.isFinite(Number(r.rating)));
+    if (reviews.length === 0) return null;
+    const avg = reviews.reduce((s, r) => s + Number(r.rating), 0) / reviews.length;
+    return { ratingValue: Math.round(avg * 10) / 10, reviewCount: reviews.length };
+  } catch {
+    return null;
+  }
+}
+
 // Meta only auto-populates a catalog entry when it can read a numeric price.
 // Return a "18.99"-style string, or null when the stored value is not a finite
 // number (never invent a price).
@@ -78,6 +93,7 @@ export function buildProductMetaBlock(product) {
     ? 'https://schema.org/InStock'
     : 'https://schema.org/OutOfStock';
   const price = formatPrice(product.price_usd);
+  const aggregateRating = getAggregateRating(product.id);
 
   const lines = [];
   lines.push('<!-- Per-product SEO + Meta catalog microdata (server-injected) -->');
@@ -119,6 +135,15 @@ export function buildProductMetaBlock(product) {
     ...(jsonLdDesc ? { description: jsonLdDesc } : {}),
     ...(product.image_url ? { image } : {}),
     brand: { '@type': 'Brand', name: 'MiniYo' },
+    ...(aggregateRating
+      ? {
+          aggregateRating: {
+            '@type': 'AggregateRating',
+            ratingValue: aggregateRating.ratingValue,
+            reviewCount: aggregateRating.reviewCount,
+          },
+        }
+      : {}),
     offers: {
       '@type': 'Offer',
       url,

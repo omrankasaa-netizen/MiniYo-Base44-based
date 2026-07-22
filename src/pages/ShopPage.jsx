@@ -134,6 +134,29 @@ export default function ShopPage() {
     staleTime: 60_000,
   });
 
+  // Published reviews fetched ONCE at list level and grouped by product_id so
+  // ProductCard ratings don't create N+1 queries.
+  const { data: reviews = [] } = useQuery({
+    queryKey: ['shop-reviews'],
+    queryFn: () => base44.entities.Review.filter({ is_published: true }, '-created_date', 3000),
+    staleTime: 60_000,
+  });
+
+  const ratingsByProduct = useMemo(() => {
+    const m = {};
+    for (const r of reviews) {
+      if (!r.product_id) continue;
+      if (!m[r.product_id]) m[r.product_id] = { sum: 0, count: 0 };
+      m[r.product_id].sum += Number(r.rating) || 0;
+      m[r.product_id].count += 1;
+    }
+    const out = {};
+    for (const [pid, { sum, count }] of Object.entries(m)) {
+      if (count > 0) out[pid] = { avg: sum / count, count };
+    }
+    return out;
+  }, [reviews]);
+
   const { data: categories = [] } = useQuery({
     queryKey: ['categories'],
     queryFn: () => base44.entities.Category.filter({ is_active: true }, 'sort_order', 100),
@@ -506,7 +529,7 @@ export default function ShopPage() {
               </div>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {filtered.map(p => <ProductCard key={p.id} product={p} />)}
+                {filtered.map(p => <ProductCard key={p.id} product={p} rating={ratingsByProduct[p.id]} />)}
               </div>
             )}
           </div>

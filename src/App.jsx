@@ -71,6 +71,7 @@ const CustomersPage = lazy(() => import('@/pages/admin/CustomersPage'));
 const AdminMembershipPage = lazy(() => import('@/pages/admin/MembershipPage'));
 const EmailLogPage = lazy(() => import('@/pages/admin/EmailLogPage'));
 const ShippingPage = lazy(() => import('@/pages/admin/ShippingPage'));
+const ReviewsPage = lazy(() => import('@/pages/admin/ReviewsPage'));
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -150,6 +151,7 @@ const AuthenticatedApp = () => {
       <Route path="/admin/membership" element={<AdminGuard><AdminMembershipPage /></AdminGuard>} />
       <Route path="/admin/email-log" element={<AdminGuard><EmailLogPage /></AdminGuard>} />
       <Route path="/admin/site-settings/shipping" element={<AdminGuard><ShippingPage /></AdminGuard>} />
+      <Route path="/admin/reviews" element={<AdminGuard><ReviewsPage /></AdminGuard>} />
 
       <Route path="*" element={<PageNotFound />} />
       </Routes>

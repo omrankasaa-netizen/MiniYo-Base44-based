@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
-import { X, Printer, MessageCircle, ChevronRight, Gift } from 'lucide-react';
+import { X, Printer, MessageCircle, ChevronRight, Gift, Star, TicketPercent, Copy } from 'lucide-react';
 import { logAction } from '@/lib/auditLog';
 import { commitStock, releaseStock } from '@/lib/inventory';
+import { whatsappLink } from '@/lib/adminExport';
 import { normalizeImage, imageSrc, IMAGE_PLACEHOLDER, handleImageError } from '@/lib/imageFraming';
 
 // Resolve a small thumbnail URL for a product using the app's canonical image
@@ -32,6 +33,10 @@ const STATUS_COLORS = {
 export default function OrderDetailModal({ order, onClose, onUpdated, currentUser }) {
   const [updating, setUpdating] = useState(false);
   const [err, setErr] = useState('');
+  const [reviewToast, setReviewToast] = useState(false);
+  const [thanksCode, setThanksCode] = useState('');
+  const [thanksErr, setThanksErr] = useState('');
+  const [creatingCode, setCreatingCode] = useState(false);
 
   const { data: items = [] } = useQuery({
     queryKey: ['order-items', order.id],
@@ -130,6 +135,53 @@ export default function OrderDetailModal({ order, onClose, onUpdated, currentUse
     window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
   }
 
+  // Post-delivery review nudge: open a WhatsApp chat with a friendly ask that
+  // deep-links to the first product's reviews section (#reviews anchor).
+  function handleAskReview() {
+    const firstItem = items[0];
+    const product = firstItem ? productsById[firstItem.product_id] : null;
+    const firstName = (order.customer_name || '').trim().split(/\s+/)[0] || 'there';
+    const productName = firstItem?.product_name || 'order';
+    const more = items.length > 1 ? ` (+${items.length - 1} more)` : '';
+    const link = product?.slug
+      ? `${window.location.origin}/product/${product.slug}#reviews`
+      : window.location.origin;
+    const msg = `Hi ${firstName} 🤍 This is MiniYo! How is the ${productName}${more} fitting your little one? If you have 30 seconds, we'd love your honest review — it means the world to a small Lebanese brand: ${link}`;
+    const url = whatsappLink(order.customer_phone, msg);
+    if (!url) return;
+    window.open(url, '_blank');
+    setReviewToast(true);
+    setTimeout(() => setReviewToast(false), 3000);
+  }
+
+  // One-time 10% thank-you code the admin can paste into the WhatsApp chat.
+  async function handleThanksCode() {
+    setCreatingCode(true);
+    setThanksErr('');
+    setThanksCode('');
+    try {
+      const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+      const code = 'THANKS-' + Array.from({ length: 6 }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join('');
+      const validUntil = new Date(Date.now() + 60 * 864e5).toISOString().slice(0, 10);
+      await base44.entities.PromoCode.create({
+        code,
+        name: 'Review thank-you',
+        type: 'percentage',
+        value: 10,
+        scope: 'entire_order',
+        usage_limit: 1,
+        times_used: 0,
+        is_active: true,
+        valid_until: validUntil,
+      });
+      setThanksCode(code);
+    } catch (e) {
+      setThanksErr(e.message || 'Failed to create code');
+    } finally {
+      setCreatingCode(false);
+    }
+  }
+
   const codAmount = order.payment_method === 'Cash on Delivery' ? order.grand_total_usd : null;
 
   return (
@@ -196,6 +248,35 @@ export default function OrderDetailModal({ order, onClose, onUpdated, currentUse
             </div>
             {err && <p className="text-xs text-destructive mt-2">{err}</p>}
           </div>
+
+          {/* Post-delivery: review ask + thank-you code */}
+          {order.order_status === 'Delivered' && order.customer_phone && (
+            <div className="bg-muted/30 rounded-xl p-4 space-y-3">
+              <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Review Follow-up</h4>
+              <div className="flex gap-2 flex-wrap">
+                <button onClick={handleAskReview}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-green-50 text-green-700 text-xs font-medium hover:bg-green-100">
+                  <Star className="w-3.5 h-3.5" /> Ask for Review (WhatsApp)
+                </button>
+                <button onClick={handleThanksCode} disabled={creatingCode}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary/10 text-primary text-xs font-medium hover:bg-primary/15 disabled:opacity-50">
+                  <TicketPercent className="w-3.5 h-3.5" /> {creatingCode ? 'Creating…' : 'Create 10% thank-you code'}
+                </button>
+              </div>
+              {reviewToast && <p className="text-xs text-green-700">Review request opened in WhatsApp</p>}
+              {thanksCode && (
+                <div className="flex items-center gap-2 bg-card border border-border rounded-xl px-3 py-2">
+                  <span className="font-mono font-bold text-foreground tracking-widest text-sm">{thanksCode}</span>
+                  <button onClick={() => navigator.clipboard.writeText(thanksCode)} title="Copy"
+                    className="text-muted-foreground hover:text-foreground">
+                    <Copy className="w-3.5 h-3.5" />
+                  </button>
+                  <span className="text-xs text-muted-foreground">10% off · single use · valid 60 days</span>
+                </div>
+              )}
+              {thanksErr && <p className="text-xs text-destructive">{thanksErr}</p>}
+            </div>
+          )}
 
           {/* Items */}
           <div>

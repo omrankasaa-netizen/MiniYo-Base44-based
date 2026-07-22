@@ -6,6 +6,7 @@ import { useCart } from '@/contexts/CartContext';
 import { useDiscounts } from '@/contexts/DiscountContext';
 import { motion } from 'framer-motion';
 import WishlistHeart from './WishlistHeart';
+import RatingStars from './RatingStars';
 import { framingStyle, normalizeImages, imageSrc, imageSrcSet, CARD_SIZES, handleImageError } from '@/lib/imageFraming';
 import { availableQty } from '@/lib/inventory';
 
@@ -92,7 +93,7 @@ function ProductCardImage({ images, name, isRTL }) {
   );
 }
 
-export default function ProductCard({ product }) {
+export default function ProductCard({ product, rating }) {
   const { t, lang, isRTL } = useLang();
   const { addItem, setIsOpen } = useCart();
   const { getProductDiscount, getDiscountedPrice } = useDiscounts();
@@ -168,6 +169,7 @@ export default function ProductCard({ product }) {
           </div>
           <div className="p-3.5">
             <p className="font-heading font-semibold text-foreground text-sm leading-tight line-clamp-2 mb-1.5">{name}</p>
+            {rating?.count > 0 && <RatingStars avg={rating.avg} count={rating.count} className="mb-1" />}
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-baseline gap-1.5">
                 <span className={`font-bold ${autoDiscount ? 'text-destructive' : 'text-foreground'}`}>${displayPrice?.toFixed(2)}</span>

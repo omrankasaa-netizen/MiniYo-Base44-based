@@ -6,7 +6,7 @@ import {
   LayoutDashboard, Package, ShoppingBag, BarChart2, Tag, Settings,
   Users, FileText, LogOut, Menu, X, ChevronRight, ChevronDown,
   Warehouse, Languages, ExternalLink, Percent, Megaphone, FolderTree, User, Crown, Mail, Truck,
-  FileSpreadsheet, SlidersHorizontal,
+  FileSpreadsheet, SlidersHorizontal, Star,
 } from 'lucide-react';
 
 // Flat, top-level nav entries (rendered above the Settings group).
@@ -16,6 +16,7 @@ const navItems = [
   { label: 'Categories',icon: FolderTree,      path: '/admin/categories',  permission: 'manage_cms' },
   { label: 'Customers', icon: User,            path: '/admin/customers',   permission: 'view_orders' },
   { label: 'Orders',    icon: ShoppingBag,     path: '/admin/orders',      permission: 'view_orders' },
+  { label: 'Reviews',   icon: Star,            path: '/admin/reviews',     permission: 'view_orders' },
   { label: 'Membership',icon: Crown,           path: '/admin/membership',  permission: 'manage_settings' },
   { label: 'Inventory', icon: Warehouse,       path: '/admin/inventory',   permission: 'manage_inventory' },
   { label: 'Finances',  icon: BarChart2,       path: '/admin/finances',    permission: 'view_finances' },
