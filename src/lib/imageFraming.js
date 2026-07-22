@@ -306,11 +306,23 @@ export const IMAGE_PLACEHOLDER =
     `<path d="M50 64v-6a10 10 0 0 1 20 0v6"/></g></svg>`,
   );
 
-// Attach to an <img onError={...}> to swap a failed image for the placeholder
-// exactly once (guards against an error loop if the placeholder itself fails).
+// Attach to an <img onError={...}>.
+// Cloudflare's /cdn-cgi/image/ resize proxy can error on a cold edge cache and
+// leave the image broken; when the failed src is a resize-proxy URL, retry ONCE
+// against the direct origin URL (prefix stripped) before giving up. After the
+// retry (or for non-proxy URLs), swap in the neutral placeholder exactly once
+// (guards against an error loop if the placeholder itself fails).
 export function handleImageError(e) {
   const img = e.currentTarget;
   if (img.dataset.fallbackApplied) return;
+  if (!img.dataset.cfRetried && img.src.includes('/cdn-cgi/image/')) {
+    img.dataset.cfRetried = '1';
+    const direct = img.src.replace(/\/cdn-cgi\/image\/[^/]+/, '');
+    if (direct !== img.src) {
+      img.src = direct;
+      return;
+    }
+  }
   img.dataset.fallbackApplied = '1';
   img.src = IMAGE_PLACEHOLDER;
 }
