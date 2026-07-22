@@ -380,11 +380,30 @@ function sanitize(entity, record) {
   return record;
 }
 
+// Storefront content entities are public, change rarely (admin edits), and are
+// fetched by every visitor on every landing. A short shared cache lifetime
+// lets the browser (and any CDN in front) reuse them across the react-query
+// staleTime window instead of revalidating on every page view — this is the
+// same-origin chunk of Lighthouse's "efficient cache lifetimes" finding.
+// 60s max-age matches the storefront's react-query staleTime; SWR keeps repeat
+// views instant while a fresh copy streams in. Admin screens always revalidate
+// on mutation via invalidateDashboardCache + query invalidation, so a ≤60s
+// staleness window is operationally invisible.
+// Non-content entities (Order, Customer, User, EmailLog, …) stay uncached.
+const CACHEABLE_CONTENT_ENTITIES = new Set([
+  'Product', 'ProductImage', 'ProductVariant', 'Category', 'Collection',
+  'CmsSection', 'Campaign', 'Review', 'Faq', 'MediaAsset', 'SiteSetting',
+  'Discount', 'MembershipSettings', 'ShippingZone',
+]);
+
 app.get('/api/entities/:entity', ensureEntity, (req, res) => {
   try {
     const { query, sort, limit } = parseListParams(req);
     const records = queryRecords(req.params.entity, { query, sort, limit })
       .map((r) => sanitize(req.params.entity, r));
+    if (CACHEABLE_CONTENT_ENTITIES.has(req.params.entity)) {
+      res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
+    }
     res.json(records);
   } catch (e) { handleError(res, e); }
 });

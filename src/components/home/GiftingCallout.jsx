@@ -5,7 +5,7 @@ import { useLang } from '@/contexts/LanguageContext';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import { Gift } from 'lucide-react';
-import { cmsImageSrc, handleImageError } from '@/lib/imageFraming';
+import { cmsImageSrc, cmsImageSrcSet, handleImageError } from '@/lib/imageFraming';
 
 export default function GiftingCallout() {
   const { t, lang } = useLang();
@@ -36,7 +36,7 @@ export default function GiftingCallout() {
           <div className={`flex flex-col ${imgUrl ? 'md:flex-row' : ''} items-center gap-0`}>
             {imgUrl && (
               <div className="w-full md:w-2/5 aspect-video md:aspect-auto md:h-full overflow-hidden">
-                <img src={cmsImageSrc(imgUrl, 'large')} alt={title} width={800} height={450} loading="lazy" decoding="async" onError={handleImageError} className="w-full h-full object-cover min-h-[220px]" />
+                <img src={cmsImageSrc(imgUrl, 'large')} srcSet={cmsImageSrcSet(imgUrl)} sizes="(max-width: 768px) 100vw, 512px" alt={title} width={800} height={450} loading="lazy" decoding="async" onError={handleImageError} className="w-full h-full object-cover min-h-[220px]" />
               </div>
             )}
             <div className="flex-1 p-8 sm:p-12 text-center md:text-start">

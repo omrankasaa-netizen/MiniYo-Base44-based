@@ -156,6 +156,20 @@ export function cmsImageSrc(rawUrl, size = 'large') {
   return cfResize(swapped, size);
 }
 
+// Build a 3-candidate srcset (thumb/card/large) for a CMS single-URL image so
+// the browser picks the smallest sufficient derivative for the actual layout
+// slot. Without this, every CMS banner/hero/category tile downloaded the
+// 1200px "large" derivative even inside a 176px tile (Lighthouse "improve
+// image delivery"). Pair with a `sizes` attribute matching the slot. Returns
+// '' when there is nothing useful to offer (caller relies on `src` alone).
+export function cmsImageSrcSet(rawUrl) {
+  const url = resolveImageUrl(rawUrl);
+  if (!url || !/^https?:\/\//i.test(url)) return '';
+  const entries = ['thumb', 'card', 'large']
+    .map((k) => `${cmsImageSrc(url, k)} ${CF_SIZE_WIDTH[k]}w`);
+  return entries.join(', ');
+}
+
 export function imageSrc(normalized, size = 'card') {
   if (!normalized) return '';
   const v = normalized.variants;

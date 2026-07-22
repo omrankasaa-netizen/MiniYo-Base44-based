@@ -5,7 +5,7 @@ import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import { useSiteSettings } from '@/hooks/useSiteSettings';
 import { Instagram } from 'lucide-react';
-import { cmsImageSrc, handleImageError } from '@/lib/imageFraming';
+import { cmsImageSrc, cmsImageSrcSet, handleImageError } from '@/lib/imageFraming';
 
 export default function InstagramStrip() {
   const { t, lang } = useLang();
@@ -78,7 +78,7 @@ export default function InstagramStrip() {
                 className="aspect-square rounded-2xl overflow-hidden bg-accent/25 group cursor-pointer"
               >
                 {url
-                  ? <img src={cmsImageSrc(url, 'card')} alt="" width={320} height={320} loading="lazy" decoding="async" onError={handleImageError} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                  ? <img src={cmsImageSrc(url, 'card')} srcSet={cmsImageSrcSet(url)} sizes="(max-width: 640px) 31vw, 190px" alt="" width={320} height={320} loading="lazy" decoding="async" onError={handleImageError} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                   : (
                     <div className="w-full h-full flex items-center justify-center bg-accent/20 group-hover:bg-accent/35 transition-colors">
                       <Instagram className="w-6 h-6 text-muted-foreground/30" />
