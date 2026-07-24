@@ -60,6 +60,39 @@
       ],
       "default": "Website"
     },
+    "utm_source": {
+      "type": "string",
+      "description": "Normalized (trimmed/lowercase) campaign source captured from landing URL."
+    },
+    "utm_medium": {
+      "type": "string",
+      "description": "Normalized (trimmed/lowercase) campaign medium captured from landing URL."
+    },
+    "utm_campaign": {
+      "type": "string",
+      "description": "Normalized (trimmed/lowercase) campaign name captured from landing URL."
+    },
+    "utm_content": {
+      "type": "string",
+      "description": "Normalized (trimmed/lowercase) campaign content captured from landing URL."
+    },
+    "utm_term": {
+      "type": "string",
+      "description": "Normalized (trimmed/lowercase) campaign term captured from landing URL."
+    },
+    "utm_landing_path": {
+      "type": "string",
+      "description": "Path where the tracked UTM values were captured."
+    },
+    "utm_landing_url": {
+      "type": "string",
+      "description": "Full URL where the tracked UTM values were captured."
+    },
+    "utm_captured_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO timestamp when UTM attribution was captured."
+    },
     "subtotal_usd": {
       "type": "number",
       "default": 0
@@ -95,6 +128,10 @@
     "grand_total_usd": {
       "type": "number",
       "default": 0
+    },
+    "currency": {
+      "type": "string",
+      "default": "USD"
     },
     "payment_method": {
       "type": "string",

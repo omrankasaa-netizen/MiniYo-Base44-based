@@ -6,9 +6,9 @@
 // the catalog feed + Meta content_ids), generates dedup event_ids, and delegates
 // the actual ttq call (and consent gating) to the low-level helpers in pixel.js.
 //
-// CompletePayment is intentionally NOT sent from the browser — it fires
-// server-side via the Events API (see server/tiktokPurchase.js) from trusted
-// order data, exactly like the Meta Purchase.
+// CompletePayment is emitted as a browser Pixel event AND server Events API
+// event with a shared event_id so TikTok deduplicates the pair. Server-side
+// Events API still reads trusted order totals/line-items from the database.
 
 import { trackTikTok, genEventId, hasMarketingConsent } from '@/lib/pixel';
 import { contentId } from '@/lib/metaEventParams';
@@ -61,6 +61,11 @@ function trackDeduped(eventName, props) {
   if (hasMarketingConsent()) postEventsApiTrack(eventName, eventId, props);
 }
 
+function trackWithEventId(eventName, eventId, props) {
+  if (!eventId) return;
+  trackTikTok(eventName, props, eventId);
+}
+
 // PDP view. content_id:[sku], value, currency, contents.
 export function ttViewContent(product) {
   const id = contentId(product);
@@ -107,6 +112,29 @@ export function ttInitiateCheckout({ items = [], value }) {
     contents,
     value: toNumber(value),
     currency: 'USD',
+  });
+}
+
+// CompletePayment browser event (Pixel side of the Pixel+Events API pair). Uses
+// the SAME event_id already persisted on the order so the server-side
+// CompletePayment deduplicates against this browser twin.
+export function ttCompletePayment({ eventId, value, currency = 'USD', items = [] }) {
+  if (!eventId) return;
+  const contents = items
+    .map((i) => {
+      const id = contentId(i.product);
+      return id
+        ? { content_id: id, content_type: 'product', quantity: i.quantity, price: toNumber(i.price) }
+        : null;
+    })
+    .filter(Boolean);
+
+  trackWithEventId('CompletePayment', eventId, {
+    content_type: 'product',
+    content_ids: contents.map((c) => c.content_id),
+    contents,
+    value: toNumber(value),
+    currency: String(currency || 'USD').trim().toUpperCase() || 'USD',
   });
 }
 
