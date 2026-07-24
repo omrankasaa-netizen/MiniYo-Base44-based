@@ -64,7 +64,7 @@ export default function HeroSection() {
             <p className="mt-6 text-xs text-muted-foreground flex flex-wrap gap-x-3 gap-y-1 justify-center lg:justify-start">
               <span>{t('✓ Cash on Delivery', '✓ الدفع عند الاستلام')}</span>
               <span>{t('✓ Delivery across Lebanon', '✓ توصيل في كل لبنان')}</span>
-              <span>{t('✓ Made with love', '✓ صُنع بحب')}</span>
+              <span>{t('✓ Sizes from newborn to kids', '✓ مقاسات من حديث الولادة حتى الأطفال')}</span>
             </p>
           </div>
 
@@ -83,7 +83,7 @@ export default function HeroSection() {
                   srcSet={`${cmsImageSrc(imgUrl, 'thumb')} 320w, ${cmsImageSrc(imgUrl, 'card')} 600w, ${cmsImageSrc(imgUrl, 'large')} 1200w`}
                   sizes="(max-width: 1024px) 448px, 512px"
                   width={1200} height={1500}
-                  alt={title} loading="eager" fetchpriority="high" decoding="async"
+                  alt={title} loading="eager" fetchPriority="high" decoding="async"
                   onError={handleImageError} className="w-full h-full object-cover" />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/10 to-transparent" />
               </div>

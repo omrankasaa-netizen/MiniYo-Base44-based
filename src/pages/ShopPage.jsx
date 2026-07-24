@@ -22,6 +22,17 @@ import {
 } from '@/lib/filterNormalize';
 import { SlidersHorizontal, X, Search, ChevronDown, ChevronUp } from 'lucide-react';
 
+const BASE_QUICK_RESET = { category: '', sub: '', gender: '', age: '', collection: '', sizes: '', mat: '', sale: '', stock: '', pmin: '', pmax: '' };
+const QUICK_SHOP_LINKS = [
+  { key: 'newborn', en: 'Newborn', ar: 'حديثو الولادة', query: { ...BASE_QUICK_RESET, age: 'Newborn' } },
+  { key: 'baby-girl', en: 'Baby Girl', ar: 'بنات بيبي', query: { ...BASE_QUICK_RESET, age: 'Baby', gender: 'Girls' } },
+  { key: 'baby-boy', en: 'Baby Boy', ar: 'أولاد بيبي', query: { ...BASE_QUICK_RESET, age: 'Baby', gender: 'Boys' } },
+  { key: 'toddler', en: 'Toddler', ar: 'تودلر', query: { ...BASE_QUICK_RESET, age: 'Toddler' } },
+  { key: 'new-arrivals', en: 'New Arrivals', ar: 'وصولات جديدة', query: { ...BASE_QUICK_RESET, sort: 'new' } },
+];
+
+const MATERIAL_KEYWORDS = ['cotton', 'organic', 'muslin', 'linen', 'knit', 'fleece'];
+
 // ── URL state helpers ──────────────────────────────────────────────────────────
 function useUrlFilters() {
   const location = useLocation();
@@ -96,8 +107,8 @@ function FilterChip({ label, onRemove }) {
 // ── Main ShopPage ──────────────────────────────────────────────────────────────
 export default function ShopPage() {
   const { t, lang } = useLang();
-  const { liveDiscounts, getDiscountedPrice } = useDiscounts();
-  const { get, getArr, set, clear, params } = useUrlFilters();
+  const { getDiscountedPrice } = useDiscounts();
+  const { get, getArr, set, clear } = useUrlFilters();
   const [mobileFilterOpen, setMobileFilterOpen] = React.useState(false);
 
   // URL-driven filter state
@@ -108,6 +119,7 @@ export default function ShopPage() {
   const filterAge = get('age');
   const filterSizes = getArr('sizes');
   const filterCollection = get('collection');
+  const filterMaterials = getArr('mat');
   const filterOnSale = get('sale') === '1';
   const filterInStock = get('stock') === '1';
   const filterSort = get('sort', 'new');
@@ -207,6 +219,16 @@ export default function ShopPage() {
   const availableSizes = useMemo(() => availableSizeBuckets(products), [products]);
   const availableAges = useMemo(() => availableAgeBuckets(products), [products]);
   const availableGenders = useMemo(() => availableGenderBuckets(products), [products]);
+  const availableMaterials = useMemo(() => {
+    const found = new Set();
+    for (const p of products) {
+      const tags = String(p.tags || '').toLowerCase();
+      MATERIAL_KEYWORDS.forEach((m) => {
+        if (tags.includes(m)) found.add(m);
+      });
+    }
+    return MATERIAL_KEYWORDS.filter((m) => found.has(m));
+  }, [products]);
 
   // Enrich products with images and availability. availableStock subtracts
   // qty_reserved (via availableQty) so out-of-stock / in-stock filtering and the
@@ -249,6 +271,10 @@ export default function ShopPage() {
         const pBuckets = productSizeBuckets(p.sizes);
         if (!filterSizes.some(s => pBuckets.includes(s))) return false;
       }
+      if (filterMaterials.length > 0) {
+        const tags = String(p.tags || '').toLowerCase();
+        if (!filterMaterials.some((m) => tags.includes(m))) return false;
+      }
       if (filterOnSale && !isOnSale(p)) return false;
       if (filterInStock && p.availableStock <= 0) return false;
       const effectivePrice = getDiscountedPrice(p);
@@ -264,7 +290,7 @@ export default function ShopPage() {
       default: list = [...list].sort((a, b) => new Date(b.created_date) - new Date(a.created_date)); break;
     }
     return list;
-  }, [enriched, search, filterCategory, filterSubcategory, filterGender, filterAge, filterCollection, filterSizes, filterOnSale, filterInStock, filterPriceMin, filterPriceMax, filterSort, liveDiscounts]);
+  }, [enriched, search, filterCategory, filterSubcategory, filterGender, filterAge, filterCollection, filterSizes, filterMaterials, filterOnSale, filterInStock, filterPriceMin, filterPriceMax, filterSort, liveDiscounts]);
 
   // Meta Pixel Search — fire when a search term settles (debounced so we don't
   // emit an event on every keystroke). Reports the matched result skus.
@@ -300,23 +326,23 @@ export default function ShopPage() {
       chips.push({ label: `Collection: ${col ? (lang === 'ar' ? (col.name_ar || col.name) : col.name) : filterCollection}`, key: 'collection' });
     }
     filterSizes.forEach(s => chips.push({ label: `${t('Size', 'المقاس')}: ${lang === 'ar' ? (SIZE_LABELS_AR[s] || s) : s}`, key: 'sizes', val: s, isArr: true }));
+    filterMaterials.forEach((m) => chips.push({ label: `${t('Fabric', 'الخامة')}: ${m}`, key: 'mat', val: m, isArr: true }));
     if (filterOnSale) chips.push({ label: t('On Sale', 'تخفيضات'), key: 'sale' });
     if (filterInStock) chips.push({ label: t('In Stock', 'متوفر'), key: 'stock' });
     if (filterPriceMin > 0 || filterPriceMax < maxPrice) chips.push({ label: `$${filterPriceMin}–$${filterPriceMax}`, key: 'price' });
     return chips;
-  }, [search, filterCategory, filterSubcategory, filterGender, filterAge, filterCollection, filterSizes, filterOnSale, filterInStock, filterPriceMin, filterPriceMax, maxPrice, catMap, collectionMap, lang]);
+  }, [search, filterCategory, filterSubcategory, filterGender, filterAge, filterCollection, filterSizes, filterMaterials, filterOnSale, filterInStock, filterPriceMin, filterPriceMax, maxPrice, catMap, collectionMap, lang]);
 
   function removeChip(chip) {
     if (chip.isArr) {
-      set({ [chip.key]: filterSizes.filter(v => v !== chip.val) });
+      const arr = chip.key === 'mat' ? filterMaterials : filterSizes;
+      set({ [chip.key]: arr.filter(v => v !== chip.val) });
     } else if (chip.key === 'price') {
       set({ pmin: '', pmax: '' });
     } else {
       set({ [chip.key]: '' });
     }
   }
-
-  const selectedCategoryChildren = filterCategory ? categoryTree.find(c => c.id === filterCategory)?.children || [] : [];
 
   // Shared filter panel content
   function FilterPanel() {
@@ -351,6 +377,27 @@ export default function ShopPage() {
             ))}
           </div>
         </FilterSection>
+
+        {/* Material/Fabric */}
+        {availableMaterials.length > 0 && (
+          <FilterSection title={t('Fabric', 'الخامة')} defaultOpen={false}>
+            <div className="flex flex-wrap gap-1.5">
+              {availableMaterials.map((m) => (
+                <button
+                  key={m}
+                  onClick={() => set({ mat: filterMaterials.includes(m) ? filterMaterials.filter((x) => x !== m) : [...filterMaterials, m] })}
+                  className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                    filterMaterials.includes(m)
+                      ? 'bg-primary text-primary-foreground border-primary'
+                      : 'border-border text-muted-foreground hover:border-primary hover:text-primary'
+                  }`}
+                >
+                  {m}
+                </button>
+              ))}
+            </div>
+          </FilterSection>
+        )}
 
         {/* Gender (Girls / Boys only; Unisex surfaces under both) */}
         {availableGenders.length > 0 && (
@@ -439,8 +486,27 @@ export default function ShopPage() {
     : null;
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background pb-24 lg:pb-0">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
+        <div className="rounded-3xl border border-border bg-card px-4 sm:px-6 py-5 sm:py-6 mb-5">
+          <h1 className="text-2xl sm:text-3xl font-heading font-bold text-foreground mb-1.5">
+            {t('Soft, practical outfits for every stage', 'إطلالات ناعمة وعملية لكل مرحلة')}
+          </h1>
+          <p className="text-sm text-muted-foreground mb-4">
+            {t('Filter by age, size, fabric, and category to find the right fit in minutes.', 'فلتر حسب العمر، المقاس، الخامة، والفئة للوصول للمناسب بسرعة.')}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {QUICK_SHOP_LINKS.map((item) => (
+              <button
+                key={item.key}
+                onClick={() => set({ ...item.query, q: '' })}
+                className="min-h-[40px] px-3 rounded-xl border border-border text-xs sm:text-sm font-semibold text-foreground hover:border-primary/40 hover:bg-primary/5 transition-colors"
+              >
+                {lang === 'ar' ? item.ar : item.en}
+              </button>
+            ))}
+          </div>
+        </div>
 
         {/* Page header */}
         <div className="mb-5">
@@ -533,6 +599,23 @@ export default function ShopPage() {
               </div>
             )}
           </div>
+        </div>
+      </div>
+
+      <div className="lg:hidden fixed inset-x-0 bottom-3 z-40 px-4">
+        <div className="rounded-2xl bg-card/95 backdrop-blur border border-border shadow-lg p-2 flex gap-2">
+          <button
+            onClick={() => setMobileFilterOpen(true)}
+            className="flex-1 min-h-[44px] rounded-xl border border-border text-sm font-semibold text-foreground"
+          >
+            {t('Filters', 'الفلاتر')} ({activeChips.length})
+          </button>
+          <button
+            onClick={() => set({ ...BASE_QUICK_RESET, sort: 'new', q: '' })}
+            className="flex-1 min-h-[44px] rounded-xl bg-primary text-primary-foreground text-sm font-semibold"
+          >
+            {t('New Arrivals', 'الوصولات الجديدة')}
+          </button>
         </div>
       </div>
 

@@ -18,7 +18,7 @@ import { productAvailableQty } from '@/lib/inventory';
  * list is capped. Images/variants are enriched the same way ShopPage does so
  * each ProductCard renders its own correct photo + stock.
  */
-export default function RelatedProducts({ product, limit = 4 }) {
+export default function RelatedProducts({ product, limit = 4, title, titleAr }) {
   const { t } = useLang();
 
   const { data: products = [] } = useQuery({
@@ -104,7 +104,7 @@ export default function RelatedProducts({ product, limit = 4 }) {
   return (
     <div className="border-t border-border pt-8 mt-8">
       <h3 className="text-lg font-heading font-bold text-foreground mb-6">
-        {t('You might also like', 'قد يعجبك أيضاً')}
+        {title ? (t(title, titleAr || title)) : t('You might also like', 'قد يعجبك أيضاً')}
       </h3>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 sm:gap-5">
         {recommended.map(p => (
