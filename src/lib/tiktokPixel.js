@@ -15,9 +15,9 @@ import { contentId } from '@/lib/metaEventParams';
 
 export { genEventId, hasMarketingConsent };
 
-// Public (non-secret) TikTok Pixel ID. The ttq base loader in index.html
-// initializes with this same default; VITE_TIKTOK_PIXEL_ID lets a non-prod build
-// override it. Mirrors how META_PIXEL_ID is handled in metaPixel.js.
+// Public (non-secret) TikTok Pixel ID. src/lib/pixel.js lazily initializes ttq
+// with this default after consent; VITE_TIKTOK_PIXEL_ID lets non-prod override it.
+// Mirrors how META_PIXEL_ID is handled in metaPixel.js.
 export const TIKTOK_PIXEL_ID =
   (typeof import.meta !== 'undefined' && import.meta.env?.VITE_TIKTOK_PIXEL_ID) ||
   'D9BP18JC77U1026616UG';

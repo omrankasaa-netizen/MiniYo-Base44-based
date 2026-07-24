@@ -99,46 +99,11 @@
     <meta name="robots" content="index, follow" />
     <meta name="theme-color" content="#2F5D57" />
 
-    <!-- Meta (Facebook) Pixel — init only. PageView is fired from the React
-         router (src/lib/pixel.js) on first load and every route change, so we do
-         NOT call fbq('track','PageView') here to avoid double-counting. -->
-    <script>
-      !function(f,b,e,v,n,t,s)
-      {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
-      n.callMethod.apply(n,arguments):n.queue.push(arguments)};
-      if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
-      n.queue=[];t=b.createElement(e);t.async=!0;
-      t.src=v;s=b.getElementsByTagName(e)[0];
-      s.parentNode.insertBefore(t,s)}(window, document,'script',
-      'https://connect.facebook.net/en_US/fbevents.js');
-      // Consent Mode: revoke BEFORE init so no cookies (_fbp/_fbc) are set and
-      // no events are sent until the visitor accepts the cookie banner. The app
-      // calls fbq('consent','grant') after Accept (and on return visits that
-      // already stored a 'granted' choice in localStorage 'miniyo-consent').
-      fbq('consent', 'revoke');
-      fbq('init', '1480243427454221');
-    </script>
-    <!-- End Meta Pixel -->
-
-    <!-- TikTok Pixel — loader only. Installed ALONGSIDE the Meta Pixel. The page
-         view (ttq.page()) is fired from the React router (src/lib/pixel.js) on
-         first load and every route change, so we do NOT call ttq.page() here — it
-         would double-count. TikTok has no fbq-style consent('revoke') API, so
-         ttq.page()/ttq.track() are gated behind the same marketing-consent check
-         as the Meta Pixel and fire only after the visitor accepts the banner. -->
-    <script>
-      !function (w, d, t) {
-        w.TiktokAnalyticsObject=t;var ttq=w[t]=w[t]||[];ttq.methods=["page","track","identify","instances","debug","on","off","once","ready","alias","group","enableCookie","disableCookie","holdConsent","revokeConsent","grantConsent"];ttq.setAndDefer=function(t,e){t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}};for(var i=0;i<ttq.methods.length;i++)ttq.setAndDefer(ttq,ttq.methods[i]);ttq.instance=function(t){for(var e=ttq._i[t]||[],n=0;n<ttq.methods.length;n++)ttq.setAndDefer(e,ttq.methods[n]);return e},ttq.load=function(e,n){var r="https://analytics.tiktok.com/i18n/pixel/events.js",o=n&&n.partner;ttq._i=ttq._i||{},ttq._i[e]=[],ttq._i[e]._u=r,ttq._t=ttq._t||{},ttq._t[e]=+new Date,ttq._o=ttq._o||{},ttq._o[e]=n||{};n=document.createElement("script");n.type="text/javascript",n.async=!0,n.src=r+"?sdkid="+e+"&lib="+t;e=document.getElementsByTagName("script")[0];e.parentNode.insertBefore(n,e)};
-        ttq.load('D9BP18JC77U1026616UG');
-      }(window, document, 'ttq');
-    </script>
-    <!-- End TikTok Pixel -->
+    <!-- Meta + TikTok pixels are lazily initialized from src/lib/pixel.js only
+         after marketing consent is granted. This keeps third-party JS/network off
+         the first-paint path and avoids in-app browser storage edge-case crashes. -->
   </head>
   <body>
-    <!-- Meta Pixel <noscript> fallback -->
-    <noscript><img height="1" width="1" style="display:none"
-      src="https://www.facebook.com/tr?id=1480243427454221&ev=PageView&noscript=1"
-      alt="" /></noscript>
     <div id="root">
       <div class="miniyo-splash" role="status" aria-live="polite">
         <h1 class="wordmark">MiniYo</h1>
