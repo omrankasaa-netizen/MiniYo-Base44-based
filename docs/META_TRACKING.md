@@ -1,8 +1,9 @@
 # MiniYo — Meta Pixel + Conversions API + Catalog Feed
 
-Production tracking setup for the MiniYo storefront: browser Pixel events, a
-server-side Conversions API (CAPI) Purchase event, a Meta catalog product feed,
-event deduplication, and marketing-consent gating.
+Production tracking setup for the MiniYo storefront: GA4 (independent
+measurement layer), Meta/TikTok browser+server hybrid events, a server-side
+Conversions API / Events API Purchase event, catalog feeds, event deduplication,
+and marketing-consent gating for ad platforms.
 
 ## Canonical identifier — always the product SKU
 
@@ -39,7 +40,7 @@ the feed `link` (real slug URL) are untouched.
 | Lead | Newsletter email submitted (home Newsletter strip) | Pixel | — | — | — | — | `content_name:"Newsletter Signup"` |
 | Contact | Customer-service / inquiry contact — tapping a storefront WhatsApp chat link (floating button, footer, FAQ, newsletter strip). **Not** order placement | Pixel | — | — | — | — | `content_name:"WhatsApp"` |
 | AddPaymentInfo | N/A — the store is Cash on Delivery (COD); there is no payment-info step. Documented as not applicable; wire in later if a payment-method capture step is added. | — | — | — | — | — | — |
-| **Purchase** | Order completed — **server-side (CAPI) only**, never from the browser | CAPI | order line skus | order items `[{id:sku, quantity, item_price:unit_price_usd}]` | `grand_total_usd` | USD | `order_id = order_number`, `num_items` |
+| **Purchase** | Order completed — browser Pixel + server CAPI twin (shared `event_id`) | Pixel + CAPI | order line skus | order items `[{id:sku, quantity, item_price:unit_price_usd}]` | `grand_total_usd` | USD | `order_id = order_number`, `num_items` |
 
 ### Parameters present on every event
 
@@ -82,6 +83,38 @@ the feed `link` (real slug URL) are untouched.
 - Server CAPI: `server/metaCapiClient.js` (transport + hashing) and
   `server/metaPurchase.js` (Purchase builders), wired at `POST /api/meta/purchase`
   in `server/index.js`.
+- GA4 helpers: `src/lib/ga4.js` (`ga4TrackPageView`, `ga4TrackViewItem`,
+  `ga4TrackAddToCart`, `ga4TrackBeginCheckout`, `ga4TrackPurchase`) and route
+  hook component `<Ga4PageView />` mounted in `App.jsx`.
+- UTM capture + normalization: `src/lib/utmAttribution.js` with
+  `<UtmAttributionCapture />` mounted in `App.jsx`.
+
+### GA4 (independent from Meta/TikTok)
+
+GA4 is fully controlled by `VITE_GA4_MEASUREMENT_ID` and is intentionally
+separate from the ad-platform consent/dedup path. When this variable is unset,
+the loader is never injected and all GA4 helpers are no-ops.
+
+Implemented GA4 ecommerce/user-journey events:
+
+- `page_view`: initial load and SPA route changes.
+- `view_item`: PDP load.
+- `add_to_cart`: cart add action.
+- `begin_checkout`: checkout page open with non-empty cart.
+- `purchase`: successful order placement with `transaction_id`, `order_id`,
+  `value`, `currency`, and `items`.
+
+### UTM capture + normalization
+
+On any landing URL containing UTM params (`utm_source`, `utm_medium`,
+`utm_campaign`, `utm_content`, `utm_term`), the app stores a normalized snapshot:
+
+- normalization: `String(value).trim().toLowerCase()` for each UTM field.
+- persistence: `safeLocalStorage` key `miniyo-utm-attribution-v1` (safe in
+  storage-restricted in-app browsers; never throws).
+- order attribution: checkout copies stored fields onto each created `Order`
+  (`utm_*`, `utm_landing_path`, `utm_landing_url`, `utm_captured_at`) so
+  attribution context is available server-side for conversion handling/reporting.
 
 ---
 
@@ -102,9 +135,9 @@ client bundle. The CAPI access token is **never** in the client bundle.
 
 At checkout submit the browser generates a UUID (`genEventId()`) and stores it on
 the order as `meta_event_id` (along with `meta_consent`). After the order and its
-line items are persisted, the browser calls `notifyPurchase(order.id)` →
-`POST /api/meta/purchase`. The server reuses the stored `meta_event_id` as the
-Purchase `event_id`. The browser **does not** send Purchase.
+line items are persisted, the browser sends Pixel `Purchase` with that id and
+calls `notifyPurchase(order.id)` → `POST /api/meta/purchase`. The server reuses
+the stored `meta_event_id` as the CAPI Purchase `event_id` for dedup.
 
 ---
 
@@ -150,10 +183,9 @@ trusted from the client, so the event cannot be spoofed. It:
 ### How dedup works
 
 Meta deduplicates when a Pixel event and its CAPI twin arrive with the same
-`event_id` **and** `event_name` inside the dedup window. Because Purchase fires
-from CAPI only (no browser Purchase), it can never double from the Pixel. The
-deterministic per-order `event_id` still guarantees that CAPI **retries** for the
-same order collapse into one Purchase. Pixel-only events (ViewContent,
+`event_id` **and** `event_name` inside the dedup window. Purchase now sends both
+browser Pixel + server CAPI with one shared per-order id, so browser/server twins
+collapse into one conversion while CAPI retries also collapse. Pixel-only events (ViewContent,
 AddToCart, InitiateCheckout, Search, AddToWishlist, CompleteRegistration, Lead,
 Contact) are browser-only with no CAPI twin, so they need no shared event_id.
 
@@ -186,7 +218,7 @@ Contact) are browser-only with no CAPI twin, so they need no shared event_id.
 - [ ] CompleteRegistration fires once after OTP verification; no email/PII in the payload.
 - [ ] Lead fires on newsletter submit with `content_name:"Newsletter Signup"`; no email in the payload.
 - [ ] Contact fires on the floating/footer/FAQ/newsletter WhatsApp links; it does **not** fire on order submission.
-- [ ] Purchase appears **only** server-side; none from the browser.
+- [ ] Purchase appears in both Pixel and CAPI with the same `event_id`.
 - [ ] Purchase `event_id` equals the order's `meta_event_id`.
 - [ ] Re-hitting `/api/meta/purchase` for the same order returns `deduped:true`.
 - [ ] Declining the cookie banner suppresses all Pixel fires **and** CAPI.
@@ -262,5 +294,6 @@ continues to work unchanged.
 | `MINIYO_META_CAPI_ACCESS_TOKEN` | backend | **yes** | Conversions API token. Never commit; never in client/logs. |
 | `MINIYO_META_TEST_EVENT_CODE` | backend | no | Optional; routes events to Events Manager Test Events. Unset in normal prod. |
 | `VITE_META_PIXEL_ID` | frontend build | no | Public Pixel ID for the client build. Defaults to `1480243427454221`. |
+| `VITE_GA4_MEASUREMENT_ID` | frontend build | no | GA4 Measurement ID (`G-...`). Unset = GA4 disabled/no-op. |
 
 See `.env.example` for the documented (value-free) list.

@@ -4,6 +4,7 @@ import { base44 } from '@/api/base44Client';
 import { isDiscountLive, getEffectiveUnitPrice } from '@/lib/discounts';
 import { trackAddToCart } from '@/lib/metaPixel';
 import { ttAddToCart } from '@/lib/tiktokPixel';
+import { ga4TrackAddToCart } from '@/lib/ga4';
 import { safeLocalStorage } from '@/lib/safeStorage';
 
 const CartContext = createContext();
@@ -48,6 +49,7 @@ export function CartProvider({ children }) {
 
     trackAddToCart({ product, variant, quantity: qty });
     ttAddToCart({ product, variant, quantity: qty });
+    ga4TrackAddToCart({ product, variant, quantity: qty });
   }
 
   function removeItem(key) {

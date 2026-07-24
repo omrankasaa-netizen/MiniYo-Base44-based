@@ -5,8 +5,9 @@
 // the catalog feed + server CAPI), generates dedup event_ids, and delegates the
 // actual fbq call (and consent gating) to the low-level helpers in pixel.js.
 //
-// Purchase is intentionally NOT sent from the browser — it fires server-side via
-// the Conversions API (see server/metaCapiClient.js) from trusted order data.
+// Purchase is emitted as a browser Pixel event AND server CAPI event with a
+// shared event_id so Meta deduplicates the pair. Server-side CAPI still reads
+// trusted order totals/line-items from the database.
 
 import { track, genEventId, hasMarketingConsent } from '@/lib/pixel';
 import {
@@ -64,6 +65,11 @@ function trackDeduped(eventName, params) {
   if (hasMarketingConsent()) postCapiTrack(eventName, eventId, params);
 }
 
+function trackWithEventId(eventName, eventId, params) {
+  if (!eventId) return;
+  track(eventName, params, eventId);
+}
+
 // PDP view. content_ids:[sku], value, currency, content_name.
 export function trackViewContent(product) {
   const id = contentId(product);
@@ -112,6 +118,29 @@ export function trackInitiateCheckout({ items = [], value }) {
     value: toNumber(value),
     currency: 'USD',
     num_items: items.reduce((s, i) => s + (i.quantity || 0), 0),
+  });
+}
+
+// Purchase browser event (Pixel side of the Pixel+CAPI pair). Uses the SAME
+// event_id already persisted on the order so the server-side CAPI Purchase
+// deduplicates against this browser twin.
+export function trackPurchase({ eventId, orderNumber, value, currency = 'USD', items = [] }) {
+  if (!eventId) return;
+  const contents = items
+    .map((i) => {
+      const id = contentId(i.product);
+      return id ? { id, quantity: i.quantity, item_price: toNumber(i.price) } : null;
+    })
+    .filter(Boolean);
+
+  trackWithEventId('Purchase', eventId, {
+    content_ids: contents.map((c) => c.id),
+    content_type: 'product',
+    contents,
+    value: toNumber(value),
+    currency: String(currency || 'USD').trim().toUpperCase() || 'USD',
+    num_items: items.reduce((s, i) => s + (i.quantity || 0), 0),
+    ...(orderNumber ? { order_id: String(orderNumber) } : {}),
   });
 }
 
