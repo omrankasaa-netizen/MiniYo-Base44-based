@@ -24,12 +24,23 @@ export default function Header() {
   }, []);
 
   const navLinks = [
+  { to: '/shop?sort=new', label: t('New Arrivals', 'الوصولات الجديدة') },
   { to: '/shop', label: t('Shop', 'المتجر') },
+  { to: '/gifts', label: t('Gift Sets', 'هدايا جاهزة') },
   { to: '/track', label: t('Track Order', 'تتبع طلبك') }];
 
 
   return (
     <header className={`sticky top-0 z-50 backdrop-blur-md border-b border-border/50 transition-colors duration-300 ${scrolled ? 'bg-card/98 shadow-sm' : 'bg-card/90'}`}>
+      <div className="bg-primary text-primary-foreground">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 min-h-[30px] text-[11px] sm:text-xs flex items-center justify-center gap-3 sm:gap-5">
+          <span>{t('Delivery across Lebanon', 'توصيل لكل لبنان')}</span>
+          <span className="opacity-50">•</span>
+          <span>{t('Cash on Delivery', 'الدفع عند الاستلام')}</span>
+          <span className="opacity-50">•</span>
+          <span>{t('Soft premium fabrics', 'أقمشة ناعمة وفاخرة')}</span>
+        </div>
+      </div>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16 sm:h-20 gap-4">
           {/* Logo */}

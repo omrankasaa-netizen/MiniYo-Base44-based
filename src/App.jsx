@@ -40,6 +40,7 @@ const LegalPage = lazy(() => import('@/pages/LegalPage'));
 const FaqPage = lazy(() => import('@/pages/FaqPage'));
 const AboutPage = lazy(() => import('@/pages/AboutPage'));
 const GiftGuidePage = lazy(() => import('@/pages/GiftGuidePage'));
+const MetaLandingPage = lazy(() => import('@/pages/MetaLandingPage'));
 
 // Auth pages
 const Login = lazy(() => import('@/pages/Login'));
@@ -117,6 +118,7 @@ const AuthenticatedApp = () => {
         <Route path="/faq" element={<FaqPage />} />
         <Route path="/about" element={<AboutPage />} />
         <Route path="/gifts" element={<GiftGuidePage />} />
+        <Route path="/landing/meta" element={<MetaLandingPage />} />
 
         {/* Account area */}
         <Route path="/account" element={<AccountLayout />}>

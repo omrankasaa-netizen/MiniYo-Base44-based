@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useLang } from '@/contexts/LanguageContext';
 import { useCart } from '@/contexts/CartContext';
 import { useDiscounts } from '@/contexts/DiscountContext';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
-import { ShoppingBag, ArrowLeft, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ShoppingBag, ArrowLeft, ChevronLeft, ChevronRight, ShieldCheck, Truck, RotateCcw } from 'lucide-react';
 import ImageLightbox from '@/components/storefront/ImageLightbox';
 import WishlistHeart from '@/components/storefront/WishlistHeart';
 import { ReviewList, ReviewForm } from '@/components/storefront/ReviewCard';
@@ -16,11 +16,14 @@ import { normalizeImages, imageSrc, imageSrcSet, DETAIL_SIZES, handleImageError 
 import { trackViewContent } from '@/lib/metaPixel';
 import { ttViewContent } from '@/lib/tiktokPixel';
 import { availableQty } from '@/lib/inventory';
+import { useSiteSettings } from '@/hooks/useSiteSettings';
 
 export default function ProductPage() {
   const { slug } = useParams();
   const { t, lang } = useLang();
   const { addItem, setIsOpen } = useCart();
+  const navigate = useNavigate();
+  const siteSettings = useSiteSettings();
   const qc = useQueryClient();
   const [selectedColor, setSelectedColor] = useState('');
   const [selectedSize, setSelectedSize] = useState('');
@@ -102,6 +105,7 @@ export default function ProductPage() {
 
   const name = lang === 'ar' ? (product.name_ar || product.name) : product.name;
   const desc = lang === 'ar' ? (product.description_ar || product.description) : product.description;
+  const shortDesc = lang === 'ar' ? (product.short_description_ar || product.short_description || desc) : (product.short_description || desc);
   const hasCompareDiscount = product.compare_at_price_usd > product.price_usd;
   const autoDiscount = getProductDiscount(product);
   const discountedPrice = autoDiscount ? getDiscountedPrice(product) : null;
@@ -163,8 +167,14 @@ export default function ProductPage() {
     setTimeout(() => setAdded(false), 1800);
   }
 
+  function handleBuyNow() {
+    if (!canAdd) return;
+    addItem(product, selectedVariant || null, 1);
+    navigate('/checkout');
+  }
+
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background pb-24 md:pb-0">
       <div className="max-w-5xl mx-auto px-4 sm:px-6 py-5 sm:py-8">
         <Link to="/shop" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-6">
           <ArrowLeft className="w-4 h-4" /> {t('Back to Shop', 'العودة للمتجر')}
@@ -231,6 +241,14 @@ export default function ProductPage() {
                   <RatingStars avg={reviewAvg} count={reviewCount} size="md" />
                 </a>
               )}
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                <div className="rounded-xl bg-muted/60 border border-border px-3 py-2 text-xs text-foreground font-medium flex items-center gap-1.5">
+                  <Truck className="w-3.5 h-3.5 text-primary" /> {t('Delivery across Lebanon', 'توصيل لكل لبنان')}
+                </div>
+                <div className="rounded-xl bg-muted/60 border border-border px-3 py-2 text-xs text-foreground font-medium flex items-center gap-1.5">
+                  <ShieldCheck className="w-3.5 h-3.5 text-primary" /> {t('Cash on Delivery', 'الدفع عند الاستلام')}
+                </div>
+              </div>
             </div>
 
             {/* Variant picker */}
@@ -286,18 +304,45 @@ export default function ProductPage() {
             )}
 
             {/* Add to cart */}
-            <button onClick={handleAdd} disabled={!canAdd}
-              className={`w-full py-3.5 rounded-2xl font-semibold text-sm flex items-center justify-center gap-2 transition-all shadow-sm
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <button onClick={handleAdd} disabled={!canAdd}
+                className={`w-full py-3.5 rounded-2xl font-semibold text-sm flex items-center justify-center gap-2 transition-all shadow-sm
                 ${canAdd ? (added ? 'bg-green-500 text-white' : 'bg-primary text-primary-foreground hover:bg-primary/90') : 'bg-muted text-muted-foreground cursor-not-allowed'}`}>
-              <ShoppingBag className="w-4 h-4" />
-              {added ? t('Added!', 'تمت الإضافة!') : !canAdd && stockQty === 0 ? t('Out of Stock', 'نفذ المخزون') : t('Add to Cart', 'أضف إلى السلة')}
-            </button>
+                <ShoppingBag className="w-4 h-4" />
+                {added ? t('Added!', 'تمت الإضافة!') : !canAdd && stockQty === 0 ? t('Out of Stock', 'نفذ المخزون') : t('Add to Cart', 'أضف إلى السلة')}
+              </button>
+              <button onClick={handleBuyNow} disabled={!canAdd}
+                className={`w-full py-3.5 rounded-2xl font-semibold text-sm transition-colors border
+                ${canAdd ? 'border-primary text-primary hover:bg-primary/10' : 'border-border text-muted-foreground cursor-not-allowed'}`}>
+                {t('Buy now', 'اشترِ الآن')}
+              </button>
+            </div>
+
+            <div className="rounded-2xl border border-border bg-card p-3.5 space-y-2">
+              <p className="text-sm font-semibold text-foreground">{t('Why parents choose this', 'لماذا يختار الأهل هذا المنتج')}</p>
+              <ul className="space-y-1.5 text-xs text-muted-foreground">
+                <li>• {shortDesc || t('Soft, practical design for daily comfort.', 'تصميم ناعم وعملي للراحة اليومية.')}</li>
+                <li>• {t('Suitable for newborns to kids depending on selected size.', 'مناسب لحديثي الولادة والأطفال حسب المقاس المختار.')}</li>
+                <li>• {t(`Delivery fee starts from $${(siteSettings.deliveryFeeInside || 3).toFixed(0)} and varies by zone.`, `تبدأ رسوم التوصيل من $${(siteSettings.deliveryFeeInside || 3).toFixed(0)} وتختلف حسب المنطقة.`)}</li>
+                <li>• {t('Easy exchange support via WhatsApp if sizing needs adjustment.', 'دعم سهل للاستبدال عبر واتساب إذا احتجتِ تعديل المقاس.')}</li>
+              </ul>
+            </div>
 
             {desc && (
               <div className="pt-2 border-t border-border">
                 <p className="text-sm text-muted-foreground leading-relaxed">{desc}</p>
               </div>
             )}
+
+            <div className="rounded-2xl border border-border bg-muted/40 p-3.5">
+              <p className="text-xs text-foreground font-semibold mb-1.5 flex items-center gap-1.5">
+                <RotateCcw className="w-3.5 h-3.5 text-primary" />
+                {t('Exchange & return reassurance', 'ضمان الاستبدال والإرجاع')}
+              </p>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                {t('Need a different size? Our team helps quickly via WhatsApp and order support.', 'تحتاجين مقاساً مختلفاً؟ فريقنا يساعدك بسرعة عبر واتساب ودعم الطلبات.')}
+              </p>
+            </div>
           </div>
         </div>
 
@@ -325,8 +370,9 @@ export default function ProductPage() {
           </div>
         </div>
 
-        {/* You might also like */}
-        <RelatedProducts product={product} limit={4} />
+        <RelatedProducts product={product} limit={4} title="You may also like" titleAr="قد يعجبك أيضاً" />
+        <RelatedProducts product={product} limit={4} title="Complete the look" titleAr="كمّلي الإطلالة" />
+        <RelatedProducts product={product} limit={4} title="Frequently bought together" titleAr="يُشترى معه غالباً" />
       </div>
 
       {/* Full-screen photo popup (tap/click the main gallery image to open). */}
@@ -339,6 +385,30 @@ export default function ProductPage() {
           onClose={() => setLightboxOpen(false)}
         />
       )}
+
+      {/* Sticky mobile CTA */}
+      <div className="md:hidden fixed inset-x-0 bottom-3 z-40 px-4">
+        <div className="rounded-2xl bg-card/95 backdrop-blur border border-border shadow-lg p-2.5 flex items-center gap-2">
+          <div className="min-w-0">
+            <p className="text-[11px] text-muted-foreground">{t('Today', 'اليوم')}</p>
+            <p className="text-sm font-bold text-foreground">${displayPrice?.toFixed(2)}</p>
+          </div>
+          <button
+            onClick={handleAdd}
+            disabled={!canAdd}
+            className={`flex-1 min-h-[44px] rounded-xl text-sm font-semibold ${canAdd ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}
+          >
+            {!canAdd && stockQty === 0 ? t('Out of Stock', 'نفذ المخزون') : t('Add to Cart', 'أضف إلى السلة')}
+          </button>
+          <button
+            onClick={handleBuyNow}
+            disabled={!canAdd}
+            className={`min-h-[44px] px-3 rounded-xl text-sm font-semibold border ${canAdd ? 'border-primary text-primary' : 'border-border text-muted-foreground'}`}
+          >
+            {t('Buy', 'شراء')}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
