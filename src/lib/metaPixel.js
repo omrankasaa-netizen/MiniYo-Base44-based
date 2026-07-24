@@ -19,8 +19,8 @@ import {
 
 export { genEventId, hasMarketingConsent };
 
-// Public (non-secret) Pixel ID. The fbq base snippet in index.html initializes
-// with this same default; VITE_META_PIXEL_ID lets a non-prod build override it.
+// Public (non-secret) Pixel ID. src/lib/pixel.js lazily initializes fbq with
+// this default after consent; VITE_META_PIXEL_ID lets non-prod override it.
 export const META_PIXEL_ID =
   (typeof import.meta !== 'undefined' && import.meta.env?.VITE_META_PIXEL_ID) ||
   '1480243427454221';
