@@ -18,6 +18,86 @@ export const TIKTOK_PIXEL_ID =
 let metaInitialized = false;
 let tiktokInitialized = false;
 
+// ── Advanced Matching helpers ────────────────────────────────────────────────
+
+// SHA-256 via SubtleCrypto. Normalises (trim + lowercase) before hashing.
+// Returns undefined when input is empty or crypto is unavailable.
+async function sha256hex(str) {
+  if (!str || typeof window === 'undefined' || !window.crypto?.subtle) return undefined;
+  try {
+    const encoded = new TextEncoder().encode(String(str).trim().toLowerCase());
+    const buf = await window.crypto.subtle.digest('SHA-256', encoded);
+    return Array.from(new Uint8Array(buf))
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
+  } catch {
+    return undefined;
+  }
+}
+
+// Persistent anonymous visitor ID stored in safeLocalStorage. Created once per
+// browser so Meta can tie cross-session events together via external_id.
+const VID_KEY = '_meta_vid';
+function getOrCreateVisitorId() {
+  if (typeof window === 'undefined') return null;
+  try {
+    let vid = safeLocalStorage.getItem(VID_KEY);
+    if (!vid) {
+      vid = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
+        ? crypto.randomUUID()
+        : `vid-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+      safeLocalStorage.setItem(VID_KEY, vid);
+    }
+    return vid;
+  } catch {
+    return null;
+  }
+}
+
+// Capture ?fbclid=... from the landing URL into a _fbc cookie so the Meta pixel
+// can read it when events fire (even if the pixel loads after SPA navigation
+// has stripped the query string). Called immediately on app mount — does not
+// require marketing consent since we're only persisting a URL parameter the
+// visitor arrived with.
+export function captureFbclid() {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return;
+  try {
+    const fbclid = new URLSearchParams(window.location.search).get('fbclid');
+    if (!fbclid) return;
+    const fbc = `fb.1.${Math.floor(Date.now() / 1000)}.${fbclid}`;
+    // 90-day cookie — matches Meta's default retention window.
+    document.cookie = `_fbc=${encodeURIComponent(fbc)};path=/;max-age=${90 * 24 * 60 * 60};SameSite=Lax`;
+  } catch { /* never throw */ }
+}
+
+// Re-call fbq('init') with hashed Advanced Matching params so every subsequent
+// event carries email / phone / external_id for Meta's Event Match Quality score.
+// All PII is SHA-256 hashed client-side. Also sends the anonymous visitor ID as
+// external_id even when no PII is provided, which alone gives a significant
+// match-quality lift according to Meta's EMQ documentation.
+export async function updateAdvancedMatching({ email, phone, firstName, lastName } = {}) {
+  if (typeof window === 'undefined' || typeof window.fbq !== 'function') return;
+  try {
+    const vid = getOrCreateVisitorId();
+    const normPhone = phone ? String(phone).replace(/[\s\-()]/g, '') : undefined;
+    const [em, ph, fn, ln, extId] = await Promise.all([
+      sha256hex(email),
+      sha256hex(normPhone),
+      sha256hex(firstName),
+      sha256hex(lastName),
+      sha256hex(vid),
+    ]);
+    const userData = {};
+    if (em)    userData.em          = em;
+    if (ph)    userData.ph          = ph;
+    if (fn)    userData.fn          = fn;
+    if (ln)    userData.ln          = ln;
+    if (extId) userData.external_id = extId;
+    if (Object.keys(userData).length === 0) return;
+    window.fbq('init', META_PIXEL_ID, userData);
+  } catch { /* tracking must never break the UX */ }
+}
+
 // Returns 'granted' | 'denied' | null (no choice stored yet).
 export function getConsentChoice() {
   if (typeof window === 'undefined') return null;
@@ -71,6 +151,9 @@ function ensureMetaPixel() {
   script.src = 'https://connect.facebook.net/en_US/fbevents.js';
   document.head.appendChild(script);
   metaInitialized = true;
+  // Non-blocking: enrich with anonymous external_id immediately so every event
+  // after consent carries it. PII fields are added later from checkout data.
+  setTimeout(() => updateAdvancedMatching({}), 0);
 }
 
 function ensureTikTokPixel() {

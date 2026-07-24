@@ -1,11 +1,11 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { Toaster } from "@/components/ui/toaster";
 import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClientInstance } from '@/lib/query-client';
 import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import ScrollToTop from '@/components/ScrollToTop';
-import PixelPageView from '@/lib/pixel';
+import PixelPageView, { captureFbclid } from '@/lib/pixel';
 import ConsentBanner from '@/components/ConsentBanner';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import UserNotRegisteredError from '@/components/UserNotRegisteredError';
@@ -81,6 +81,10 @@ const ReviewsPage = lazy(() => import('@/pages/admin/ReviewsPage'));
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
+
+  // Capture ?fbclid from Meta ad landing URLs immediately — no consent required
+  // since we're only persisting the URL parameter the visitor arrived with.
+  useEffect(() => { captureFbclid(); }, []);
 
   if (isLoadingPublicSettings || isLoadingAuth) {
     return (
