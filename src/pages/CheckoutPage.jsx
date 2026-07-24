@@ -12,6 +12,7 @@ import { useQuery } from '@tanstack/react-query';
 import {
   trackInitiateCheckout, trackPurchase, notifyPurchase, genEventId, hasMarketingConsent,
 } from '@/lib/metaPixel';
+import { updateAdvancedMatching } from '@/lib/pixel';
 import { ttInitiateCheckout, ttCompletePayment, ttNotifyPurchase } from '@/lib/tiktokPixel';
 import { ga4TrackBeginCheckout, ga4TrackPurchase } from '@/lib/ga4';
 import { readStoredUtmAttribution } from '@/lib/utmAttribution';
@@ -204,6 +205,17 @@ export default function CheckoutPage() {
   const effectiveDelivery = isFreeShipping || qualifiesForThreshold ? 0 : deliveryFee;
   const grandTotal = Number((subtotal - totalDiscount + effectiveDelivery).toFixed(2));
 
+  // Meta Advanced Matching: enrich pixel with hashed PII as soon as user data
+  // is available (pre-filled from auth session) so all checkout events carry it.
+  useEffect(() => {
+    if (!form.customer_email && !form.customer_phone) return;
+    updateAdvancedMatching({
+      email: form.customer_email,
+      phone: form.customer_phone,
+    }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [!!form.customer_email, !!form.customer_phone]);
+
   // Meta Pixel InitiateCheckout — fire once when the checkout page opens with a
   // non-empty cart.
   const initiateCheckoutFired = useRef(false);
@@ -327,6 +339,15 @@ export default function CheckoutPage() {
     }
 
     try {
+      // Send hashed user data to Meta Advanced Matching so purchase events carry
+      // email / phone / external_id and improve Event Match Quality score.
+      updateAdvancedMatching({
+        email: form.customer_email,
+        phone: form.customer_phone,
+        firstName: form.customer_name?.split(' ')[0],
+        lastName: form.customer_name?.split(' ').slice(1).join(' ') || undefined,
+      }).catch(() => { /* tracking must never break checkout */ });
+
       // Create guest account if opted in (requires an email — the account is
       // keyed on it and the welcome email needs somewhere to go).
       let guestCustomerId = currentUser?.id || '';
