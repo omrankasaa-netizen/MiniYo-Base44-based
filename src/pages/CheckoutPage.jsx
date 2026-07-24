@@ -9,9 +9,13 @@ import { ShoppingBag, CheckCircle2, Tag, X, Loader2, Gift } from 'lucide-react';
 import { validatePromoCode, calcPromoDiscount } from '@/lib/discounts';
 import { reserveOrderStock, availableQty } from '@/lib/inventory';
 import { useQuery } from '@tanstack/react-query';
-import { trackInitiateCheckout, notifyPurchase, genEventId, hasMarketingConsent } from '@/lib/metaPixel';
+import {
+  trackInitiateCheckout, trackPurchase, notifyPurchase, genEventId, hasMarketingConsent,
+} from '@/lib/metaPixel';
 import { updateAdvancedMatching } from '@/lib/pixel';
-import { ttInitiateCheckout, ttNotifyPurchase } from '@/lib/tiktokPixel';
+import { ttInitiateCheckout, ttCompletePayment, ttNotifyPurchase } from '@/lib/tiktokPixel';
+import { ga4TrackBeginCheckout, ga4TrackPurchase } from '@/lib/ga4';
+import { readStoredUtmAttribution } from '@/lib/utmAttribution';
 
 const ScrollToTop = ({ trigger }) => {
   useEffect(() => {
@@ -215,17 +219,19 @@ export default function CheckoutPage() {
   // Meta Pixel InitiateCheckout — fire once when the checkout page opens with a
   // non-empty cart.
   const initiateCheckoutFired = useRef(false);
+  const trackedPurchaseOrderIdsRef = useRef(new Set());
   useEffect(() => {
     if (initiateCheckoutFired.current || !items?.length) return;
     initiateCheckoutFired.current = true;
     trackInitiateCheckout({ items, value: Number(subtotal) || 0 });
     ttInitiateCheckout({ items, value: Number(subtotal) || 0 });
+    ga4TrackBeginCheckout({ items, value: Number(subtotal) || 0, currency: 'USD' });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items?.length]);
 
-  // Purchase is fired server-side via the Conversions API (never from the
-  // browser) so it is built from trusted order data and can't be spoofed. We
-  // trigger it after the order + items are persisted (see handleSubmit).
+  // Purchase/CompletePayment are emitted as browser events + server API twins
+  // (shared event_id dedup). The server event still reads trusted order totals
+  // + line items from the DB and is triggered after persistence.
 
   async function handleApplyPromo() {
     setPromoError('');
@@ -392,6 +398,7 @@ export default function CheckoutPage() {
       // visitor declined marketing cookies.
       const metaEventId = genEventId();
       const metaConsent = hasMarketingConsent();
+      const utm = readStoredUtmAttribution();
 
       const order = await base44.entities.Order.create({
         customer_id: guestCustomerId,
@@ -411,6 +418,7 @@ export default function CheckoutPage() {
         notes: form.notes,
         order_number: genOrderNum(),
         order_date: new Date().toISOString(),
+        currency: 'USD',
         subtotal_usd: subtotal,
         discount_usd: totalDiscount,
         delivery_fee_usd: effectiveDelivery,
@@ -418,6 +426,14 @@ export default function CheckoutPage() {
         promo_code: promoCode?.code || '',
         order_status: 'New',
         channel: 'Website',
+        utm_source: utm?.utm_source || '',
+        utm_medium: utm?.utm_medium || '',
+        utm_campaign: utm?.utm_campaign || '',
+        utm_content: utm?.utm_content || '',
+        utm_term: utm?.utm_term || '',
+        utm_landing_path: utm?.landing_path || '',
+        utm_landing_url: utm?.landing_url || '',
+        utm_captured_at: utm?.captured_at || '',
         stock_committed: false,
         is_gift: gift.is_gift,
         gift_wrapping: gift.is_gift ? gift.gift_wrapping : false,
@@ -503,6 +519,32 @@ export default function CheckoutPage() {
         try {
           await base44.auth.updateMe({ preferred_payment: form.payment_method });
         } catch (_) { /* non-critical */ }
+      }
+
+      if (!trackedPurchaseOrderIdsRef.current.has(order.id)) {
+        trackedPurchaseOrderIdsRef.current.add(order.id);
+        trackPurchase({
+          eventId: metaEventId,
+          orderNumber: order.order_number,
+          value: grandTotal,
+          currency: 'USD',
+          items,
+        });
+        ttCompletePayment({
+          eventId: metaEventId,
+          value: grandTotal,
+          currency: 'USD',
+          items,
+        });
+        ga4TrackPurchase({
+          orderNumber: order.order_number,
+          orderId: order.id,
+          value: grandTotal,
+          currency: 'USD',
+          shipping: effectiveDelivery,
+          coupon: promoCode?.code,
+          items,
+        });
       }
 
       // Fire confirmation (customer) + notification (admin) emails. Best effort.

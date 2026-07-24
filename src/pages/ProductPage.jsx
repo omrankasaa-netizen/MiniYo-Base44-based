@@ -15,6 +15,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { normalizeImages, imageSrc, imageSrcSet, DETAIL_SIZES, handleImageError } from '@/lib/imageFraming';
 import { trackViewContent } from '@/lib/metaPixel';
 import { ttViewContent } from '@/lib/tiktokPixel';
+import { ga4TrackViewItem } from '@/lib/ga4';
 import { availableQty } from '@/lib/inventory';
 import { useSiteSettings } from '@/hooks/useSiteSettings';
 
@@ -73,6 +74,7 @@ export default function ProductPage() {
     if (!product?.id) return;
     trackViewContent(product);
     ttViewContent(product);
+    ga4TrackViewItem(product);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [product?.id]);
 
