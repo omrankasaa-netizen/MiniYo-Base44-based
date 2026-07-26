@@ -107,7 +107,7 @@ function FilterChip({ label, onRemove }) {
 // ── Main ShopPage ──────────────────────────────────────────────────────────────
 export default function ShopPage() {
   const { t, lang } = useLang();
-  const { getDiscountedPrice } = useDiscounts();
+  const { getDiscountedPrice, liveDiscounts = [] } = useDiscounts();
   const { get, getArr, set, clear } = useUrlFilters();
   const [mobileFilterOpen, setMobileFilterOpen] = React.useState(false);
 
