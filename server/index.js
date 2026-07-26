@@ -128,6 +128,11 @@ function handleError(res, e) {
   res.status(status).json({ error: e?.message || 'Internal error' });
 }
 
+// Trivial health probe for uptime/synthetic monitors.
+app.get('/api/health', (_req, res) => {
+  res.json({ status: 'ok' });
+});
+
 // ─── Auth routes ──────────────────────────────────────────────────────────────
 app.get('/api/auth/me', (req, res) => {
   const user = getUserFromRequest(req);
