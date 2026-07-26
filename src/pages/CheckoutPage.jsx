@@ -151,6 +151,7 @@ export default function CheckoutPage() {
   const [promoError, setPromoError] = useState('');
   const [promoLoading, setPromoLoading] = useState(false);
   const [phoneError, setPhoneError] = useState('');
+  const [addressError, setAddressError] = useState('');
   const [stockError, setStockError] = useState('');
 
   // Calculate promo discount FIRST (before using it in postDiscountSubtotal)
@@ -259,14 +260,22 @@ export default function CheckoutPage() {
   }
 
   function validateLebanesePhone(phone) {
-    // Lebanese formats. Mobile prefixes: 03, 70, 71, 76, 78, 79, 81; landline 01-09.
-    // Accepts +961 / 00961 / 961 / leading 0, with or without spaces/dashes, e.g.
-    // 03 123 456, 70123456, +961 3 123456, 01 234 567.
-    let c = String(phone || '').replace(/[\s\-()]/g, '');
+    // Lebanese mobile prefixes (after stripping country code / leading 0):
+    //   3xxxxxx  = 03 numbers (7 digits)
+    //   7xxxxxxx = 70/71/76/78/79 mobiles (8 digits)
+    //   8[01]xxx = 80/81 mobiles (8 digits)
+    // Landline whitelist only (not a free-for-all): 01 Beirut, 04/09 North,
+    //   05/07/08 South, 06 Bekaa (all 7 digits after stripping leading 0).
+    let c = String(phone || '').replace(/[\s\-().]/g, '');
     c = c.replace(/^\+961/, '').replace(/^00961/, '').replace(/^961/, '').replace(/^0/, '');
-    const mobile = /^(3\d{6}|7[0-9]\d{6}|8[01]\d{6})$/; // 7-8 digit mobiles
-    const landline = /^[1-9]\d{6}$/;                     // 7-digit landline
-    return mobile.test(c) || landline.test(c);
+    const mobile = /^(3\d{6}|7[0-9]\d{6}|8[01]\d{6})$/;
+    const landline = /^([14-9]\d{6})$/; // 1,4,5,6,7,8,9 prefix — not 2 or 3 (those are mobile-only)
+    const valid = mobile.test(c) || landline.test(c);
+    if (!valid) return false;
+    // Reject obviously fake patterns: all same digit, or known test sequences
+    if (/^(\d)\1{6,}$/.test(c)) return false;
+    if (['1234567', '7654321', '12345678', '00000000', '11111111'].includes(c)) return false;
+    return true;
   }
 
   async function revalidateStock() {
@@ -305,6 +314,7 @@ export default function CheckoutPage() {
     e.preventDefault();
     setEmailError('');
     setPhoneError('');
+    setAddressError('');
     setStockError('');
     setSubmitting(true);
 
@@ -326,6 +336,31 @@ export default function CheckoutPage() {
     if (!validateLebanesePhone(form.customer_phone)) {
       setPhoneError(t('Please enter a valid Lebanese phone number (e.g. 03/70/71/76/78/79/81 or +961)', 'يرجى إدخال رقم هاتف لبناني صحيح'));
       setSubmitting(false);
+      return;
+    }
+
+    // Require city and street to prevent obviously fake/incomplete addresses.
+    if (!form.city || form.city.trim().length < 2) {
+      setAddressError(t('Please enter your city.', 'يرجى إدخال المدينة.'));
+      setSubmitting(false);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    if (!form.street || form.street.trim().length < 3) {
+      setAddressError(t('Please enter your street / area (min 3 characters).', 'يرجى إدخال الشارع أو المنطقة (د حروف على الأقل).'));
+      setSubmitting(false);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
+    // Guard against suspiciously low delivery fee (misconfigured zone or tampered request).
+    if (!isFreeShipping && !qualifiesForThreshold && effectiveDelivery > 0 && effectiveDelivery < 1) {
+      setStockError(t(
+        'Delivery fee could not be confirmed. Please refresh the page and try again or contact us on WhatsApp.',
+        'تعذّر تأكيد رسوم التوصيل. يرجى تحديث الصفحة والمحاولة مجدداً أو التواصل عبر واتساب.'
+      ));
+      setSubmitting(false);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
 
