@@ -134,7 +134,9 @@ export default function ShopPage() {
 
   const { data: images = [] } = useQuery({
     queryKey: ['shop-product-images'],
-    queryFn: () => base44.entities.ProductImage.list('-created_date', 3000),
+    // Load only primary images (one per product) instead of all images.
+    // Full image galleries are loaded on demand in ProductPage.
+    queryFn: () => base44.entities.ProductImage.filter({ is_primary: true }, 'sort_order', 600),
     enabled: products.length > 0,
     staleTime: 60_000,
   });

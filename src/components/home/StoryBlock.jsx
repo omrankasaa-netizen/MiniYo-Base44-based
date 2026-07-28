@@ -2,20 +2,13 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useLang } from '@/contexts/LanguageContext';
-import { base44 } from '@/api/base44Client';
-import { useQuery } from '@tanstack/react-query';
+import { useCmsSection } from '@/hooks/useCmsSection';
 import { Heart } from 'lucide-react';
 import { cmsImageSrc, cmsImageSrcSet, handleImageError } from '@/lib/imageFraming';
 
 export default function StoryBlock() {
   const { t, lang } = useLang();
-
-  const { data: sections = [] } = useQuery({
-    queryKey: ['cms-section', 'home_story'],
-    queryFn: () => base44.entities.CmsSection.filter({ section_key: 'home_story' }, 'sort_order', 1),
-    staleTime: 60_000,
-  });
-  const section = sections[0];
+  const { section } = useCmsSection('home_story');
 
   const title  = section ? (lang === 'ar' ? (section.title_ar || section.title) : section.title) : t('Made with love for Lebanon\'s little ones.', 'صُنع بحب لصغار لبنان.');
   const body   = section ? (lang === 'ar' ? (section.body_ar  || section.body)  : section.body)  : t('Soft fabrics, honest prices, delivered to your door. MiniYo is built for the parents of Lebanon — because your little ones deserve the best.', 'أقمشة ناعمة، أسعار صادقة، وتوصيل إلى بابك. ميني يو مبني لأهالي لبنان — لأن صغاركم يستاهلون الأفضل.');

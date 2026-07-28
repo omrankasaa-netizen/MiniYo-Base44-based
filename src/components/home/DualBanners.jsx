@@ -1,8 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { useLang } from '@/contexts/LanguageContext';
-import { base44 } from '@/api/base44Client';
-import { useQuery } from '@tanstack/react-query';
+import { useCmsSections } from '@/hooks/useCmsSection';
 import { motion } from 'framer-motion';
 import { cmsImageSrc, cmsImageSrcSet, handleImageError } from '@/lib/imageFraming';
 
@@ -31,15 +30,8 @@ function DualCard({ section }) {
 }
 
 export default function DualBanners() {
-  const { data: sections = [] } = useQuery({
-    queryKey: ['cms-dual-banners'],
-    queryFn: () => base44.entities.CmsSection.filter({}, 'section_key', 10),
-    staleTime: 60_000,
-    select: data => data.filter(s => s.section_key === 'dual_banner_left' || s.section_key === 'dual_banner_right'),
-  });
-
-  const left = sections.find(s => s.section_key === 'dual_banner_left');
-  const right = sections.find(s => s.section_key === 'dual_banner_right');
+  const { sections } = useCmsSections(['dual_banner_left', 'dual_banner_right']);
+  const [left, right] = sections;
 
   if (!left?.is_active && !right?.is_active) return null;
 

@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useLang } from '@/contexts/LanguageContext';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
+import { useCmsSection } from '@/hooks/useCmsSection';
 import { Star, ChevronLeft, ChevronRight, Heart } from 'lucide-react';
 
 function StarRating({ rating }) {
@@ -25,12 +26,7 @@ export default function ReviewsCarousel() {
     staleTime: 60_000,
   });
 
-  const { data: sections = [] } = useQuery({
-    queryKey: ['cms-section', 'home_reviews'],
-    queryFn: () => base44.entities.CmsSection.filter({ section_key: 'home_reviews' }, 'sort_order', 1),
-    staleTime: 60_000,
-  });
-  const section = sections[0];
+  const { section } = useCmsSection('home_reviews');
 
   const shown = reviews.filter(r => r.body);
   const total = shown.length;

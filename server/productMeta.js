@@ -126,6 +126,32 @@ export function buildProductMetaBlock(product) {
   if (socialDesc) lines.push(`<meta name="twitter:description" content="${escapeAttr(socialDesc)}" />`);
   lines.push(`<meta name="twitter:image" content="${escapeAttr(image)}" />`);
 
+  // Inline product data for instant React hydration on ad landing pages.
+  // React Query reads window.__PRODUCT__ as initialData so the product title,
+  // price, and buy button render in the first paint without waiting for a
+  // separate /api/entities/Product fetch. The query still revalidates in the
+  // background (initialDataUpdatedAt: 0) so stale data is never shown long.
+  const productSubset = {
+    id: product.id,
+    slug: product.slug || null,
+    name: product.name || null,
+    name_ar: product.name_ar || null,
+    short_description: product.short_description || null,
+    short_description_ar: product.short_description_ar || null,
+    description: product.description || null,
+    price_usd: product.price_usd ?? null,
+    compare_at_price_usd: product.compare_at_price_usd || null,
+    image_url: product.image_url || null,
+    status: product.status || null,
+    has_variants: product.has_variants || false,
+    sizes: product.sizes || null,
+    colors: product.colors || null,
+    sku: product.sku || null,
+  };
+  // Escape `<` so the value can never break out of the <script> element.
+  const productJson = JSON.stringify(productSubset).replace(/</g, '\\u003c');
+  lines.push(`<script>window.__PRODUCT__=${productJson};</script>`);
+
   // JSON-LD Product schema.
   const jsonLd = {
     '@context': 'https://schema.org/',

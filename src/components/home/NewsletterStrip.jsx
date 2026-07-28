@@ -2,8 +2,7 @@ import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useLang } from '@/contexts/LanguageContext';
 import { useSiteSettings } from '@/hooks/useSiteSettings';
-import { base44 } from '@/api/base44Client';
-import { useQuery } from '@tanstack/react-query';
+import { useCmsSection } from '@/hooks/useCmsSection';
 import { trackLead, trackContact } from '@/lib/metaPixel';
 import { ttContact } from '@/lib/tiktokPixel';
 import { MessageCircle, Mail, Check } from 'lucide-react';
@@ -14,12 +13,7 @@ export default function NewsletterStrip() {
   const [email, setEmail] = useState('');
   const [subscribed, setSubscribed] = useState(false);
 
-  const { data: sections = [] } = useQuery({
-    queryKey: ['cms-section', 'home_newsletter'],
-    queryFn: () => base44.entities.CmsSection.filter({ section_key: 'home_newsletter' }, 'sort_order', 1),
-    staleTime: 60_000,
-  });
-  const section = sections[0];
+  const { section } = useCmsSection('home_newsletter');
 
   const heading = (section && (lang === 'ar' ? (section.title_ar || section.title) : section.title)) || t('Join the MiniYo family', 'انضم إلى عائلة ميني يو');
   const subtext = (section && (lang === 'ar' ? (section.body_ar || section.body) : section.body)) || t('Get new arrivals & exclusive offers. No spam, ever — we promise 🤍', 'احصل على الوصولات الجديدة والعروض الحصرية. بدون رسائل مزعجة أبدًا، وعدنا 🤍');

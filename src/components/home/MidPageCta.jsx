@@ -1,21 +1,14 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { useLang } from '@/contexts/LanguageContext';
-import { base44 } from '@/api/base44Client';
-import { useQuery } from '@tanstack/react-query';
+import { useCmsSection } from '@/hooks/useCmsSection';
 import { motion } from 'framer-motion';
 import { ArrowRight } from 'lucide-react';
 import { cmsImageSrc, cmsImageSrcSet, handleImageError } from '@/lib/imageFraming';
 
 export default function MidPageCta() {
   const { lang } = useLang();
-
-  const { data: sections = [] } = useQuery({
-    queryKey: ['cms-section', 'mid_page_cta'],
-    queryFn: () => base44.entities.CmsSection.filter({ section_key: 'mid_page_cta' }, 'sort_order', 1),
-    staleTime: 60_000,
-  });
-  const section = sections[0];
+  const { section } = useCmsSection('mid_page_cta');
 
   if (!section?.is_active) return null;
 
