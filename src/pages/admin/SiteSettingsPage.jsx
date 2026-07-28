@@ -15,6 +15,7 @@ const DEFAULT_SETTINGS = {
   instagram_url: '',
   facebook_url: '',
   default_language: 'en',
+  returns_blurb: 'Easy exchange',
 };
 
 export default function SiteSettingsPage() {
@@ -123,6 +124,7 @@ export default function SiteSettingsPage() {
           {/* Delivery */}
           <div className="bg-card border border-border rounded-2xl p-6 space-y-4 shadow-sm">
             <h2 className="font-heading font-semibold text-foreground text-sm">Delivery & Shipping</h2>
+            <Field label="Returns / Exchange Blurb" k="returns_blurb" placeholder="Easy exchange" hint="Shown on product trust strip (EN). AR uses translation fallback." />
             <div className="rounded-xl border border-border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
               Shipping zones, zone fees, and free-shipping threshold are managed in
               <a href="/admin/site-settings/shipping" className="ml-1 font-semibold text-primary underline underline-offset-2">

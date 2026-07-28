@@ -4,12 +4,14 @@ import { motion } from 'framer-motion';
 import { useLang } from '@/contexts/LanguageContext';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
+import { useCmsSection } from '@/hooks/useCmsSection';
 import { ChevronRight, ChevronLeft } from 'lucide-react';
 import { cmsImageSrc, cmsImageSrcSet, handleImageError } from '@/lib/imageFraming';
 
 export default function FeaturedCategories() {
   const { t, lang } = useLang();
   const scrollRef = useRef(null);
+  const { section: featuredSection } = useCmsSection('featured_categories');
 
   const { data: categories = [] } = useQuery({
     queryKey: ['categories-active'],
@@ -17,7 +19,23 @@ export default function FeaturedCategories() {
     staleTime: 60_000,
   });
 
-  if (categories.length === 0) return null;
+  const featuredIds = React.useMemo(() => {
+    try {
+      const parsed = featuredSection?.body ? JSON.parse(featuredSection.body) : null;
+      return Array.isArray(parsed) ? parsed.map(String) : [];
+    } catch {
+      return [];
+    }
+  }, [featuredSection?.body]);
+
+  const visibleCategories = React.useMemo(() => {
+    if (featuredIds.length === 0) return categories;
+    const set = new Set(featuredIds);
+    const pinned = categories.filter((c) => set.has(String(c.id)));
+    return pinned.length > 0 ? pinned : categories;
+  }, [categories, featuredIds]);
+
+  if (visibleCategories.length === 0) return null;
 
   function scroll(dir) {
     if (scrollRef.current) scrollRef.current.scrollBy({ left: dir * 220, behavior: 'smooth' });
@@ -48,10 +66,10 @@ export default function FeaturedCategories() {
 
         <div
           ref={scrollRef}
-          className="flex gap-4 overflow-x-auto pb-2 snap-x snap-mandatory scrollbar-none"
+          className="flex gap-3 overflow-x-auto pb-2 mobile-rail scrollbar-none"
           style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
         >
-          {categories.map((cat, i) => {
+          {visibleCategories.map((cat, i) => {
             const name = lang === 'ar' ? (cat.name_ar || cat.name) : cat.name;
             return (
               <motion.div

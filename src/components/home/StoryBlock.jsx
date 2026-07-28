@@ -13,6 +13,7 @@ export default function StoryBlock() {
   const title  = section ? (lang === 'ar' ? (section.title_ar || section.title) : section.title) : t('Made with love for Lebanon\'s little ones.', 'صُنع بحب لصغار لبنان.');
   const body   = section ? (lang === 'ar' ? (section.body_ar  || section.body)  : section.body)  : t('Soft fabrics, honest prices, delivered to your door. MiniYo is built for the parents of Lebanon — because your little ones deserve the best.', 'أقمشة ناعمة، أسعار صادقة، وتوصيل إلى بابك. ميني يو مبني لأهالي لبنان — لأن صغاركم يستاهلون الأفضل.');
   const imgUrl = section?.image_url || null;
+  const storyLink = section?.link_url || '/about';
 
   return (
     <section className="py-14 sm:py-20 bg-accent/20" dir={lang === 'ar' ? 'rtl' : 'ltr'}>
@@ -44,7 +45,7 @@ export default function StoryBlock() {
             </div>
             <h2 className="text-2xl sm:text-3xl lg:text-4xl font-heading font-bold text-foreground leading-tight mb-4">{title}</h2>
             <p className="text-base text-muted-foreground leading-relaxed mb-7">{body}</p>
-            <Link to="/about"
+            <Link to={storyLink}
               className="inline-flex items-center gap-2 bg-primary text-primary-foreground px-6 py-3 rounded-full font-semibold text-sm hover:bg-primary/90 transition-colors shadow-sm">
               {t('Our story →', 'قصتنا →')}
             </Link>

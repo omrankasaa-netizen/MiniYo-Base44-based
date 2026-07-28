@@ -2,9 +2,11 @@ import React, { useState } from 'react';
 import { X } from 'lucide-react';
 import { useLang } from '@/contexts/LanguageContext';
 import { useCmsSection } from '@/hooks/useCmsSection';
+import { useSiteSettings } from '@/hooks/useSiteSettings';
 
 export default function AnnouncementBar() {
   const { lang } = useLang();
+  const settings = useSiteSettings();
   const [dismissed, setDismissed] = useState(false);
   const { section: primarySection, isLoading: loadingPrimary } = useCmsSection('announcement_bar');
   const { section: legacySection, isLoading: loadingLegacy } = useCmsSection('announcement');
@@ -24,12 +26,16 @@ export default function AnnouncementBar() {
   const text = lang === 'ar'
     ? (section.title_ar || section.title)
     : (section.title || section.title_ar);
+  const threshold = Number(settings.freeShippingThreshold || 50).toFixed(0);
+  const withThreshold = String(text || '')
+    .replace(/\{threshold\}/gi, threshold)
+    .replace(/\$Y/gi, `$${threshold}`);
   // section.body stores the chosen color class
   const colorClass = section.body || 'bg-primary text-primary-foreground';
 
   const textEl = section.link_url
-    ? <a href={section.link_url} className="underline underline-offset-2 hover:opacity-80">{text}</a>
-    : <span>{text}</span>;
+    ? <a href={section.link_url} className="underline underline-offset-2 hover:opacity-80">{withThreshold}</a>
+    : <span>{withThreshold}</span>;
 
   return (
     <div className={`${colorClass} text-center text-xs py-2 px-10 font-body relative`}>

@@ -179,8 +179,12 @@ export default function CheckoutPage() {
   // Get shipping zone and fee with fallback
   const selectedZone = form.shipping_zone_id ? shippingZones.find(z => z.id === form.shipping_zone_id) : null;
   const catchallZone = shippingZones.find(z => z.is_catchall);
-  const zoneForFee = selectedZone || catchallZone || { fee_usd: 6 };
-  const deliveryFee = Number(zoneForFee?.fee_usd || 6);
+  const insideFallback = Number.isFinite(Number(siteSettings.deliveryFeeInside)) ? Number(siteSettings.deliveryFeeInside) : 3;
+  const outsideFallback = Number.isFinite(Number(siteSettings.deliveryFeeOutside)) ? Number(siteSettings.deliveryFeeOutside) : 6;
+  const isInsideCity = String(form.city || '').toLowerCase().includes('tripoli') || String(form.city || '').includes('طرابلس');
+  const legacyFallbackFee = isInsideCity ? insideFallback : outsideFallback;
+  const zoneForFee = selectedZone || catchallZone || { fee_usd: legacyFallbackFee };
+  const deliveryFee = Number(zoneForFee?.fee_usd || legacyFallbackFee);
 
   // Apply member discount logic
   let effectivePromoDiscount = Number(promoDiscount || 0);
@@ -260,22 +264,26 @@ export default function CheckoutPage() {
   }
 
   function validateLebanesePhone(phone) {
-    // Lebanese mobile prefixes (after stripping country code / leading 0):
-    //   3xxxxxx  = 03 numbers (7 digits)
-    //   7xxxxxxx = 70/71/76/78/79 mobiles (8 digits)
-    //   8[01]xxx = 80/81 mobiles (8 digits)
-    // Landline whitelist only (not a free-for-all): 01 Beirut, 04/09 North,
-    //   05/07/08 South, 06 Bekaa (all 7 digits after stripping leading 0).
-    let c = String(phone || '').replace(/[\s\-().]/g, '');
-    c = c.replace(/^\+961/, '').replace(/^00961/, '').replace(/^961/, '').replace(/^0/, '');
-    const mobile = /^(3\d{6}|7[0-9]\d{6}|8[01]\d{6})$/;
-    const landline = /^([14-9]\d{6})$/; // 1,4,5,6,7,8,9 prefix — not 2 or 3 (those are mobile-only)
-    const valid = mobile.test(c) || landline.test(c);
-    if (!valid) return false;
-    // Reject obviously fake patterns: all same digit, or known test sequences
-    if (/^(\d)\1{6,}$/.test(c)) return false;
-    if (['1234567', '7654321', '12345678', '00000000', '11111111'].includes(c)) return false;
-    return true;
+    let c = String(phone || '').replace(/[^\d+]/g, '');
+    c = c.replace(/^00/, '+').replace(/^961/, '+961');
+    if (c.startsWith('+961')) c = c.slice(4);
+    if (c.startsWith('0')) c = c.slice(1);
+    const digitsOnly = c.replace(/\D/g, '');
+    return /^\d{8}$/.test(digitsOnly);
+  }
+
+  function normalizeLebanesePhone(phone) {
+    let c = String(phone || '').replace(/[^\d+]/g, '');
+    c = c.replace(/^00/, '+').replace(/^961/, '+961');
+    if (c.startsWith('+961')) c = c.slice(4);
+    if (c.startsWith('0')) c = c.slice(1);
+    const digitsOnly = c.replace(/\D/g, '');
+    if (!/^\d{8}$/.test(digitsOnly)) return phone;
+    return `+961${digitsOnly}`;
+  }
+
+  function focusFieldIntoView(event) {
+    event.currentTarget.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
 
   async function revalidateStock() {
@@ -338,6 +346,7 @@ export default function CheckoutPage() {
       setSubmitting(false);
       return;
     }
+    const normalizedPhone = normalizeLebanesePhone(form.customer_phone);
 
     // Require city and street to prevent obviously fake/incomplete addresses.
     if (!form.city || form.city.trim().length < 2) {
@@ -378,7 +387,7 @@ export default function CheckoutPage() {
       // email / phone / external_id and improve Event Match Quality score.
       updateAdvancedMatching({
         email: form.customer_email,
-        phone: form.customer_phone,
+        phone: normalizedPhone,
         firstName: form.customer_name?.split(' ')[0],
         lastName: form.customer_name?.split(' ').slice(1).join(' ') || undefined,
       }).catch(() => { /* tracking must never break checkout */ });
@@ -398,7 +407,7 @@ export default function CheckoutPage() {
             const newCustomer = await base44.entities.Customer.create({
               email: form.customer_email,
               name: form.customer_name,
-              phone: form.customer_phone,
+              phone: normalizedPhone,
               current_tier: 'Bronze',
               lifetime_spend_usd: 0,
               free_delivery_credits_remaining: 0
@@ -440,7 +449,7 @@ export default function CheckoutPage() {
         meta_event_id: metaEventId,
         meta_consent: metaConsent,
         customer_name: form.customer_name,
-        customer_phone: form.customer_phone,
+        customer_phone: normalizedPhone,
         customer_email: form.customer_email,
         city: form.city,
         district: form.district,
@@ -685,21 +694,42 @@ export default function CheckoutPage() {
               <h2 className="font-semibold text-foreground text-sm">{t('Contact Info', 'معلومات التواصل')}</h2>
               {[
                 { k: 'customer_name', label: t('Full Name *', 'الاسم الكامل *'), required: true, autoComplete: 'name' },
-                { k: 'customer_phone', label: t('Phone *', 'الهاتف *'), required: true, type: 'tel', inputMode: 'tel', autoComplete: 'tel' },
+                { k: 'customer_phone', label: t('Phone *', 'الهاتف *'), required: true, type: 'tel', inputMode: 'tel', autoComplete: 'tel-national' },
                 { k: 'customer_email', label: t('Email Address (optional)', 'عنوان البريد الإلكتروني (اختياري)'), required: false, type: 'email', inputMode: 'email', autoComplete: 'email', readOnly: !!currentUser },
               ].map(({ k, label, required, type, inputMode, autoComplete, readOnly }) => (
                 <div key={k}>
                   <label className="text-xs text-muted-foreground block mb-1">{label}</label>
-                  <input 
-                    required={required}
-                    type={type || 'text'}
-                    inputMode={inputMode}
-                    autoComplete={autoComplete}
-                    readOnly={readOnly}
-                    value={form[k]}
-                    onChange={e => { setF(k, e.target.value); if (k === 'customer_phone') setPhoneError(''); }}
-                    className={`w-full px-3 py-2.5 rounded-xl border border-input bg-background text-sm min-h-[44px] ${readOnly ? 'bg-muted text-muted-foreground cursor-not-allowed' : ''}`}
-                  />
+                  {k === 'customer_phone' ? (
+                    <div className="flex items-center rounded-xl border border-input bg-background min-h-[44px]">
+                      <span className="px-3 text-sm text-muted-foreground border-r border-border" dir="ltr">+961</span>
+                      <input
+                        required={required}
+                        type="tel"
+                        inputMode="tel"
+                        autoComplete={autoComplete}
+                        value={String(form[k] || '').replace(/^\+?961/, '')}
+                        onFocus={focusFieldIntoView}
+                        onChange={e => {
+                          const raw = e.target.value.replace(/[^\d]/g, '').slice(0, 8);
+                          setF(k, raw);
+                          setPhoneError('');
+                        }}
+                        className="w-full px-3 py-2.5 bg-transparent text-sm min-h-[44px]"
+                      />
+                    </div>
+                  ) : (
+                    <input 
+                      required={required}
+                      type={type || 'text'}
+                      inputMode={inputMode}
+                      autoComplete={autoComplete}
+                      readOnly={readOnly}
+                      value={form[k]}
+                      onFocus={focusFieldIntoView}
+                      onChange={e => { setF(k, e.target.value); if (k === 'customer_phone') setPhoneError(''); }}
+                      className={`w-full px-3 py-2.5 rounded-xl border border-input bg-background text-sm min-h-[44px] ${readOnly ? 'bg-muted text-muted-foreground cursor-not-allowed' : ''}`}
+                    />
+                  )}
                   {k === 'customer_email' && emailError && (
                     <p className="text-xs text-destructive mt-1">{emailError}</p>
                   )}
@@ -731,7 +761,7 @@ export default function CheckoutPage() {
               <h2 className="font-semibold text-foreground text-sm">{t('Delivery Address', 'عنوان التوصيل')}</h2>
               <div>
                 <label className="text-xs text-muted-foreground block mb-1">{t('Shipping Zone *', 'منطقة الشحن *')}</label>
-                <select required value={form.shipping_zone_id} onChange={e => setF('shipping_zone_id', e.target.value)}
+                <select required value={form.shipping_zone_id} onFocus={focusFieldIntoView} onChange={e => setF('shipping_zone_id', e.target.value)}
                   className="w-full px-3 py-2 rounded-xl border border-input bg-background text-sm">
                   <option value="">-- {t('Select a zone', 'اختر منطقة')} --</option>
                   {shippingZones.map(z => (
@@ -744,7 +774,7 @@ export default function CheckoutPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs text-muted-foreground block mb-1">{t('City', 'المدينة')}</label>
-                  <select value={form.city} onChange={e => setF('city', e.target.value)}
+                  <select value={form.city} onFocus={focusFieldIntoView} onChange={e => setF('city', e.target.value)}
                     className="w-full px-3 py-2 rounded-xl border border-input bg-background text-sm">
                     <option value="">--</option>
                     {CITIES.map(c => <option key={c}>{c}</option>)}
@@ -752,20 +782,23 @@ export default function CheckoutPage() {
                 </div>
                 <div>
                   <label className="text-xs text-muted-foreground block mb-1">{t('District', 'المنطقة')}</label>
-                  <input value={form.district} onChange={e => setF('district', e.target.value)}
+                  <input value={form.district} onFocus={focusFieldIntoView} onChange={e => setF('district', e.target.value)}
                     className="w-full px-3 py-2.5 rounded-xl border border-input bg-background text-sm" placeholder={t('Optional', 'اختياري')} />
                 </div>
               </div>
               {[
-                { k: 'street', label: t('Street', 'الشارع'), autoComplete: 'address-line1' },
-                { k: 'building', label: t('Building', 'البناية'), autoComplete: 'address-line2' },
+                { k: 'street', label: t('Street', 'الشارع'), autoComplete: 'street-address' },
+                { k: 'building', label: t('Building', 'البناية'), autoComplete: 'address-level2' },
                 { k: 'floor', label: t('Floor (optional)', 'الطابق (اختياري)') },
                 { k: 'landmark', label: t('Landmark (optional)', 'علامة مميزة (اختياري)') },
               ].map(({ k, label, autoComplete }) => (
                 <div key={k}>
                   <label className="text-xs text-muted-foreground block mb-1">{label}</label>
-                  <input value={form[k]} onChange={e => setF(k, e.target.value)} autoComplete={autoComplete}
+                  <input value={form[k]} onFocus={focusFieldIntoView} onChange={e => setF(k, e.target.value)} autoComplete={autoComplete}
                     className="w-full px-3 py-2.5 rounded-xl border border-input bg-background text-sm min-h-[44px]" />
+                  {k === 'street' && addressError && (
+                    <p className="text-xs text-destructive mt-1">{addressError}</p>
+                  )}
                 </div>
               ))}
             </div>
@@ -853,14 +886,34 @@ export default function CheckoutPage() {
             <div className="bg-card border border-border rounded-2xl p-5">
               <label className="text-xs text-muted-foreground block mb-1">{t('Order Notes (optional)', 'ملاحظات الطلب (اختياري)')}</label>
               <textarea value={form.notes} onChange={e => setF('notes', e.target.value)} rows={2}
+                onFocus={focusFieldIntoView}
                 className="w-full px-3 py-2.5 rounded-xl border border-input bg-background text-sm resize-none" />
+            </div>
+
+            <div className="bg-primary/5 border border-primary/20 rounded-2xl p-4">
+              <p className="text-xs text-muted-foreground mb-1">{t('Delivery fee', 'رسوم التوصيل')}</p>
+              <p className="text-sm font-semibold text-foreground">
+                {form.shipping_zone_id
+                  ? `$${effectiveDelivery.toFixed(2)}`
+                  : t('Calculated at checkout after zone selection', 'تُحتسب بعد اختيار المنطقة')}
+              </p>
             </div>
 
             <button type="submit" disabled={submitting}
               className="w-full py-4 bg-primary text-primary-foreground rounded-2xl font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-50 hover:bg-primary/90 transition-colors shadow-sm">
               {submitting ? <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> : <ShoppingBag className="w-4 h-4" />}
-              {t('Place Order', 'تأكيد الطلب')} · ${grandTotal.toFixed(2)}
+              {t('Place order —', 'أكّدي الطلب —')} ${grandTotal.toFixed(2)}
             </button>
+            {siteSettings.whatsappNumber && (
+              <a
+                href={`https://wa.me/${String(siteSettings.whatsappNumber).replace(/\D/g, '')}?text=${encodeURIComponent(t('I want to place this order on WhatsApp.', 'أريد تأكيد هذا الطلب عبر واتساب.'))}`}
+                target="_blank"
+                rel="noopener"
+                className="inline-flex min-h-[44px] items-center gap-1.5 text-sm text-primary"
+              >
+                {t('Order on WhatsApp instead', 'اطلب عبر واتساب بدلاً من ذلك')}
+              </a>
+            )}
           </form>
 
           {/* Order summary */}

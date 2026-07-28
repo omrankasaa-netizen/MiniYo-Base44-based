@@ -8,25 +8,34 @@ import ProductCard from '@/components/storefront/ProductCard';
 import { buildImagesByProduct } from '@/lib/imageFraming';
 import { ChevronRight, ChevronLeft } from 'lucide-react';
 
-export default function ProductRow({ title, titleAr, filter, viewAllLink }) {
+export default function ProductRow({ title, titleAr, filter, viewAllLink, productIds = [] }) {
   const { t, lang } = useLang();
   const scrollRef = useRef(null);
+  const pinnedIds = Array.isArray(productIds) ? productIds.map(String).filter(Boolean) : [];
+  const hasPinned = pinnedIds.length > 0;
 
   const { data: rawProducts = [] } = useQuery({
-    queryKey: ['home-products', JSON.stringify(filter)],
-    queryFn: () => base44.entities.Product.filter(filter, '-created_date', 12),
+    queryKey: ['home-products', JSON.stringify(filter), pinnedIds.join(',')],
+    queryFn: async () => {
+      if (hasPinned) {
+        const pinned = await base44.entities.Product.filter({ id: pinnedIds, status: 'Active' }, '-created_date', 24);
+        const order = new Map(pinnedIds.map((id, idx) => [id, idx]));
+        return pinned.sort((a, b) => (order.get(String(a.id)) ?? 9999) - (order.get(String(b.id)) ?? 9999)).slice(0, 12);
+      }
+      return base44.entities.Product.filter(filter, '-created_date', 12);
+    },
     staleTime: 60_000,
   });
 
-  const productIds = rawProducts.map(p => p.id);
+  const productEntityIds = rawProducts.map(p => p.id);
 
   const { data: allImages = [] } = useQuery({
-    queryKey: ['product-images-home', productIds.join(',')],
+    queryKey: ['product-images-home', productEntityIds.join(',')],
     queryFn: async () => {
-      if (productIds.length === 0) return [];
-      return base44.entities.ProductImage.filter({ product_id: productIds }, 'sort_order');
+      if (productEntityIds.length === 0) return [];
+      return base44.entities.ProductImage.filter({ product_id: productEntityIds }, 'sort_order');
     },
-    enabled: productIds.length > 0,
+    enabled: productEntityIds.length > 0,
     staleTime: 60_000,
   });
 
@@ -80,11 +89,11 @@ export default function ProductRow({ title, titleAr, filter, viewAllLink }) {
         </div>
         <div
           ref={scrollRef}
-          className="lg:hidden flex gap-4 overflow-x-auto pb-2 snap-x snap-mandatory"
+          className="lg:hidden flex gap-3 overflow-x-auto pb-2 mobile-rail"
           style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
         >
           {products.map(p => (
-            <div key={p.id} className="snap-start shrink-0 w-[220px]">
+            <div key={p.id} className="snap-start shrink-0 w-[46vw] min-w-[170px] max-w-[205px]">
               <ProductCard product={p} />
             </div>
           ))}

@@ -128,10 +128,48 @@
     @apply bg-background text-foreground font-body antialiased;
     font-size: 16px;
     line-height: 1.6;
+    text-wrap: pretty;
   }
 
   h1, h2, h3, h4, h5, h6 {
     @apply font-heading;
+  }
+
+  @layer base {
+    a,
+    button,
+    [role="button"] {
+      touch-action: manipulation;
+    }
+
+    input,
+    select,
+    textarea {
+      font-size: 16px;
+    }
+
+    p,
+    span,
+    a,
+    h1,
+    h2,
+    h3,
+    h4,
+    h5,
+    h6 {
+      overflow-wrap: anywhere;
+      word-break: normal;
+    }
+  }
+
+  .mobile-rail {
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x mandatory;
+    touch-action: pan-y;
+  }
+
+  .safe-bottom {
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 0.5rem);
   }
 }
 

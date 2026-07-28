@@ -3,7 +3,7 @@ import { useLang } from '@/contexts/LanguageContext';
 import { useCart } from '@/contexts/CartContext';
 import { useAuthUser } from '@/contexts/AuthUserContext';
 import { Link, useLocation } from 'react-router-dom';
-import { ShoppingBag, Heart, User, Menu, X } from 'lucide-react';
+import { ShoppingBag, Heart, User, Menu, X, Search } from 'lucide-react';
 import { useCustomerTier } from '@/hooks/useCustomerTier';
 
 const LOGO_URL = '/miniyo-logo.png';
@@ -16,9 +16,16 @@ export default function Header() {
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const [hidden, setHidden] = useState(false);
 
   useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 20);
+    let lastY = window.scrollY;
+    const onScroll = () => {
+      const y = window.scrollY;
+      setScrolled(y > 20);
+      setHidden(y > lastY && y > 88);
+      lastY = y;
+    };
     window.addEventListener('scroll', onScroll, { passive: true });
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
@@ -31,7 +38,7 @@ export default function Header() {
 
 
   return (
-    <header className={`sticky top-0 z-50 backdrop-blur-md border-b border-border/50 transition-colors duration-300 ${scrolled ? 'bg-card/98 shadow-sm' : 'bg-card/90'}`}>
+    <header className={`sticky top-0 z-50 border-b border-border/50 transition-transform duration-300 ${hidden ? '-translate-y-full' : 'translate-y-0'} ${scrolled ? 'bg-card shadow-sm' : 'bg-card/95'}`}>
       <div className="bg-primary text-primary-foreground">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 min-h-[30px] text-[11px] sm:text-xs flex items-center justify-center gap-3 sm:gap-5">
           <span>{t('Delivery across Lebanon', 'توصيل لكل لبنان')}</span>
@@ -42,7 +49,7 @@ export default function Header() {
         </div>
       </div>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16 sm:h-20 gap-4">
+        <div className={`flex items-center justify-between h-14 sm:h-20 gap-4 ${lang === 'ar' ? 'flex-row-reverse' : ''}`}>
           {/* Logo */}
           <Link to="/" className="flex items-center gap-2 shrink-0">
             <img src={LOGO_URL} alt="MiniYo" width={215} height={200} className="h-10 sm:h-14 w-auto object-contain" />
@@ -72,6 +79,11 @@ export default function Header() {
             {/* Wishlist */}
             <Link to="/wishlist" aria-label={t('Wishlist', 'المفضلة')} className="flex items-center justify-center w-11 h-11 rounded-full hover:bg-muted transition-colors">
               <Heart className="w-4 h-4 text-muted-foreground" />
+            </Link>
+
+            {/* Search */}
+            <Link to="/shop" aria-label={t('Search products', 'ابحث عن المنتجات')} className="flex items-center justify-center w-11 h-11 rounded-full hover:bg-muted transition-colors">
+              <Search className="w-4 h-4 text-muted-foreground" />
             </Link>
 
             {/* Account with tier badge */}

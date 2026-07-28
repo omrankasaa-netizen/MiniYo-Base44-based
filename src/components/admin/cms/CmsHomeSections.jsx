@@ -7,6 +7,15 @@ import { LayoutTemplate, Save, ExternalLink, Upload, X } from 'lucide-react';
 // their built-in copy when a row is absent, so editing here is purely additive.
 const SECTIONS = [
   {
+    key: 'home_story',
+    label: 'Story Block',
+    fields: { title: true, body: true, image: true, link: true },
+    titleHint: 'Heading (e.g. "Made with love for Lebanon\'s little ones.")',
+    bodyHint: 'Supporting paragraph',
+    linkHint: 'Link URL (e.g. /about)',
+    preview: '/',
+  },
+  {
     key: 'home_gifting',
     label: 'Gift Sets Callout',
     fields: { title: true, body: true, image: true, link: true },
@@ -39,6 +48,86 @@ const SECTIONS = [
     fields: { title: true, body: true },
     titleHint: 'Section heading',
     bodyHint: 'Subtext under the heading',
+    preview: '/',
+  },
+  {
+    key: 'home_meta_traffic',
+    label: 'Meta Traffic Offer Block',
+    fields: { title: true, body: true, link: true },
+    titleHint: 'Offer heading shown to Meta traffic',
+    bodyHint: 'Offer subtext shown to Meta traffic',
+    linkHint: 'Primary CTA link (e.g. /landing/meta)',
+    preview: '/',
+  },
+  {
+    key: 'home_quick_shop',
+    label: 'Quick Shop Chips',
+    fields: { title: true, body: true, link: true },
+    titleHint: 'Section heading',
+    bodyHint: 'Optional JSON list of chips: [{\"en\":\"Newborn\",\"ar\":\"حديثو الولادة\",\"to\":\"/shop?age=Newborn\"}]',
+    linkHint: 'View-all link (e.g. /shop)',
+    preview: '/',
+  },
+  {
+    key: 'home_premium_trust',
+    label: 'Premium Trust Block',
+    fields: { title: true, body: true },
+    titleHint: 'Section heading',
+    bodyHint: 'Section subtext',
+    preview: '/',
+  },
+  {
+    key: 'home_premium_trust_items',
+    label: 'Premium Trust Cards',
+    fields: { body: true },
+    bodyHint: 'JSON list of trust cards: [{"en":"Delivery across Lebanon","ar":"توصيل لكل لبنان"}]',
+    preview: '/',
+  },
+  {
+    key: 'home_meta_trust_points',
+    label: 'Meta Landing Trust Points',
+    fields: { body: true },
+    bodyHint: 'JSON list of trust points for /landing/meta: [{"en":"Cash on Delivery","ar":"الدفع عند الاستلام"}]',
+    preview: '/landing/meta',
+  },
+  {
+    key: 'product_size_guide',
+    label: 'Product Size Guide Default',
+    fields: { title: true, body: true },
+    titleHint: 'Heading for size guide',
+    bodyHint: 'Default size guide text for product page accordion',
+    preview: '/shop',
+  },
+  {
+    key: 'product_care_default',
+    label: 'Product Care Default',
+    fields: { title: true, body: true },
+    titleHint: 'Heading for care section',
+    bodyHint: 'Default care text for product page accordion',
+    preview: '/shop',
+  },
+  {
+    key: 'home_faq',
+    label: 'Homepage FAQ Heading',
+    fields: { title: true, body: true },
+    titleHint: 'FAQ section heading',
+    bodyHint: 'Optional helper text',
+    preview: '/',
+  },
+  {
+    key: 'home_sticky_cta',
+    label: 'Mobile Sticky CTA',
+    fields: { title: true, body: true, link: true },
+    titleHint: 'Primary button text',
+    bodyHint: 'Secondary button text',
+    linkHint: 'Primary button link',
+    preview: '/',
+  },
+  {
+    key: 'home_trust_strip',
+    label: 'Trust Strip Labels',
+    fields: { body: true },
+    bodyHint: 'JSON list of 4 items: [{\"en\":\"Cash on Delivery\",\"ar\":\"الدفع عند الاستلام\"}]',
     preview: '/',
   },
 ];
@@ -136,7 +225,7 @@ export default function CmsHomeSections({ sectionMap, onSave }) {
         <LayoutTemplate className="w-5 h-5 text-primary" />
         <div>
           <h2 className="font-heading font-semibold text-foreground">Homepage Sections</h2>
-          <p className="text-xs text-muted-foreground">Edit the gifting callout, reviews, Instagram, and newsletter blocks. Toggle visibility per section. Leave fields blank to use the built-in defaults.</p>
+          <p className="text-xs text-muted-foreground">Edit homepage content blocks. Toggle visibility per section. Leave fields blank to use built-in defaults.</p>
         </div>
       </div>
 
