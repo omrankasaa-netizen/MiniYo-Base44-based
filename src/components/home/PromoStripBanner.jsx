@@ -1,8 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { useLang } from '@/contexts/LanguageContext';
-import { base44 } from '@/api/base44Client';
-import { useQuery } from '@tanstack/react-query';
+import { useCmsSectionsAll } from '@/hooks/useCmsSection';
 import { motion } from 'framer-motion';
 import { ArrowRight } from 'lucide-react';
 import { cmsImageSrc, cmsImageSrcSet, handleImageError } from '@/lib/imageFraming';
@@ -39,12 +38,8 @@ function SinglePromoBanner({ section }) {
 }
 
 export default function PromoStripBanner() {
-  const { data: sections = [] } = useQuery({
-    queryKey: ['cms-promo-strips'],
-    queryFn: () => base44.entities.CmsSection.filter({}, 'sort_order', 50),
-    staleTime: 60_000,
-    select: data => data.filter(s => s.section_key.startsWith('promo_strip_') && s.is_active),
-  });
+  const { data: allSections = [] } = useCmsSectionsAll();
+  const sections = allSections.filter(s => s.section_key?.startsWith('promo_strip_') && s.is_active);
 
   if (!sections.length) return null;
 

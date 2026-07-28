@@ -2,20 +2,13 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useLang } from '@/contexts/LanguageContext';
-import { base44 } from '@/api/base44Client';
-import { useQuery } from '@tanstack/react-query';
+import { useCmsSection } from '@/hooks/useCmsSection';
 import { ArrowRight } from 'lucide-react';
 import { cmsImageSrc, handleImageError } from '@/lib/imageFraming';
 
 export default function HeroSection() {
   const { lang, t } = useLang();
-
-  const { data: sections = [] } = useQuery({
-    queryKey: ['cms-section', 'home_hero'],
-    queryFn: () => base44.entities.CmsSection.filter({ section_key: 'home_hero' }, 'sort_order', 1),
-    staleTime: 60_000,
-  });
-  const section = sections[0];
+  const { section } = useCmsSection('home_hero');
 
   const title   = section ? (lang === 'ar' ? (section.title_ar   || section.title)  : section.title)  : t('Softness your baby deserves.', 'نعومة يستاهلها صغيرك.');
   const body    = section ? (lang === 'ar' ? (section.body_ar    || section.body)   : section.body)   : t("Gentle, organic-feel cotton for Lebanon's littlest ones.", 'قطن ناعم وطبيعي لأصغر أفراد عائلتك في لبنان.');

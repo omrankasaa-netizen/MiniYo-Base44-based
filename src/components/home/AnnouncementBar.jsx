@@ -1,19 +1,12 @@
 import React, { useState } from 'react';
 import { X } from 'lucide-react';
 import { useLang } from '@/contexts/LanguageContext';
-import { base44 } from '@/api/base44Client';
-import { useQuery } from '@tanstack/react-query';
+import { useCmsSection } from '@/hooks/useCmsSection';
 
 export default function AnnouncementBar() {
   const { lang } = useLang();
   const [dismissed, setDismissed] = useState(false);
-
-  const { data: sections = [], isLoading } = useQuery({
-    queryKey: ['cms-section', 'announcement_bar'],
-    queryFn: () => base44.entities.CmsSection.filter({ section_key: 'announcement_bar' }, 'sort_order', 1),
-    staleTime: 60_000,
-  });
-  const section = sections[0];
+  const { section, isLoading } = useCmsSection('announcement_bar');
 
   // CLS: while the CMS fetch is in flight, reserve the exact bar height (text-xs
   // + py-2 = 32px) so the bar appearing below the header doesn't shove the hero

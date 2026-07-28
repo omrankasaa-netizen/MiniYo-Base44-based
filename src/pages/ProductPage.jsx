@@ -44,9 +44,18 @@ export default function ProductPage() {
 
   const { getProductDiscount, getDiscountedPrice } = useDiscounts();
 
+  // Use server-injected product data (window.__PRODUCT__) as initialData for
+  // instant first paint on product pages. React Query still revalidates in the
+  // background (initialDataUpdatedAt: 0) so the cached value is never stale.
+  const seedProduct = typeof window !== 'undefined' && window.__PRODUCT__?.slug === slug
+    ? window.__PRODUCT__ : undefined;
+
   const { data: products = [] } = useQuery({
     queryKey: ['product', slug],
     queryFn: () => base44.entities.Product.filter({ slug }, 'slug', 1),
+    initialData: seedProduct ? [seedProduct] : undefined,
+    // Treat seeded data as immediately stale → silent background revalidation.
+    initialDataUpdatedAt: seedProduct ? 0 : undefined,
   });
   const product = products[0];
 

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useLang } from '@/contexts/LanguageContext';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
+import { useCmsSection } from '@/hooks/useCmsSection';
 import { motion } from 'framer-motion';
 import { ArrowRight } from 'lucide-react';
 import { cmsImageSrc, cmsImageSrcSet, handleImageError } from '@/lib/imageFraming';
@@ -10,19 +11,13 @@ import { cmsImageSrc, cmsImageSrcSet, handleImageError } from '@/lib/imageFramin
 export default function SaleCampaignBanner() {
   const { lang } = useLang();
 
-  const { data: bannerSections = [] } = useQuery({
-    queryKey: ['cms-section', 'countdown_sale_banner'],
-    queryFn: () => base44.entities.CmsSection.filter({ section_key: 'countdown_sale_banner' }, 'sort_order', 1),
-    staleTime: 60_000,
-  });
+  const { section } = useCmsSection('countdown_sale_banner');
 
   const { data: campaigns = [] } = useQuery({
     queryKey: ['campaigns-live'],
     queryFn: () => base44.entities.Campaign.filter({ is_active: true }, '-starts_at', 20),
     staleTime: 60_000,
   });
-
-  const section = bannerSections[0];
   if (!section?.is_active) return null;
 
   const now = new Date();

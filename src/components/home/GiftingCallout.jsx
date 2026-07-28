@@ -2,20 +2,13 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useLang } from '@/contexts/LanguageContext';
-import { base44 } from '@/api/base44Client';
-import { useQuery } from '@tanstack/react-query';
+import { useCmsSection } from '@/hooks/useCmsSection';
 import { Gift } from 'lucide-react';
 import { cmsImageSrc, cmsImageSrcSet, handleImageError } from '@/lib/imageFraming';
 
 export default function GiftingCallout() {
   const { t, lang } = useLang();
-
-  const { data: sections = [] } = useQuery({
-    queryKey: ['cms-section', 'home_gifting'],
-    queryFn: () => base44.entities.CmsSection.filter({ section_key: 'home_gifting' }, 'sort_order', 1),
-    staleTime: 60_000,
-  });
-  const section = sections[0];
+  const { section } = useCmsSection('home_gifting');
   if (section && section.is_active === false) return null;
 
   const title  = section ? (lang === 'ar' ? (section.title_ar || section.title) : section.title) : t('The perfect newborn gift.', 'الهدية المثالية للمولود الجديد.');
