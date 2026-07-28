@@ -610,9 +610,37 @@ app.post('/api/meta/purchase', async (req, res) => {
 
     const userData = buildPurchaseUserData(order, metaClientSignals(req));
     const eventId = derivePurchaseEventId(order);
-    const eventTime = order.created_date
-      ? Math.floor(Date.parse(order.created_date) / 1000) || Math.floor(Date.now() / 1000)
-      : Math.floor(Date.now() / 1000);
+
+    // Build event_time from the order's creation timestamp.
+    // DB convention: nowIso() = new Date().toISOString() — always UTC with 'Z'.
+    // Defensive: append 'Z' when the stored string has no timezone marker so
+    // Date.parse() never silently interprets it as local time (Node/V8 treats
+    // ISO strings without a tz marker as local on some platforms; Lebanon is
+    // UTC+3, which would push event_time 3 hours into the future vs Meta UTC).
+    const nowSec = Math.floor(Date.now() / 1000);
+    let eventTime = nowSec;
+    if (order.created_date) {
+      const raw = String(order.created_date);
+      // If the string already has a tz marker (Z / +HH:MM / -HH:MM), use it
+      // as-is; otherwise force UTC by appending 'Z'.
+      const utcStr = /[Zz]|[+-]\d{2}:?\d{2}$/.test(raw) ? raw : `${raw}Z`;
+      const parsed = Math.floor(Date.parse(utcStr) / 1000);
+      if (Number.isFinite(parsed)) eventTime = parsed;
+    }
+    // Clamp: Meta rejects events >7 days in the past or >60s in the future.
+    // If the stored timestamp is out of that window (e.g. a stale retry for an
+    // order whose CAPI send failed long ago), fall back to now and log a warning
+    // so we can investigate. The stable event_id still prevents double-counting.
+    const SEVEN_DAYS_SEC = 7 * 24 * 60 * 60;
+    if (eventTime < nowSec - SEVEN_DAYS_SEC || eventTime > nowSec + 60) {
+      console.warn('[metaCapi] Purchase event_time outside Meta window — using now', {
+        order_id: order.id,
+        stored_event_time: eventTime,
+        stored_event_time_iso: new Date(eventTime * 1000).toISOString(),
+        now_sec: nowSec,
+      });
+      eventTime = nowSec;
+    }
 
     const result = await sendCapiEvent({
       eventName: 'Purchase',
@@ -659,6 +687,9 @@ app.post('/api/meta/track', (req, res) => {
     sendCapiEvent({
       eventName,
       eventId: body.event_id ? String(body.event_id) : undefined,
+      // Always use server time for browser-origin track events — never trust
+      // a client-supplied timestamp, and the event is processed right now.
+      eventTime: Math.floor(Date.now() / 1000),
       eventSourceUrl: typeof body.event_source_url === 'string' ? body.event_source_url : undefined,
       actionSource: 'website',
       userData,
