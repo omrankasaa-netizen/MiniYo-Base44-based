@@ -6,7 +6,7 @@ import { base44 } from '@/api/base44Client';
 import { Link } from 'react-router-dom';
 import { X, Minus, Plus, ShoppingBag, Truck } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
-import { cmsImageSrc, handleImageError } from '@/lib/imageFraming';
+import { cmsImageSrc, handleImageError, normalizeImage } from '@/lib/imageFraming';
 import { availableQty } from '@/lib/inventory';
 
 export default function CartDrawer() {
@@ -16,6 +16,8 @@ export default function CartDrawer() {
   const threshold = settings.freeShippingThreshold || 50;
   const contentRef = useRef(null);
   const [justAdded, setJustAdded] = useState(null);
+  const pushedHistoryRef = useRef(false);
+  const swipeStartY = useRef(null);
   
   // Note: Cart drawer shows progress based on pre-discount subtotal for simplicity
   // Actual free shipping is determined at checkout based on post-discount subtotal
@@ -35,6 +37,26 @@ export default function CartDrawer() {
       document.body.style.overflow = 'hidden';
       return () => { document.body.style.overflow = ''; };
     }
+  }, [isOpen]);
+
+  // Mobile-native back behavior: if the cart is open, Android/iOS browser back
+  // closes it first instead of navigating away.
+  useEffect(() => {
+    if (!isOpen || pushedHistoryRef.current) return;
+    window.history.pushState({ cartDrawer: true }, '');
+    pushedHistoryRef.current = true;
+    const onPopState = () => {
+      setIsOpen(false);
+      pushedHistoryRef.current = false;
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [isOpen, setIsOpen]);
+
+  useEffect(() => {
+    if (isOpen || !pushedHistoryRef.current) return;
+    window.history.back();
+    pushedHistoryRef.current = false;
   }, [isOpen]);
 
   // Fetch recommendations based on cart contents
@@ -88,7 +110,9 @@ export default function CartDrawer() {
 
   const getPrimaryImage = (productId) => {
     const imgs = imageMap[productId] || [];
-    return imgs.find(i => i.is_primary)?.url || imgs[0]?.url || null;
+    const primary = imgs.find((i) => i.is_primary) || imgs[0];
+    const normalized = normalizeImage(primary);
+    return normalized?.url || null;
   };
 
   const getStockQty = (product) => {
@@ -119,6 +143,11 @@ export default function CartDrawer() {
     setTimeout(() => setJustAdded(null), 1500);
   };
 
+  const gapSuggestions = recommendations
+    .filter((p) => getStockQty(p) > 0)
+    .sort((a, b) => Number(a.price_usd || 0) - Number(b.price_usd || 0))
+    .slice(0, 3);
+
   if (!isOpen) return null;
 
   return (
@@ -126,8 +155,17 @@ export default function CartDrawer() {
       {/* Backdrop */}
       <div className="fixed inset-0 bg-black/40 z-50 animate-in fade-in duration-200" onClick={() => setIsOpen(false)} />
       {/* Drawer — slides in from the inline-end edge (right in LTR, left in RTL) */}
-      <div className={`fixed top-0 bottom-0 w-full max-w-sm bg-card z-50 flex flex-col shadow-2xl duration-300
-        ${lang === 'ar' ? 'left-0 border-r border-border animate-in slide-in-from-left' : 'right-0 border-l border-border animate-in slide-in-from-right'}`}>
+      <div
+        className={`fixed top-0 bottom-0 w-full max-w-sm max-h-[92dvh] bg-card z-50 flex flex-col shadow-2xl duration-300 overscroll-y-contain
+        ${lang === 'ar' ? 'left-0 border-r border-border animate-in slide-in-from-left' : 'right-0 border-l border-border animate-in slide-in-from-right'}`}
+        onTouchStart={(e) => { swipeStartY.current = e.touches[0].clientY; }}
+        onTouchEnd={(e) => {
+          if (swipeStartY.current == null) return;
+          const dy = e.changedTouches[0].clientY - swipeStartY.current;
+          if (dy > 90 && contentRef.current && contentRef.current.scrollTop <= 4) setIsOpen(false);
+          swipeStartY.current = null;
+        }}
+      >
         {/* Free shipping progress */}
         <div className="px-5 pt-3 pb-2">
           {remaining === 0 ? (
@@ -138,7 +176,7 @@ export default function CartDrawer() {
           ) : total > 0 ? (
             <div>
               <p className="text-xs text-muted-foreground mb-1.5">
-                {t(`You're $${remaining.toFixed(2)} away from free delivery`, `أنت على بُعد $${remaining.toFixed(2)} من التوصيل المجاني`)}
+                {t(`Add $${remaining.toFixed(2)} more for free delivery`, `أضيفي $${remaining.toFixed(2)} لتوصيل مجاني`)}
               </p>
               <div className="h-1.5 bg-muted rounded-full overflow-hidden">
                 <div className="h-full bg-primary rounded-full transition-all duration-500" style={{ width: `${progress}%` }} />
@@ -155,7 +193,7 @@ export default function CartDrawer() {
           </button>
         </div>
 
-        <div ref={contentRef} className="flex-1 overflow-y-auto p-4 space-y-3">
+        <div ref={contentRef} className="flex-1 overflow-y-auto p-4 space-y-3 overscroll-y-contain">
            {items.length === 0 && (
              <div className="text-center py-16 text-muted-foreground flex flex-col items-center gap-3">
                <ShoppingBag className="w-10 h-10 opacity-30" />
@@ -183,14 +221,50 @@ export default function CartDrawer() {
                  {item.variant && <p className="text-xs text-muted-foreground">{[item.variant.size, item.variant.color].filter(Boolean).join(' / ')}</p>}
                  <p className="text-sm font-bold text-foreground">${((parseFloat(item.price) || 0) * (item.quantity || 0)).toFixed(2)}</p>
                </div>
-               <div className="flex flex-col items-center gap-1.5 shrink-0">
-                 <button onClick={() => updateQty(item.key, (item.quantity || 1) + 1)} className="w-7 h-7 rounded-lg border border-border flex items-center justify-center hover:bg-muted"><Plus className="w-3 h-3" /></button>
+               <div className="flex flex-col items-center gap-2 shrink-0">
+                 <button onClick={() => updateQty(item.key, (item.quantity || 1) + 1)} className="w-11 h-11 rounded-lg border border-border flex items-center justify-center hover:bg-muted"><Plus className="w-4 h-4" /></button>
                  <span className="text-xs font-bold">{item.quantity}</span>
-                 <button onClick={() => updateQty(item.key, Math.max(1, (item.quantity || 1) - 1))} className="w-7 h-7 rounded-lg border border-border flex items-center justify-center hover:bg-muted"><Minus className="w-3 h-3" /></button>
+                 <button onClick={() => updateQty(item.key, Math.max(1, (item.quantity || 1) - 1))} className="w-11 h-11 rounded-lg border border-border flex items-center justify-center hover:bg-muted"><Minus className="w-4 h-4" /></button>
                </div>
-               <button onClick={() => removeItem(item.key)} className="p-1 text-muted-foreground hover:text-destructive ml-1"><X className="w-3.5 h-3.5" /></button>
+               <button onClick={() => removeItem(item.key)} className="w-11 h-11 flex items-center justify-center text-muted-foreground hover:text-destructive ml-1"><X className="w-4 h-4" /></button>
              </div>
            ))}
+
+           {/* Gap-closing suggestions */}
+           {items.length > 0 && gapSuggestions.length > 0 && (
+             <div className="mt-6 pt-4 border-t border-border">
+               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+                 {t('Add to reach free delivery', 'أضيفي للوصول إلى الشحن المجاني')}
+               </p>
+               <div className="flex gap-2 overflow-x-auto pb-2 -mx-4 px-4 mobile-rail">
+                 {gapSuggestions.map((product) => {
+                   const inStock = getStockQty(product) > 0;
+                   const img = getPrimaryImage(product.id);
+                   const name = lang === 'ar' ? (product.name_ar || product.name) : product.name;
+                   return (
+                     <div key={product.id} className="flex-shrink-0 w-28 snap-start bg-muted/40 rounded-xl overflow-hidden border border-border">
+                       <div className="aspect-square bg-muted overflow-hidden flex items-center justify-center">
+                         {(img || product.image_url)
+                           ? <img src={cmsImageSrc(img || product.image_url, 'thumb')} alt={name} loading="lazy" decoding="async" onError={handleImageError} className="w-full h-full object-cover" />
+                           : <ShoppingBag className="w-6 h-6 text-muted-foreground" />}
+                       </div>
+                       <div className="p-2">
+                         <p className="text-xs font-semibold text-foreground line-clamp-1">{name}</p>
+                         <p className="text-xs font-bold text-primary mb-2">${(parseFloat(product.price_usd) || 0).toFixed(2)}</p>
+                         <button
+                           onClick={() => handleAddRecommendation(product)}
+                           disabled={!inStock}
+                           className={`w-full min-h-[44px] text-xs rounded-lg font-medium transition-colors ${inStock ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground cursor-not-allowed'}`}
+                         >
+                           {inStock ? t('Add', 'أضف') : t('Out', 'نفد')}
+                         </button>
+                       </div>
+                     </div>
+                   );
+                 })}
+               </div>
+             </div>
+           )}
 
            {/* "You may also like" recommendations */}
            {items.length > 0 && recommendations.length > 0 && (
@@ -198,7 +272,7 @@ export default function CartDrawer() {
                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">
                  {t('You may also like', 'قد تعجبك أيضاً')}
                </p>
-               <div className="flex gap-2 overflow-x-auto pb-2 -mx-4 px-4 snap-x">
+               <div className="flex gap-2 overflow-x-auto pb-2 -mx-4 px-4 mobile-rail">
                  {recommendations.map(product => {
                    const inStock = getStockQty(product) > 0;
                    const img = getPrimaryImage(product.id);
@@ -237,15 +311,24 @@ export default function CartDrawer() {
          </div>
 
         {items.length > 0 && (
-          <div className="p-4 border-t border-border space-y-3">
+          <div className="p-4 border-t border-border space-y-3 safe-bottom">
+            <div className="flex justify-between text-sm text-muted-foreground">
+              <span>{t('Subtotal', 'المجموع الفرعي')}</span>
+              <span>${total.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between text-sm text-muted-foreground">
+              <span>{t('Delivery', 'التوصيل')}</span>
+              <span>{t('Calculated at checkout', 'يُحتسب عند إتمام الطلب')}</span>
+            </div>
             <div className="flex justify-between font-bold text-foreground">
               <span>{t('Total', 'المجموع')}</span>
               <span>${total.toFixed(2)}</span>
             </div>
             <Link to="/checkout" onClick={() => setIsOpen(false)}
-              className="block w-full py-3.5 bg-primary text-primary-foreground rounded-2xl font-semibold text-sm text-center hover:bg-primary/90 transition-colors">
+              className="block w-full min-h-[52px] py-3.5 bg-primary text-primary-foreground rounded-2xl font-semibold text-sm text-center hover:bg-primary/90 transition-colors active:scale-[0.97]">
               {t('Checkout', 'إتمام الطلب')}
             </Link>
+            <p className="text-xs text-center text-muted-foreground">{t('Cash on Delivery available', 'الدفع عند الاستلام متاح')}</p>
             <Link to="/cart" onClick={() => setIsOpen(false)}
               className="block w-full py-2.5 border border-border rounded-2xl text-sm text-center hover:bg-muted transition-colors text-muted-foreground">
               {t('View Cart', 'عرض السلة')}

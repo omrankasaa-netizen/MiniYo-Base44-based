@@ -27,6 +27,7 @@ export function useSiteSettings() {
     deliveryFeeInside: parseNumber(map.delivery_fee_inside, 3),
     deliveryFeeOutside: parseNumber(map.delivery_fee_outside, 5),
     freeShippingThreshold: parseNumber(map.free_shipping_threshold, 50),
+    returnsBlurb: map.returns_blurb || 'Easy exchange',
     defaultLanguage: map.default_language || 'en',
     paymentCodEnabled: map.payment_cod_enabled !== 'false',
     paymentWhishEnabled: map.payment_whish_enabled !== 'false',

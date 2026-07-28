@@ -7,7 +7,7 @@ import { useDiscounts } from '@/contexts/DiscountContext';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import ProductCard from '@/components/storefront/ProductCard';
-import { buildImagesByProduct } from '@/lib/imageFraming';
+import { buildImagesByProduct, normalizeImage } from '@/lib/imageFraming';
 import { productAvailableQty } from '@/lib/inventory';
 import {
   productSizeBuckets,
@@ -185,8 +185,9 @@ export default function ShopPage() {
   const imgMap = useMemo(() => {
     const m = {};
     for (const img of images) {
-      if (!img.url) continue;
-      if (!m[img.product_id] || img.is_primary) m[img.product_id] = img.url;
+      const normalized = normalizeImage(img);
+      if (!normalized) continue;
+      if (!m[img.product_id] || img.is_primary) m[img.product_id] = normalized.url;
     }
     return m;
   }, [images]);

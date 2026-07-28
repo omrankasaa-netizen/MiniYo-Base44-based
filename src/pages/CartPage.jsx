@@ -44,15 +44,15 @@ export default function CartPage() {
                   <p className="text-sm font-bold text-foreground mt-0.5">${linePrice.toFixed(2)}</p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                  <button onClick={() => updateQty(item.key, item.quantity - 1)} className="w-7 h-7 rounded-lg border border-border flex items-center justify-center hover:bg-muted">
-                    <Minus className="w-3 h-3" />
+                  <button onClick={() => updateQty(item.key, item.quantity - 1)} className="w-11 h-11 rounded-lg border border-border flex items-center justify-center hover:bg-muted">
+                    <Minus className="w-4 h-4" />
                   </button>
                   <span className="w-6 text-center text-sm font-semibold">{item.quantity}</span>
-                  <button onClick={() => updateQty(item.key, item.quantity + 1)} className="w-7 h-7 rounded-lg border border-border flex items-center justify-center hover:bg-muted">
-                    <Plus className="w-3 h-3" />
+                  <button onClick={() => updateQty(item.key, item.quantity + 1)} className="w-11 h-11 rounded-lg border border-border flex items-center justify-center hover:bg-muted">
+                    <Plus className="w-4 h-4" />
                   </button>
-                  <button onClick={() => removeItem(item.key)} className="ml-1 w-7 h-7 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 flex items-center justify-center">
-                    <Trash2 className="w-3 h-3" />
+                  <button onClick={() => removeItem(item.key)} className="ml-1 w-11 h-11 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 flex items-center justify-center">
+                    <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
               </div>

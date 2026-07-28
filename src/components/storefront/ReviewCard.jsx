@@ -1,5 +1,7 @@
 import React from 'react';
 import { Heart } from 'lucide-react';
+import { useLang } from '@/contexts/LanguageContext';
+import { cmsImageSrc, handleImageError } from '@/lib/imageFraming';
 
 const RatingStars = ({ rating, count = 5, interactive = false, onChange }) => {
   return (
@@ -23,10 +25,11 @@ const RatingStars = ({ rating, count = 5, interactive = false, onChange }) => {
 };
 
 export function ReviewList({ reviews = [] }) {
+  const { t, lang } = useLang();
   const published = reviews.filter(r => r.is_published);
 
   if (published.length === 0) {
-    return <p className="text-sm text-muted-foreground">No reviews yet.</p>;
+    return <p className="text-sm text-muted-foreground">{t('No reviews yet.', 'لا توجد تقييمات بعد.')}</p>;
   }
 
   return (
@@ -34,16 +37,43 @@ export function ReviewList({ reviews = [] }) {
       {published.map(review => (
         <div key={review.id} className="border border-border rounded-xl p-3">
           <div className="flex items-center justify-between gap-2 mb-1.5">
-            <div>
-              <p className="text-sm font-medium text-foreground">{review.customer_name}</p>
-              <RatingStars rating={review.rating} />
+            <div className="flex items-center gap-2">
+              <span className="w-8 h-8 rounded-full bg-primary/10 text-primary text-xs font-bold inline-flex items-center justify-center">
+                {(review.customer_name || '?').slice(0, 1).toUpperCase()}
+              </span>
+              <div>
+                <p className="text-sm font-medium text-foreground">{review.customer_name || t('Verified customer', 'عميل موثق')}</p>
+                {review.created_date && (
+                  <p className="text-[11px] text-muted-foreground">
+                    {new Date(review.created_date).toLocaleDateString(lang === 'ar' ? 'ar-LB' : 'en-GB')}
+                  </p>
+                )}
+              </div>
             </div>
+            <div className="text-right">
+              <RatingStars rating={review.rating} />
+            </div>            
             {review.is_verified && (
-              <span className="text-xs bg-green-50 text-green-700 px-2 py-0.5 rounded-full">✓ Verified</span>
+              <span className="text-xs bg-green-50 text-green-700 px-2 py-0.5 rounded-full">✓ {t('Verified purchase', 'شراء موثّق')}</span>
             )}
           </div>
           {review.title && <p className="text-sm font-medium text-foreground mb-1">{review.title}</p>}
           <p className="text-xs text-muted-foreground leading-relaxed">{review.body}</p>
+          {Array.isArray(review.photos) && review.photos.length > 0 && (
+            <div className="mt-2 flex gap-2 overflow-x-auto mobile-rail">
+              {review.photos.slice(0, 4).map((url, idx) => (
+                <img
+                  key={`${review.id}-photo-${idx}`}
+                  src={cmsImageSrc(url, 'thumb')}
+                  alt=""
+                  loading="lazy"
+                  decoding="async"
+                  onError={handleImageError}
+                  className="w-16 h-16 rounded-lg object-cover shrink-0 snap-start"
+                />
+              ))}
+            </div>
+          )}
         </div>
       ))}
     </div>

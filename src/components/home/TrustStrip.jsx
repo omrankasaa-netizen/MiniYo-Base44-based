@@ -1,23 +1,46 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { useLang } from '@/contexts/LanguageContext';
+import { useCmsSection } from '@/hooks/useCmsSection';
 import { Truck, CreditCard, Sparkles, MessageCircle } from 'lucide-react';
 
 export default function TrustStrip() {
   const { t } = useLang();
+  const { section } = useCmsSection('home_trust_strip');
 
-  const items = [
-    { icon: CreditCard,    en: 'Cash on Delivery',            ar: 'الدفع عند الاستلام' },
-    { icon: Truck,         en: 'Fast delivery across Lebanon', ar: 'توصيل سريع في كل لبنان' },
-    { icon: Sparkles,      en: 'Soft, safe fabrics',           ar: 'أقمشة ناعمة وآمنة' },
-    { icon: MessageCircle, en: 'WhatsApp support',             ar: 'دعم عبر واتساب' },
+  function parseTrustItems() {
+    try {
+      const parsed = section?.body ? JSON.parse(section.body) : null;
+      if (Array.isArray(parsed)) {
+        return parsed
+          .map((it) => ({ en: String(it?.en || ''), ar: String(it?.ar || '') }))
+          .filter((it) => it.en || it.ar);
+      }
+    } catch {
+      // Keep resilient fallback below.
+    }
+    return null;
+  }
+
+  const cmsItems = parseTrustItems();
+  const defaultItems = [
+    { en: 'Cash on Delivery', ar: 'الدفع عند الاستلام' },
+    { en: 'Fast delivery across Lebanon', ar: 'توصيل سريع في كل لبنان' },
+    { en: 'Soft, safe fabrics', ar: 'أقمشة ناعمة وآمنة' },
+    { en: 'WhatsApp support', ar: 'دعم عبر واتساب' },
   ];
+  const labels = cmsItems?.length ? cmsItems : defaultItems;
+  const iconByIndex = [CreditCard, Truck, Sparkles, MessageCircle];
+
+  if (section && section.is_active === false) return null;
 
   return (
     <section className="py-6 sm:py-8 bg-card border-y border-border/50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          {items.map(({ icon: Icon, en, ar }, i) => (
+          {labels.slice(0, 4).map(({ en, ar }, i) => {
+            const Icon = iconByIndex[i] || Sparkles;
+            return (
             <motion.div
               key={en}
               initial={{ opacity: 0, y: 12 }}
@@ -31,7 +54,7 @@ export default function TrustStrip() {
               </div>
               <span className="text-xs sm:text-sm font-medium text-muted-foreground leading-tight">{t(en, ar)}</span>
             </motion.div>
-          ))}
+          )})}
         </div>
       </div>
     </section>
