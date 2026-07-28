@@ -13,9 +13,6 @@ const DEFAULT_SETTINGS = {
   whatsapp_number: '',
   instagram_url: '',
   facebook_url: '',
-  delivery_fee_inside: '3',
-  delivery_fee_outside: '5',
-  free_shipping_threshold: '50',
   default_language: 'en',
 };
 
@@ -118,13 +115,14 @@ export default function SiteSettingsPage() {
 
           {/* Delivery */}
           <div className="bg-card border border-border rounded-2xl p-6 space-y-4 shadow-sm">
-            <h2 className="font-heading font-semibold text-foreground text-sm">Delivery Fees (USD)</h2>
-            <div className="grid grid-cols-2 gap-4">
-              <Field label="Inside Tripoli ($)" k="delivery_fee_inside" type="number" placeholder="3" />
-              <Field label="Outside Tripoli ($)" k="delivery_fee_outside" type="number" placeholder="5" />
+            <h2 className="font-heading font-semibold text-foreground text-sm">Delivery & Shipping</h2>
+            <div className="rounded-xl border border-border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
+              Shipping zones, zone fees, and free-shipping threshold are managed in
+              <a href="/admin/site-settings/shipping" className="ml-1 font-semibold text-primary underline underline-offset-2">
+                Shipping Zones
+              </a>
+              .
             </div>
-            <Field label="Free Shipping Threshold ($)" k="free_shipping_threshold" type="number" placeholder="50"
-              hint="Orders above this amount qualify for free shipping." />
           </div>
 
           <button type="submit" disabled={saving}
