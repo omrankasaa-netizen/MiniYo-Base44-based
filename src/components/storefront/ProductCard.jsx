@@ -171,20 +171,17 @@ export default function ProductCard({ product, rating }) {
           <div className="p-3.5">
             <p className="font-heading font-semibold text-foreground text-sm leading-tight line-clamp-2 mb-1.5">{name}</p>
             {rating?.count > 0 && <RatingStars avg={rating.avg} count={rating.count} className="mb-1" />}
+            {/* Price row. whitespace-nowrap on both prices + dir="ltr" on the row:
+                the global `overflow-wrap: anywhere` on spans lets text break
+                between ANY characters, and when this row got squeezed (the old
+                inline "Select Options" pill took most of the card width) prices
+                wrapped per-character and stacked vertically. dir="ltr" keeps
+                "$8.99" reading left-to-right inside RTL layouts. */}
             <div className="flex items-center justify-between gap-2">
-              <div className="flex items-baseline gap-1.5">
-                <span className={`font-bold ${autoDiscount ? 'text-destructive' : 'text-foreground'}`}>${displayPrice?.toFixed(2)}</span>
-                {originalPrice && <span className="text-xs text-muted-foreground line-through">${originalPrice?.toFixed(2)}</span>}
+              <div className="flex items-baseline gap-1.5 whitespace-nowrap" dir="ltr">
+                <span className={`font-bold whitespace-nowrap ${autoDiscount ? 'text-destructive' : 'text-foreground'}`}>${displayPrice?.toFixed(2)}</span>
+                {originalPrice && <span className="text-xs text-muted-foreground line-through whitespace-nowrap">${originalPrice?.toFixed(2)}</span>}
               </div>
-              {!isOutOfStock && product.has_variants && (
-                // The whole card is wrapped in a <Link> to the product page, so
-                // this styled span rides that navigation — clicking it lands on
-                // the same detail route where size/color is picked (no add-to-cart).
-                <span
-                  className="shrink-0 h-8 px-3 rounded-full flex items-center justify-center transition-all shadow-sm text-xs font-semibold bg-primary text-primary-foreground group-hover:bg-primary/90">
-                  {t('Select Options', 'اختر الخيارات')}
-                </span>
-              )}
               {!isOutOfStock && !product.has_variants && (
                 <button type="button" onClick={handleAdd}
                   aria-label={added ? t('Added!', 'تمت الإضافة!') : t('Add to Cart', 'أضف إلى السلة')}
@@ -194,6 +191,18 @@ export default function ProductCard({ product, rating }) {
                 </button>
               )}
             </div>
+            {/* Variant CTA gets its own full-width row UNDER the price instead of
+                sharing the price row — sharing squeezed the price to a few pixels
+                and caused the per-character vertical wrapping. The whole card is
+                wrapped in a <Link> to the product page, so this styled span rides
+                that navigation — clicking it lands on the same detail route where
+                size/color is picked (no add-to-cart). */}
+            {!isOutOfStock && product.has_variants && (
+              <span
+                className="mt-2 w-full h-9 rounded-full flex items-center justify-center transition-all shadow-sm text-xs font-semibold bg-primary text-primary-foreground group-hover:bg-primary/90">
+                {t('Select Options', 'اختر الخيارات')}
+              </span>
+            )}
           </div>
         </div>
       </Link>
