@@ -130,6 +130,18 @@ export async function sendCapiEvent({
   const event = buildEventPayload({
     eventName, eventId, eventTime, eventSourceUrl, actionSource, userData, customData,
   });
+
+  // DEBUG: set META_DEBUG=true to verify outgoing event_time values in Test Events.
+  if (process.env.META_DEBUG === 'true') {
+    console.log('[metaCapi:DEBUG]', {
+      event_name: event.event_name,
+      event_time: event.event_time,
+      event_time_utc: new Date(event.event_time * 1000).toISOString(),
+      fbc_attached: !!userData?.fbc,
+      event_id: eventId ?? null,
+    });
+  }
+
   const body = { data: [event] };
   if (testCode) body.test_event_code = testCode;
 
