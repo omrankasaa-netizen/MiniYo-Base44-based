@@ -144,6 +144,13 @@ export default function CheckoutPage() {
       setF('payment_method', enabledMethods[0].key);
     }
   }, [siteSettings.paymentCodEnabled, siteSettings.paymentWhishEnabled, siteSettings.paymentCardEnabled]);
+
+  // Redirect to cart if it empties (e.g. after clearing) — must be in useEffect, not render.
+  useEffect(() => {
+    if (!success && items.length === 0) {
+      navigate('/cart', { replace: true });
+    }
+  }, [items.length, success]);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(null);
   const [promoInput, setPromoInput] = useState('');
@@ -642,11 +649,6 @@ export default function CheckoutPage() {
         </div>
       </>
     );
-  }
-
-  if (items.length === 0) {
-    navigate('/cart', { replace: true });
-    return null;
   }
 
   return (
