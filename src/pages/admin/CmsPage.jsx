@@ -4,6 +4,7 @@ import { useAuthUser } from '@/contexts/AuthUserContext';
 import { base44 } from '@/api/base44Client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { logAction } from '@/lib/auditLog';
+import { pickLatestByKey } from '@/lib/entityRecords';
 import AccessDenied from './AccessDenied';
 import CmsHomepageBanners from '@/components/admin/cms/CmsHomepageBanners';
 import CmsFeatured from '@/components/admin/cms/CmsFeatured';
@@ -59,16 +60,16 @@ export default function CmsPage() {
     queryFn: () => base44.entities.Campaign.filter({ is_active: true }, '-starts_at', 30),
   });
 
-  const sectionMap = useMemo(() => {
-    const m = {};
-    for (const s of sections) m[s.section_key] = s;
-    return m;
-  }, [sections]);
+  const sectionMap = useMemo(() => pickLatestByKey(sections, 'section_key'), [sections]);
+  const uniqueSections = useMemo(
+    () => Object.values(sectionMap).sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0)),
+    [sectionMap]
+  );
 
   async function upsertSection(key, data) {
-    const existing = sectionMap[key];
-    if (existing) {
-      await base44.entities.CmsSection.update(existing.id, data);
+    const duplicates = sections.filter((s) => s.section_key === key);
+    if (duplicates.length > 0) {
+      await Promise.all(duplicates.map((section) => base44.entities.CmsSection.update(section.id, data)));
     } else {
       await base44.entities.CmsSection.create({ section_key: key, ...data });
     }
@@ -107,7 +108,7 @@ export default function CmsPage() {
           <>
             {tab === 'banners' && (
               <CmsHomepageBanners
-                sections={sections}
+                sections={uniqueSections}
                 onSave={upsertSection}
                 onRefresh={() => {
                   qc.invalidateQueries({ queryKey: ['cms-sections'] });

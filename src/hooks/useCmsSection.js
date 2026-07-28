@@ -12,12 +12,17 @@
  */
 import { useQuery } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
+import { pickLatestByKey } from '@/lib/entityRecords';
 
 export function useCmsSectionsAll() {
   return useQuery({
     queryKey: ['cms-sections-all'],
     // Home only needs active sections; keeps payload smaller and stable.
-    queryFn: () => base44.entities.CmsSection.filter({ is_active: true }, 'sort_order', 200),
+    queryFn: async () => {
+      const sections = await base44.entities.CmsSection.filter({ is_active: true }, 'sort_order', 300);
+      const latestByKey = pickLatestByKey(sections, 'section_key');
+      return Object.values(latestByKey).sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0));
+    },
     staleTime: 60_000,
   });
 }
@@ -28,7 +33,7 @@ export function useCmsSectionsAll() {
  */
 export function useCmsSection(sectionKey) {
   const { data: sections = [], isLoading } = useCmsSectionsAll();
-  const section = sections.find((s) => s.section_key === sectionKey) ?? null;
+  const section = pickLatestByKey(sections, 'section_key')[sectionKey] ?? null;
   return { section, isLoading };
 }
 
@@ -38,6 +43,7 @@ export function useCmsSection(sectionKey) {
  */
 export function useCmsSections(sectionKeys) {
   const { data: all = [], isLoading } = useCmsSectionsAll();
-  const sections = sectionKeys.map((key) => all.find((s) => s.section_key === key) ?? null);
+  const byKey = pickLatestByKey(all, 'section_key');
+  const sections = sectionKeys.map((key) => byKey[key] ?? null);
   return { sections, isLoading };
 }
