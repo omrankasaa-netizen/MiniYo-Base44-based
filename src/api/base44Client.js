@@ -68,6 +68,17 @@ function authBypassKey() {
   return getSentinel() ? Date.now().toString(36) : null;
 }
 
+function normalizeFilterQuery(input) {
+  if (Array.isArray(input)) return input.map(normalizeFilterQuery);
+  if (input && typeof input === 'object') {
+    const out = {};
+    for (const [k, v] of Object.entries(input)) out[k] = normalizeFilterQuery(v);
+    return out;
+  }
+  if (typeof input === 'boolean') return input ? 1 : 0;
+  return input;
+}
+
 function makeEntity(name) {
   return {
     async list(sortOrLimit, limit) {
@@ -75,7 +86,8 @@ function makeEntity(name) {
       return request('GET', `/entities/${name}${qs({ sort, limit: lim, _ts: authBypassKey() })}`);
     },
     async filter(query = {}, sort = null, limit = null) {
-      return request('GET', `/entities/${name}${qs({ q: JSON.stringify(query), sort, limit, _ts: authBypassKey() })}`);
+      const normalizedQuery = normalizeFilterQuery(query);
+      return request('GET', `/entities/${name}${qs({ q: JSON.stringify(normalizedQuery), sort, limit, _ts: authBypassKey() })}`);
     },
     async get(id) {
       return request('GET', `/entities/${name}/${encodeURIComponent(id)}${qs({ _ts: authBypassKey() })}`);

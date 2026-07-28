@@ -22,7 +22,21 @@ export default function ProductRow({ title, titleAr, filter, viewAllLink, produc
         const order = new Map(pinnedIds.map((id, idx) => [id, idx]));
         return pinned.sort((a, b) => (order.get(String(a.id)) ?? 9999) - (order.get(String(b.id)) ?? 9999)).slice(0, 12);
       }
-      return base44.entities.Product.filter(filter, '-created_date', 12);
+      // Live API rejects boolean bindings in `q` filters on some deployments.
+      // Query with server-safe fields, then apply boolean predicates client-side.
+      const apiFilter = { ...filter };
+      const boolPredicates = [];
+      for (const [k, v] of Object.entries(filter || {})) {
+        if (typeof v === 'boolean') {
+          delete apiFilter[k];
+          boolPredicates.push([k, v]);
+        }
+      }
+      const base = await base44.entities.Product.filter(apiFilter, '-created_date', 48);
+      const filtered = boolPredicates.length
+        ? base.filter((p) => boolPredicates.every(([k, v]) => Boolean(p?.[k]) === v))
+        : base;
+      return filtered.slice(0, 12);
     },
     staleTime: 60_000,
   });
