@@ -25,6 +25,13 @@ function loadCart() {
 export function CartProvider({ children }) {
   const [items, setItems] = useState(loadCart);
   const [isOpen, setIsOpen] = useState(false);
+  // isHydrated: true once the first client-side render has committed.
+  // CheckoutPage waits for this before evaluating the empty-cart redirect so a
+  // full-page reload with a persisted cart never triggers a false redirect while
+  // the React tree is still mounting.
+  const [isHydrated, setIsHydrated] = useState(false);
+
+  useEffect(() => { setIsHydrated(true); }, []);
 
   useEffect(() => {
     // safeLocalStorage no-ops (keeps the cart in an in-memory shim) when storage
@@ -85,7 +92,7 @@ export function CartProvider({ children }) {
   const subtotal = decoratedItems.reduce((s, i) => s + (parseFloat(i.price) || 0) * i.quantity, 0);
 
   return (
-    <CartContext.Provider value={{ items: decoratedItems, addItem, removeItem, updateQty, clearCart, totalQty, subtotal, isOpen, setIsOpen }}>
+    <CartContext.Provider value={{ items: decoratedItems, addItem, removeItem, updateQty, clearCart, totalQty, subtotal, isOpen, setIsOpen, isHydrated }}>
       {children}
     </CartContext.Provider>
   );

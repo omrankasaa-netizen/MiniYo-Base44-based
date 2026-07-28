@@ -17,6 +17,9 @@ export default function CartDrawer() {
   const contentRef = useRef(null);
   const [justAdded, setJustAdded] = useState(null);
   const pushedHistoryRef = useRef(false);
+  // Tracks whether the drawer was closed by a navigation link (Checkout / View Cart).
+  // When true, skip history.back() — React Router already handled the navigation.
+  const closedByNavRef = useRef(false);
   const swipeStartY = useRef(null);
   
   // Note: Cart drawer shows progress based on pre-discount subtotal for simplicity
@@ -55,7 +58,14 @@ export default function CartDrawer() {
 
   useEffect(() => {
     if (isOpen || !pushedHistoryRef.current) return;
-    window.history.back();
+    if (!closedByNavRef.current) {
+      // Closed by X/backdrop/swipe — pop the pushed state entry so the back stack is clean.
+      window.history.back();
+    }
+    // If closedByNavRef is true, React Router already pushed the destination URL;
+    // calling history.back() would undo that navigation, sending the user back to the
+    // product page. Just leave the orphaned {cartDrawer:true} entry — it's harmless.
+    closedByNavRef.current = false;
     pushedHistoryRef.current = false;
   }, [isOpen]);
 
@@ -324,12 +334,12 @@ export default function CartDrawer() {
               <span>{t('Total', 'المجموع')}</span>
               <span>${total.toFixed(2)}</span>
             </div>
-            <Link to="/checkout" onClick={() => setIsOpen(false)}
+            <Link to="/checkout" onClick={() => { closedByNavRef.current = true; setIsOpen(false); }}
               className="block w-full min-h-[52px] py-3.5 bg-primary text-primary-foreground rounded-2xl font-semibold text-sm text-center hover:bg-primary/90 transition-colors active:scale-[0.97]">
               {t('Checkout', 'إتمام الطلب')}
             </Link>
             <p className="text-xs text-center text-muted-foreground">{t('Cash on Delivery available', 'الدفع عند الاستلام متاح')}</p>
-            <Link to="/cart" onClick={() => setIsOpen(false)}
+            <Link to="/cart" onClick={() => { closedByNavRef.current = true; setIsOpen(false); }}
               className="block w-full py-2.5 border border-border rounded-2xl text-sm text-center hover:bg-muted transition-colors text-muted-foreground">
               {t('View Cart', 'عرض السلة')}
             </Link>

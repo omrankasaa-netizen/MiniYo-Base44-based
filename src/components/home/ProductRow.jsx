@@ -18,9 +18,13 @@ export default function ProductRow({ title, titleAr, filter, viewAllLink, produc
     queryKey: ['home-products', JSON.stringify(filter), pinnedIds.join(',')],
     queryFn: async () => {
       if (hasPinned) {
-        const pinned = await base44.entities.Product.filter({ id: pinnedIds, status: 'Active' }, '-created_date', 24);
-        const order = new Map(pinnedIds.map((id, idx) => [id, idx]));
-        return pinned.sort((a, b) => (order.get(String(a.id)) ?? 9999) - (order.get(String(b.id)) ?? 9999)).slice(0, 12);
+        try {
+          const pinned = await base44.entities.Product.filter({ id: pinnedIds, status: 'Active' }, '-created_date', 24);
+          const order = new Map(pinnedIds.map((id, idx) => [id, idx]));
+          return pinned.sort((a, b) => (order.get(String(a.id)) ?? 9999) - (order.get(String(b.id)) ?? 9999)).slice(0, 12);
+        } catch {
+          // id-array filter unsupported on older deployments — fall through to generic filter
+        }
       }
       // Live API rejects boolean bindings in `q` filters on some deployments.
       // Query with server-safe fields, then apply boolean predicates client-side.
