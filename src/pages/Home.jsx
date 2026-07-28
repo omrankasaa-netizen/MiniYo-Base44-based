@@ -181,6 +181,7 @@ export default function Home() {
   return (
     <div className="flex flex-col pb-24 sm:pb-0">
       <AnnouncementBar />
+      <PromoStripBanner />
       <HeroSection />
       <SaleCampaignBanner />
       <MetaTrafficSection />
@@ -188,6 +189,12 @@ export default function Home() {
       <TrustStrip />
       <PremiumTrustSection />
       <FeaturedCategories />
+      <ProductRow
+        title="Top Picks"
+        titleAr="أفضل الاختيارات"
+        filter={{ status: 'Active' }}
+        viewAllLink="/shop"
+      />
       <ProductRow
         title="New Arrivals"
         titleAr="الوصولات الجديدة"
@@ -202,7 +209,6 @@ export default function Home() {
         viewAllLink="/shop?featured=true"
       />
       <MidPageCta />
-      <PromoStripBanner />
       <StoryBlock />
       <GiftingCallout />
       <ReviewsCarousel />

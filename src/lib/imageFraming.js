@@ -346,8 +346,10 @@ export function handleImageError(e) {
 export function buildImagesByProduct(images = []) {
   const m = {};
   for (const img of images) {
-    if (!img || !img.product_id || !img.url) continue;
-    (m[img.product_id] ||= []).push(img);
+    if (!img || !img.product_id) continue;
+    const normalized = normalizeImage(img);
+    if (!normalized) continue;
+    (m[img.product_id] ||= []).push({ ...img, ...normalized, url: normalized.url });
   }
   for (const id of Object.keys(m)) {
     m[id].sort((a, b) => {

@@ -54,6 +54,12 @@ export default function MetaLandingPage() {
       </section>
 
       <ProductRow
+        title="Top picks right now"
+        titleAr="أفضل الاختيارات الآن"
+        filter={{ status: 'Active' }}
+        viewAllLink="/shop"
+      />
+      <ProductRow
         title="Bestsellers from our ads"
         titleAr="الأكثر مبيعاً من الإعلانات"
         filter={{ is_featured: true, status: 'Active' }}

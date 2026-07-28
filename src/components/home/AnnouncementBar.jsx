@@ -6,7 +6,11 @@ import { useCmsSection } from '@/hooks/useCmsSection';
 export default function AnnouncementBar() {
   const { lang } = useLang();
   const [dismissed, setDismissed] = useState(false);
-  const { section, isLoading } = useCmsSection('announcement_bar');
+  const { section: primarySection, isLoading: loadingPrimary } = useCmsSection('announcement_bar');
+  const { section: legacySection, isLoading: loadingLegacy } = useCmsSection('announcement');
+  const isLoading = loadingPrimary || loadingLegacy;
+  const sectionCandidates = [primarySection, legacySection].filter(Boolean);
+  const section = sectionCandidates.find((s) => s.is_active !== false && (s.title || s.title_ar)) || sectionCandidates[0] || null;
 
   // CLS: while the CMS fetch is in flight, reserve the exact bar height (text-xs
   // + py-2 = 32px) so the bar appearing below the header doesn't shove the hero
