@@ -262,8 +262,16 @@ export function queryRecords(entity, { query = {}, sort = null, limit = null } =
 
     for (const [key, val] of queryEntries) {
       if (key === 'id' || key === '_id') {
-        whereParts.push('id = ?');
-        params.push(val);
+        // Support both a single id and an array-of-ids filter.
+        if (Array.isArray(val)) {
+          if (val.length === 0) return [];
+          const ph = val.map(() => '?').join(', ');
+          whereParts.push(`id IN (${ph})`);
+          params.push(...val.map(String));
+        } else {
+          whereParts.push('id = ?');
+          params.push(val);
+        }
       } else if (Array.isArray(val)) {
         if (val.length === 0) return [];
         const ph = val.map(() => '?').join(', ');

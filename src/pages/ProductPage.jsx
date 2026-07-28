@@ -272,9 +272,21 @@ export default function ProductPage() {
   }
 
   const completeImageMap = buildImagesByProduct(completeLookImages);
+  // Only show products that are in stock. For variant-based products we fall
+  // back to qty_on_hand > 0 since individual variant stock isn't loaded here;
+  // clicking navigates to the PDP where the user selects a variant.
+  const inStockLook = completeLook.filter((p) =>
+    p.has_variants ? Number(p.qty_on_hand || 0) > 0 : availableQty(p) > 0
+  );
   const returnsBlurb = siteSettings.returnsBlurb || 'Easy exchange';
   const deliveryFlat = Number.isFinite(Number(siteSettings.deliveryFeeInside)) ? Number(siteSettings.deliveryFeeInside) : 3;
+  // Show the outside-city fee too so the product page matches what checkout charges.
+  const deliveryOutside = Number.isFinite(Number(siteSettings.deliveryFeeOutside)) ? Number(siteSettings.deliveryFeeOutside) : 5;
   const freeThreshold = Number.isFinite(Number(siteSettings.freeShippingThreshold)) ? Number(siteSettings.freeShippingThreshold) : 50;
+  // If inside/outside differ, show a range so no user is surprised at checkout.
+  const deliveryDisplay = deliveryFlat === deliveryOutside
+    ? `$${deliveryFlat.toFixed(2)}`
+    : `$${deliveryFlat.toFixed(2)}–$${deliveryOutside.toFixed(2)}`;
 
   return (
     <div className="min-h-screen bg-background pb-28 md:pb-0" dir={isRTL ? 'rtl' : 'ltr'}>
@@ -457,21 +469,19 @@ export default function ProductPage() {
 
             <div className="rounded-xl p-3 bg-secondary/10 text-sm">
               <p className="text-foreground">
-                {t('Delivery', 'التوصيل')}: ${deliveryFlat.toFixed(2)} — {t('FREE over', 'مجاني للطلبات فوق')} ${freeThreshold.toFixed(2)}
+                {t('Delivery', 'التوصيل')}: {deliveryDisplay} — {t('FREE over', 'مجاني للطلبات فوق')} ${freeThreshold.toFixed(2)}
               </p>
             </div>
           </div>
         </div>
 
-        {completeLook.length > 0 && (
+        {inStockLook.length > 0 && (
           <section className="mt-8 border-t border-border pt-8">
             <h3 className="text-lg font-heading font-bold text-foreground mb-4">{t('Complete the look', 'كمّلي الطقم')}</h3>
             <div className="flex gap-3 overflow-x-auto mobile-rail pb-2">
-              {completeLook.map((p) => {
+              {inStockLook.map((p) => {
                 const img = (completeImageMap[p.id] || [])[0] || null;
                 const itemName = lang === 'ar' ? (p.name_ar || p.name) : p.name;
-                const itemStock = availableQty(p);
-                const out = itemStock <= 0;
                 return (
                   <div key={p.id} className="w-44 shrink-0 rounded-2xl border border-border bg-card overflow-hidden snap-start">
                     <Link to={`/product/${p.slug}`} className="block aspect-square bg-muted">
@@ -486,11 +496,10 @@ export default function ProductPage() {
                       <p className="text-sm font-bold text-primary">${Number(p.price_usd || 0).toFixed(2)}</p>
                       <button
                         type="button"
-                        disabled={out}
                         onClick={() => (p.has_variants ? navigate(`/product/${p.slug}`) : addItem(p, null, 1))}
-                        className={`mt-2 w-full min-h-[44px] rounded-xl text-sm font-semibold ${out ? 'bg-muted text-muted-foreground' : 'bg-primary text-primary-foreground'}`}
+                        className="mt-2 w-full min-h-[44px] rounded-xl text-sm font-semibold bg-primary text-primary-foreground"
                       >
-                        {out ? t('Out', 'نفد') : t('+ Add', '+ أضف')}
+                        {p.has_variants ? t('View', 'عرض') : t('+ Add', '+ أضف')}
                       </button>
                     </div>
                   </div>

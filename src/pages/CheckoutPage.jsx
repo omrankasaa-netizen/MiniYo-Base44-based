@@ -31,7 +31,7 @@ function genOrderNum() {
 }
 
 export default function CheckoutPage() {
-  const { items, subtotal, clearCart } = useCart();
+  const { items, subtotal, clearCart, isHydrated } = useCart();
   const { currentUser } = useAuthUser();
   const { t, lang } = useLang();
   const navigate = useNavigate();
@@ -145,12 +145,15 @@ export default function CheckoutPage() {
     }
   }, [siteSettings.paymentCodEnabled, siteSettings.paymentWhishEnabled, siteSettings.paymentCardEnabled]);
 
-  // Redirect to cart if it empties (e.g. after clearing) — must be in useEffect, not render.
+  // Only redirect when the cart is confirmed hydrated AND truly empty.
+  // Without the isHydrated guard a full-page reload evaluates items=[] during
+  // the first React commit (before localStorage has been flushed into state),
+  // bouncing the user back to /cart even with a persisted cart.
   useEffect(() => {
-    if (!success && items.length === 0) {
+    if (isHydrated && !success && items.length === 0) {
       navigate('/cart', { replace: true });
     }
-  }, [items.length, success]);
+  }, [isHydrated, items.length, success]);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(null);
   const [promoInput, setPromoInput] = useState('');
@@ -648,6 +651,16 @@ export default function CheckoutPage() {
           </div>
         </div>
       </>
+    );
+  }
+
+  // Show a skeleton while the cart rehydrates from localStorage — prevents a
+  // false empty-cart redirect on a hard page reload with persisted items.
+  if (!isHydrated) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="w-8 h-8 border-4 border-muted border-t-primary rounded-full animate-spin" />
+      </div>
     );
   }
 
