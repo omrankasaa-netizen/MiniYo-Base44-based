@@ -19,6 +19,18 @@ import { ga4TrackViewItem } from '@/lib/ga4';
 import { availableQty } from '@/lib/inventory';
 import { useSiteSettings } from '@/hooks/useSiteSettings';
 
+function isValidPreloadedProduct(preloaded, slug) {
+  if (!preloaded || typeof preloaded !== 'object') return false;
+  if (preloaded.slug !== slug) return false;
+  const product = preloaded.product;
+  if (!product || typeof product !== 'object') return false;
+  // Guard against stale/partial HTML snapshots; fallback to normal fetch path.
+  if (!product.id || !product.slug || !product.name) return false;
+  if (product.price_usd == null) return false;
+  if (!Array.isArray(preloaded.images) || !Array.isArray(preloaded.variants)) return false;
+  return true;
+}
+
 export default function ProductPage() {
   const { slug } = useParams();
   const { t, lang } = useLang();
@@ -44,31 +56,42 @@ export default function ProductPage() {
 
   const { getProductDiscount, getDiscountedPrice } = useDiscounts();
 
-  // Use server-injected product data (window.__PRODUCT__) as initialData for
-  // instant first paint on product pages. React Query still revalidates in the
-  // background (initialDataUpdatedAt: 0) so the cached value is never stale.
-  const seedProduct = typeof window !== 'undefined' && window.__PRODUCT__?.slug === slug
-    ? window.__PRODUCT__ : undefined;
+  // Prefer full server-side preload payload. Keep legacy support for window.__PRODUCT__
+  // so older cached HTML still renders.
+  const rawPreloaded = typeof window !== 'undefined'
+    ? (
+      window.__PRELOADED_PRODUCT__
+      || (window.__PRODUCT__ ? { slug: window.__PRODUCT__.slug, product: window.__PRODUCT__, images: [], variants: [], reviews: { published_count: 0 } } : null)
+    )
+    : null;
+  const preloaded = isValidPreloadedProduct(rawPreloaded, slug) ? rawPreloaded : null;
+  const seedProduct = preloaded?.product;
 
   const { data: products = [] } = useQuery({
     queryKey: ['product', slug],
     queryFn: () => base44.entities.Product.filter({ slug }, 'slug', 1),
+    // When full preload exists, render from it first and revalidate explicitly
+    // in a side effect so this query doesn't block first paint.
+    enabled: !seedProduct,
     initialData: seedProduct ? [seedProduct] : undefined,
-    // Treat seeded data as immediately stale → silent background revalidation.
-    initialDataUpdatedAt: seedProduct ? 0 : undefined,
   });
-  const product = products[0];
+  const product = seedProduct || products[0];
 
   const { data: images = [] } = useQuery({
     queryKey: ['product-images', product?.id],
     queryFn: () => base44.entities.ProductImage.filter({ product_id: product.id }, 'sort_order', 20),
     enabled: !!product?.id,
+    initialData: preloaded?.images,
+    // Treat seeded arrays as stale so query refreshes in the background.
+    initialDataUpdatedAt: preloaded ? 0 : undefined,
   });
 
   const { data: variants = [] } = useQuery({
     queryKey: ['product-variants', product?.id],
     queryFn: () => base44.entities.ProductVariant.filter({ product_id: product.id }, 'size', 50),
     enabled: !!product?.id && product?.has_variants,
+    initialData: preloaded?.variants,
+    initialDataUpdatedAt: preloaded ? 0 : undefined,
   });
 
   const { data: reviews = [] } = useQuery({
@@ -76,6 +99,15 @@ export default function ProductPage() {
     queryFn: () => base44.entities.Review.filter({ product_id: product.id }, '-created_date', 50),
     enabled: !!product?.id,
   });
+
+  useEffect(() => {
+    if (!preloaded?.slug || preloaded.slug !== slug) return;
+    // Keep product fresh without blocking first render when preload is present.
+    qc.prefetchQuery({
+      queryKey: ['product', slug],
+      queryFn: () => base44.entities.Product.filter({ slug }, 'slug', 1),
+    });
+  }, [preloaded?.slug, slug, qc]);
 
   // Meta + TikTok Pixel ViewContent — fire once each time a product is
   // loaded/changed.
@@ -139,7 +171,8 @@ export default function ProductPage() {
   // Aggregate rating from published reviews only (guest submissions stay hidden
   // until an admin publishes them).
   const publishedReviews = reviews.filter(r => r.is_published);
-  const reviewCount = publishedReviews.length;
+  const preloadedReviewCount = Number(preloaded?.reviews?.published_count) || 0;
+  const reviewCount = publishedReviews.length || preloadedReviewCount;
   const reviewAvg = reviewCount
     ? publishedReviews.reduce((s, r) => s + (Number(r.rating) || 0), 0) / reviewCount
     : 0;
@@ -247,7 +280,7 @@ export default function ProductPage() {
                 {originalPrice && <span className="text-muted-foreground line-through text-lg">${originalPrice?.toFixed(2)}</span>}
                 {badgeLabel && <span className="bg-destructive text-destructive-foreground text-xs font-bold px-2.5 py-1 rounded-full">{badgeLabel}</span>}
               </div>
-              {reviewCount > 0 && (
+              {publishedReviews.length > 0 && (
                 <a href="#reviews" className="inline-block mt-2 hover:opacity-80">
                   <RatingStars avg={reviewAvg} count={reviewCount} size="md" />
                 </a>

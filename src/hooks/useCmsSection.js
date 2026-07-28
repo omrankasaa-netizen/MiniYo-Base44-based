@@ -16,7 +16,8 @@ import { base44 } from '@/api/base44Client';
 export function useCmsSectionsAll() {
   return useQuery({
     queryKey: ['cms-sections-all'],
-    queryFn: () => base44.entities.CmsSection.list('sort_order', 100),
+    // Home only needs active sections; keeps payload smaller and stable.
+    queryFn: () => base44.entities.CmsSection.filter({ is_active: true }, 'sort_order', 200),
     staleTime: 60_000,
   });
 }

@@ -22,7 +22,7 @@ import { repairDuplicateSlugs } from './repairSlugs.js';
 import { runR2HostMigration } from './r2HostMigration.js';
 import { getStorage } from './storage.js';
 import { optimizeAndStore, bufferFromBase64 } from './imageOptimize.js';
-import { getProductBySlug, injectProductMeta } from './productMeta.js';
+import { getProductPagePayloadBySlug, injectProductMeta } from './productMeta.js';
 import { buildFeedCsv } from './metaFeed.js';
 import { buildTiktokFeedCsv } from './tiktokFeed.js';
 import { sendCapiEvent, buildUserData } from './metaCapiClient.js';
@@ -406,8 +406,13 @@ app.get('/api/entities/:entity', ensureEntity, (req, res) => {
     const { query, sort, limit } = parseListParams(req);
     const records = queryRecords(req.params.entity, { query, sort, limit })
       .map((r) => sanitize(req.params.entity, r));
-    if (CACHEABLE_CONTENT_ENTITIES.has(req.params.entity)) {
+    const user = getUserFromRequest(req);
+    // Admin reads must never be edge-cached; otherwise recently-saved settings
+    // (e.g. ShippingZone/SiteSetting) can appear "not persisted" for minutes.
+    if (CACHEABLE_CONTENT_ENTITIES.has(req.params.entity) && !isAdmin(user)) {
       res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
+    } else if (isAdmin(user)) {
+      res.set('Cache-Control', 'no-store');
     }
     res.json(records);
   } catch (e) { handleError(res, e); }
@@ -417,6 +422,12 @@ app.get('/api/entities/:entity/:id', ensureEntity, (req, res) => {
   try {
     const record = getRecord(req.params.entity, req.params.id);
     if (!record) return res.status(404).json({ error: 'Not found' });
+    const user = getUserFromRequest(req);
+    if (CACHEABLE_CONTENT_ENTITIES.has(req.params.entity) && !isAdmin(user)) {
+      res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
+    } else if (isAdmin(user)) {
+      res.set('Cache-Control', 'no-store');
+    }
     res.json(sanitize(req.params.entity, record));
   } catch (e) { handleError(res, e); }
 });
@@ -848,15 +859,15 @@ if (fs.existsSync(DIST)) {
   // its own not-found state). Best-effort — any read/inject error degrades to
   // serving the untouched shell so the page always loads.
   const INDEX_HTML = path.join(DIST, 'index.html');
-  app.get('/product/:slug', (req, res, next) => {
+  app.get('/product/:slug', async (req, res, next) => {
     try {
-      const product = getProductBySlug(req.params.slug);
+      const payload = await getProductPagePayloadBySlug(req.params.slug);
       const template = fs.readFileSync(INDEX_HTML, 'utf8');
       res.set('Cache-Control', 'no-cache');
       // Unknown slug: serve the SPA shell (the client renders its own NotFound
       // UI) but with a real HTTP 404 so crawlers stop indexing dead URLs.
-      if (!product) return res.status(404).type('html').send(template);
-      res.type('html').send(injectProductMeta(template, product));
+      if (!payload) return res.status(404).type('html').send(template);
+      res.type('html').send(injectProductMeta(template, payload.product, payload.preloaded));
     } catch (e) {
       console.error('[productMeta] inject failed:', e?.message);
       next();

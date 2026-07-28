@@ -1,5 +1,5 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
+import React, { createContext, useContext } from 'react';
+import { useAuth } from '@/lib/AuthContext';
 
 const AuthUserContext = createContext();
 
@@ -14,27 +14,14 @@ export const ROLES = {
 export const ADMIN_ROLES = [ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.STAFF];
 
 export function AuthUserProvider({ children }) {
-  const [currentUser, setCurrentUser] = useState(null);
-  const [loading, setLoading] = useState(true);
+  // Reuse the single /api/auth/me fetch in AuthProvider to avoid duplicate
+  // session probes on every page load.
+  const { user, isLoadingAuth, logout: authLogout, checkUserAuth } = useAuth();
+  const currentUser = user;
+  const loading = isLoadingAuth;
 
-  useEffect(() => {
-    loadUser();
-  }, []);
-
-  async function loadUser() {
-    try {
-      const user = await base44.auth.me();
-      setCurrentUser(user);
-    } catch {
-      setCurrentUser(null);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function logout() {
-    await base44.auth.logout();
-    setCurrentUser(null);
+  function logout() {
+    authLogout(false);
     window.location.href = '/';
   }
 
@@ -81,7 +68,7 @@ export function AuthUserProvider({ children }) {
   }
 
   return (
-    <AuthUserContext.Provider value={{ currentUser, loading, logout, hasRole, isAdminUser, isSuperAdmin, canAccess, refreshUser: loadUser }}>
+    <AuthUserContext.Provider value={{ currentUser, loading, logout, hasRole, isAdminUser, isSuperAdmin, canAccess, refreshUser: checkUserAuth }}>
       {children}
     </AuthUserContext.Provider>
   );
