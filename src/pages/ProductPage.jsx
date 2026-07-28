@@ -367,7 +367,7 @@ export default function ProductPage() {
               <ul className="space-y-1.5 text-xs text-muted-foreground">
                 <li>• {shortDesc || t('Soft, practical design for daily comfort.', 'تصميم ناعم وعملي للراحة اليومية.')}</li>
                 <li>• {t('Suitable for newborns to kids depending on selected size.', 'مناسب لحديثي الولادة والأطفال حسب المقاس المختار.')}</li>
-                <li>• {t(`Delivery fee starts from $${(siteSettings.deliveryFeeInside || 3).toFixed(0)} and varies by zone.`, `تبدأ رسوم التوصيل من $${(siteSettings.deliveryFeeInside || 3).toFixed(0)} وتختلف حسب المنطقة.`)}</li>
+                <li>• {t('Delivery fee varies by zone and updates at checkout.', 'رسوم التوصيل تختلف حسب المنطقة وتُحتسب عند إتمام الطلب.')}</li>
                 <li>• {t('Easy exchange support via WhatsApp if sizing needs adjustment.', 'دعم سهل للاستبدال عبر واتساب إذا احتجتِ تعديل المقاس.')}</li>
               </ul>
             </div>

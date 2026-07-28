@@ -17,7 +17,9 @@ export default function AnnouncementBar() {
   }
 
   if (dismissed || !section?.is_active || (!section.title && !section.title_ar)) return null;
-  const text = lang === 'ar' ? (section.title_ar || section.title) : section.title;
+  const text = lang === 'ar'
+    ? (section.title_ar || section.title)
+    : (section.title || section.title_ar);
   // section.body stores the chosen color class
   const colorClass = section.body || 'bg-primary text-primary-foreground';
 

@@ -340,8 +340,11 @@ function ensureEntity(req, res, next) {
 // The storefront legitimately performs a small set of writes as an
 // unauthenticated guest (checkout, account self-service). Those — and only
 // those — are allowed per (entity, operation) below. Everything else requires
-// an admin/super_admin session.
-const isAdmin = (user) => !!user && (user.role === 'admin' || user.role === 'super_admin');
+// an authenticated admin-panel role.
+//
+// NOTE: frontend admin permissions allow staff to edit products/orders/CMS.
+// Keep server role-gating aligned so those saves are persisted.
+const isAdmin = (user) => !!user && ['super_admin', 'admin', 'staff'].includes(user.role);
 
 // Entity → operations that a non-admin (guest/customer) may perform.
 const PUBLIC_WRITES = {
