@@ -111,6 +111,17 @@ export default function CheckoutPage() {
     setGift(g => ({ ...g, [k]: v }));
   }
 
+  // All remaining state — declared here so nothing is referenced before init.
+  const [submitting, setSubmitting] = useState(false);
+  const [success, setSuccess] = useState(null);
+  const [promoInput, setPromoInput] = useState('');
+  const [promoCode, setPromoCode] = useState(null);
+  const [promoError, setPromoError] = useState('');
+  const [promoLoading, setPromoLoading] = useState(false);
+  const [phoneError, setPhoneError] = useState('');
+  const [addressError, setAddressError] = useState('');
+  const [stockError, setStockError] = useState('');
+
   // Auto-fill address from customer's first saved address (if exists and logged in)
   useEffect(() => {
     if (currentUser?.id && customer && !addressChanged) {
@@ -154,15 +165,6 @@ export default function CheckoutPage() {
       navigate('/cart', { replace: true });
     }
   }, [isHydrated, items.length, success]);
-  const [submitting, setSubmitting] = useState(false);
-  const [success, setSuccess] = useState(null);
-  const [promoInput, setPromoInput] = useState('');
-  const [promoCode, setPromoCode] = useState(null); // validated code record
-  const [promoError, setPromoError] = useState('');
-  const [promoLoading, setPromoLoading] = useState(false);
-  const [phoneError, setPhoneError] = useState('');
-  const [addressError, setAddressError] = useState('');
-  const [stockError, setStockError] = useState('');
 
   // Calculate promo discount FIRST (before using it in postDiscountSubtotal)
   const isFreeShipping = promoCode?.type === 'free_shipping';
