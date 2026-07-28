@@ -74,6 +74,7 @@ export default function CmsPage() {
     }
     await logAction({ action: 'cms_updated', entity: 'CmsSection', details: key, userName: currentUser?.email });
     qc.invalidateQueries({ queryKey: ['cms-sections'] });
+    qc.invalidateQueries({ queryKey: ['cms-sections-all'] });
   }
 
   if (!canAccess('manage_cms')) return <AdminLayout><AccessDenied /></AdminLayout>;
@@ -108,7 +109,10 @@ export default function CmsPage() {
               <CmsHomepageBanners
                 sections={sections}
                 onSave={upsertSection}
-                onRefresh={() => qc.invalidateQueries({ queryKey: ['cms-sections'] })}
+                onRefresh={() => {
+                  qc.invalidateQueries({ queryKey: ['cms-sections'] });
+                  qc.invalidateQueries({ queryKey: ['cms-sections-all'] });
+                }}
                 currentUser={currentUser}
                 campaigns={campaigns}
               />

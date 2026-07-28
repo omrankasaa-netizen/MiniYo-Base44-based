@@ -53,16 +53,19 @@ export default function ShippingPage() {
   }
 
   async function handleSaveZone() {
-    if (!formData.area_name || !formData.fee_usd) return;
+    const fee = Number(formData.fee_usd);
+    if (!formData.area_name || !Number.isFinite(fee) || fee < 0) return;
     try {
+      const payload = { ...formData, fee_usd: fee };
       if (editingZone) {
-        await base44.entities.ShippingZone.update(editingZone, formData);
+        await base44.entities.ShippingZone.update(editingZone, payload);
         await logAction({ action: 'updated', entity: 'ShippingZone', details: `${formData.area_name}`, userName: currentUser?.email });
       } else {
-        await base44.entities.ShippingZone.create(formData);
+        await base44.entities.ShippingZone.create(payload);
         await logAction({ action: 'created', entity: 'ShippingZone', details: `${formData.area_name}`, userName: currentUser?.email });
       }
       qc.invalidateQueries({ queryKey: ['admin-shipping-zones'] });
+      qc.invalidateQueries({ queryKey: ['shipping-zones-checkout'] });
       setShowForm(false);
     } catch (err) {
       alert(err.message);
@@ -75,6 +78,7 @@ export default function ShippingPage() {
       await base44.entities.ShippingZone.delete(id);
       await logAction({ action: 'deleted', entity: 'ShippingZone', details: `${name}`, userName: currentUser?.email });
       qc.invalidateQueries({ queryKey: ['admin-shipping-zones'] });
+      qc.invalidateQueries({ queryKey: ['shipping-zones-checkout'] });
     } catch (err) {
       alert(err.message);
     }
@@ -85,6 +89,7 @@ export default function ShippingPage() {
       await base44.entities.ShippingZone.update(zone.id, { is_active: !zone.is_active });
       await logAction({ action: 'toggled', entity: 'ShippingZone', details: `${zone.area_name} is_active`, userName: currentUser?.email });
       qc.invalidateQueries({ queryKey: ['admin-shipping-zones'] });
+      qc.invalidateQueries({ queryKey: ['shipping-zones-checkout'] });
     } catch (err) {
       alert(err.message);
     }
@@ -105,6 +110,8 @@ export default function ShippingPage() {
       }
       await logAction({ action: 'updated', entity: 'SiteSetting', details: `free_shipping_threshold = $${val}`, userName: currentUser?.email });
       qc.invalidateQueries({ queryKey: ['site-settings-shipping'] });
+      qc.invalidateQueries({ queryKey: ['site-settings-public'] });
+      qc.invalidateQueries({ queryKey: ['site-settings'] });
       setEditingThreshold(false);
       setThresholdVal('');
     } catch (err) {
@@ -119,6 +126,7 @@ export default function ShippingPage() {
       const result = await base44.functions.invoke('seedShippingZones', {});
       alert(result.message || 'Zones seeded successfully');
       qc.invalidateQueries({ queryKey: ['admin-shipping-zones'] });
+      qc.invalidateQueries({ queryKey: ['shipping-zones-checkout'] });
     } catch (err) {
       alert('Seed failed: ' + err.message);
     } finally {
@@ -262,7 +270,7 @@ export default function ShippingPage() {
               </div>
               <div>
                 <label className="text-xs text-muted-foreground block mb-1">Shipping Fee (USD) *</label>
-                <input value={formData.fee_usd} onChange={e => setFormData({ ...formData, fee_usd: parseFloat(e.target.value) || '' })}
+                <input value={formData.fee_usd} onChange={e => setFormData({ ...formData, fee_usd: e.target.value === '' ? '' : Number(e.target.value) })}
                   type="number" step="0.01" className="w-full px-3 py-2.5 rounded-xl border border-input bg-background text-sm" placeholder="4" />
               </div>
               <div>
