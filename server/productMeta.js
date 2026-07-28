@@ -36,6 +36,107 @@ export function getProductBySlug(slug) {
   return rows[0] || null;
 }
 
+function pickPublicProductFields(product) {
+  return {
+    id: product.id,
+    slug: product.slug || null,
+    name: product.name || null,
+    name_ar: product.name_ar || null,
+    short_description: product.short_description || null,
+    short_description_ar: product.short_description_ar || null,
+    description: product.description || null,
+    description_ar: product.description_ar || null,
+    price_usd: product.price_usd ?? null,
+    compare_at_price_usd: product.compare_at_price_usd || null,
+    image_url: product.image_url || null,
+    status: product.status || null,
+    has_variants: product.has_variants || false,
+    sizes: product.sizes || null,
+    colors: product.colors || null,
+    sku: product.sku || null,
+    stock_quantity: product.stock_quantity ?? null,
+    qty_reserved: product.qty_reserved ?? null,
+    is_new: !!product.is_new,
+    category_id: product.category_id || null,
+    subcategory_id: product.subcategory_id || null,
+    gender: product.gender || null,
+    age_group: product.age_group || null,
+  };
+}
+
+function pickPublicImageFields(image) {
+  return {
+    id: image.id,
+    product_id: image.product_id || null,
+    url: image.url || image.image_url || image.file_url || image.src || null,
+    image_url: image.image_url || null,
+    variants: image.variants || null,
+    is_primary: !!image.is_primary,
+    sort_order: image.sort_order ?? 0,
+    alt_text: image.alt_text || null,
+    focal: image.focal || null,
+    crop: image.crop || null,
+  };
+}
+
+function pickPublicVariantFields(variant) {
+  return {
+    id: variant.id,
+    product_id: variant.product_id || null,
+    sku: variant.sku || null,
+    size: variant.size || null,
+    color: variant.color || null,
+    price_usd: variant.price_usd ?? null,
+    compare_at_price_usd: variant.compare_at_price_usd ?? null,
+    qty_on_hand: variant.qty_on_hand ?? null,
+    qty_reserved: variant.qty_reserved ?? null,
+    is_active: variant.is_active !== false,
+  };
+}
+
+function buildPreloadedProduct({ product, images = [], variants = [], publishedReviewCount = 0 }) {
+  return {
+    slug: product.slug || null,
+    product: pickPublicProductFields(product),
+    images: images.map(pickPublicImageFields),
+    variants: variants.map(pickPublicVariantFields),
+    reviews: { published_count: Number(publishedReviewCount) || 0 },
+  };
+}
+
+// Product page preload bundle consumed by ProductPage for instant first render.
+export async function getProductPagePayloadBySlug(slug) {
+  const product = getProductBySlug(slug);
+  if (!product) return null;
+
+  // queryRecords is synchronous, but these reads are independent and are grouped
+  // in one Promise.all to keep the flow explicit and easy to extend.
+  const loadImages = () => Promise.resolve().then(() =>
+    queryRecords('ProductImage', { query: { product_id: product.id }, sort: 'sort_order', limit: 20 })
+  );
+  const loadVariants = () => Promise.resolve().then(() =>
+    queryRecords('ProductVariant', { query: { product_id: product.id }, sort: 'size', limit: 50 })
+  );
+  const loadPublishedReviews = () => Promise.resolve().then(() =>
+    queryRecords('Review', { query: { product_id: product.id, is_published: true }, limit: 5000 })
+  );
+  const [images, variants, publishedReviews] = await Promise.all([
+    loadImages(),
+    loadVariants(),
+    loadPublishedReviews(),
+  ]);
+
+  return {
+    product,
+    preloaded: buildPreloadedProduct({
+      product,
+      images,
+      variants,
+      publishedReviewCount: publishedReviews.length,
+    }),
+  };
+}
+
 // Aggregate rating from published reviews for JSON-LD. Returns null when the
 // product has no published reviews (schema omitted entirely in that case) or
 // when the Review table is unavailable. ratingValue is rounded to 1 decimal.
@@ -62,7 +163,7 @@ function formatPrice(value) {
 // Build the replacement <head> block (SEO + OG product tags + JSON-LD) for a
 // product. Uses English fields — the crawler is locale-agnostic and the client
 // still renders the localized UI. Returns an indented HTML string.
-export function buildProductMetaBlock(product) {
+export function buildProductMetaBlock(product, preloadedProduct = null) {
   const slug = product.slug || product.id;
   const url = `${SITE_BASE}/product/${slug}`;
   // Catalog identifier for Meta's crawler / Pixel microdata scanner. MUST equal
@@ -126,31 +227,12 @@ export function buildProductMetaBlock(product) {
   if (socialDesc) lines.push(`<meta name="twitter:description" content="${escapeAttr(socialDesc)}" />`);
   lines.push(`<meta name="twitter:image" content="${escapeAttr(image)}" />`);
 
-  // Inline product data for instant React hydration on ad landing pages.
-  // React Query reads window.__PRODUCT__ as initialData so the product title,
-  // price, and buy button render in the first paint without waiting for a
-  // separate /api/entities/Product fetch. The query still revalidates in the
-  // background (initialDataUpdatedAt: 0) so stale data is never shown long.
-  const productSubset = {
-    id: product.id,
-    slug: product.slug || null,
-    name: product.name || null,
-    name_ar: product.name_ar || null,
-    short_description: product.short_description || null,
-    short_description_ar: product.short_description_ar || null,
-    description: product.description || null,
-    price_usd: product.price_usd ?? null,
-    compare_at_price_usd: product.compare_at_price_usd || null,
-    image_url: product.image_url || null,
-    status: product.status || null,
-    has_variants: product.has_variants || false,
-    sizes: product.sizes || null,
-    colors: product.colors || null,
-    sku: product.sku || null,
-  };
+  // Inline product payload for instant SPA first render on /product/:slug.
+  // Keep this strictly public: only fields already shown on storefront UI.
+  const productSubset = preloadedProduct || buildPreloadedProduct({ product });
   // Escape `<` so the value can never break out of the <script> element.
   const productJson = JSON.stringify(productSubset).replace(/</g, '\\u003c');
-  lines.push(`<script>window.__PRODUCT__=${productJson};</script>`);
+  lines.push(`<script>window.__PRELOADED_PRODUCT__=${productJson};</script>`);
 
   // JSON-LD Product schema.
   const jsonLd = {
@@ -189,11 +271,11 @@ export function buildProductMetaBlock(product) {
 // Replace the site-wide social-meta marker region in the index.html template
 // with the per-product block. If the markers are missing (shouldn't happen with
 // the shipped template), returns the template unchanged so the SPA still loads.
-export function injectProductMeta(template, product) {
+export function injectProductMeta(template, product, preloadedProduct = null) {
   const start = template.indexOf(SOCIAL_START);
   const endMarker = template.indexOf(SOCIAL_END);
   if (start === -1 || endMarker === -1) return template;
   const end = endMarker + SOCIAL_END.length;
-  const block = buildProductMetaBlock(product);
+  const block = buildProductMetaBlock(product, preloadedProduct);
   return template.slice(0, start) + block + template.slice(end);
 }

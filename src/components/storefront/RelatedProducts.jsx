@@ -21,9 +21,16 @@ import { productAvailableQty } from '@/lib/inventory';
 export default function RelatedProducts({ product, limit = 4, title, titleAr }) {
   const { t } = useLang();
 
+  const relatedSeedQuery = useMemo(() => {
+    if (product?.subcategory_id) return { status: 'Active', subcategory_id: product.subcategory_id };
+    if (product?.category_id) return { status: 'Active', category_id: product.category_id };
+    return { status: 'Active' };
+  }, [product?.subcategory_id, product?.category_id]);
+
   const { data: products = [] } = useQuery({
-    queryKey: ['related-products'],
-    queryFn: () => base44.entities.Product.filter({ status: 'Active' }, '-created_date', 500),
+    queryKey: ['related-products', relatedSeedQuery],
+    // Limit the candidate pool to what we can actually display/re-rank.
+    queryFn: () => base44.entities.Product.filter(relatedSeedQuery, '-created_date', 12),
     enabled: !!product?.id,
     staleTime: 60_000,
   });
