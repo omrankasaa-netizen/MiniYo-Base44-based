@@ -4,6 +4,7 @@ import { useAuthUser } from '@/contexts/AuthUserContext';
 import { base44 } from '@/api/base44Client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { logAction } from '@/lib/auditLog';
+import { pickLatestByKey } from '@/lib/entityRecords';
 import AccessDenied from './AccessDenied';
 import { Settings, Save } from 'lucide-react';
 
@@ -25,13 +26,14 @@ export default function SiteSettingsPage() {
 
   const { data: settings = [] } = useQuery({
     queryKey: ['site-settings'],
-    queryFn: () => base44.entities.SiteSetting.list('setting_key', 100),
+    queryFn: () => base44.entities.SiteSetting.list('setting_key', 500),
   });
 
   useEffect(() => {
     if (settings.length > 0) {
+      const latestByKey = pickLatestByKey(settings, 'setting_key');
       const map = {};
-      for (const s of settings) map[s.setting_key] = s.setting_value;
+      for (const [key, setting] of Object.entries(latestByKey)) map[key] = setting.setting_value;
       setForm(f => ({ ...f, ...map }));
     }
   }, [settings]);
@@ -41,9 +43,14 @@ export default function SiteSettingsPage() {
   async function handleSave(e) {
     e.preventDefault();
     setSaving(true);
-    const settingsMap = Object.fromEntries(settings.map(s => [s.setting_key, s]));
+    const settingsMap = pickLatestByKey(settings, 'setting_key');
     for (const [key, value] of Object.entries(form)) {
-      if (settingsMap[key]) {
+      const duplicates = settings.filter((s) => s.setting_key === key);
+      if (duplicates.length > 0) {
+        await Promise.all(
+          duplicates.map((setting) => base44.entities.SiteSetting.update(setting.id, { setting_value: String(value) }))
+        );
+      } else if (settingsMap[key]) {
         await base44.entities.SiteSetting.update(settingsMap[key].id, { setting_value: String(value) });
       } else {
         await base44.entities.SiteSetting.create({ setting_key: key, setting_value: String(value) });

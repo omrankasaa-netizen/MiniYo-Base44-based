@@ -4,6 +4,7 @@ import { useAuthUser } from '@/contexts/AuthUserContext';
 import { base44 } from '@/api/base44Client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { logAction } from '@/lib/auditLog';
+import { pickLatestByKey } from '@/lib/entityRecords';
 import AccessDenied from './AccessDenied';
 import { Plus, Pencil, Trash2, GripVertical, Eye, EyeOff, DollarSign, Loader2 } from 'lucide-react';
 
@@ -32,13 +33,14 @@ export default function ShippingPage() {
   const { data: siteSettings = [] } = useQuery({
     queryKey: ['site-settings-shipping'],
     queryFn: async () => {
-      const settings = await base44.entities.SiteSetting.filter({}, 'setting_key', 100);
+      const settings = await base44.entities.SiteSetting.filter({}, 'setting_key', 500);
       return settings;
     },
   });
 
-  const thresholdSetting = siteSettings.find(s => s.setting_key === 'free_shipping_threshold');
-  const threshold = thresholdSetting ? parseFloat(thresholdSetting.setting_value) : 50;
+  const thresholdSetting = pickLatestByKey(siteSettings, 'setting_key').free_shipping_threshold;
+  const thresholdParsed = thresholdSetting ? Number.parseFloat(String(thresholdSetting.setting_value ?? '')) : NaN;
+  const threshold = Number.isFinite(thresholdParsed) ? thresholdParsed : 50;
 
   function openNewForm() {
     setFormData({ area_name: '', area_name_ar: '', fee_usd: '', is_active: true, is_catchall: false, sort_order: zones.length });
@@ -99,8 +101,11 @@ export default function ShippingPage() {
     const val = parseFloat(thresholdVal);
     if (isNaN(val) || val < 0) return;
     try {
-      if (thresholdSetting) {
-        await base44.entities.SiteSetting.update(thresholdSetting.id, { setting_value: val.toString() });
+      const thresholdSettings = siteSettings.filter((s) => s.setting_key === 'free_shipping_threshold');
+      if (thresholdSettings.length > 0) {
+        await Promise.all(
+          thresholdSettings.map((s) => base44.entities.SiteSetting.update(s.id, { setting_value: val.toString() }))
+        );
       } else {
         await base44.entities.SiteSetting.create({
           setting_key: 'free_shipping_threshold',

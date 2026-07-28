@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { logAction } from '@/lib/auditLog';
+import { pickLatestByKey } from '@/lib/entityRecords';
 import { CreditCard, Banknote, Smartphone, Check } from 'lucide-react';
 
 const PAYMENT_METHODS = [
@@ -47,11 +48,10 @@ export default function CmsPaymentMethods({ currentUser }) {
 
   const { data: settings = [] } = useQuery({
     queryKey: ['site-settings-admin'],
-    queryFn: () => base44.entities.SiteSetting.list('setting_key', 100),
+    queryFn: () => base44.entities.SiteSetting.list('setting_key', 500),
   });
 
-  const settingMap = {};
-  for (const s of settings) settingMap[s.setting_key] = s;
+  const settingMap = pickLatestByKey(settings, 'setting_key');
 
   function isEnabled(key, def) {
     const s = settingMap[key];
@@ -62,9 +62,9 @@ export default function CmsPaymentMethods({ currentUser }) {
   async function toggle(key, currentVal) {
     setSaving(p => ({ ...p, [key]: true }));
     const newVal = String(!currentVal);
-    const existing = settingMap[key];
-    if (existing) {
-      await base44.entities.SiteSetting.update(existing.id, { setting_value: newVal });
+    const duplicates = settings.filter((s) => s.setting_key === key);
+    if (duplicates.length > 0) {
+      await Promise.all(duplicates.map((setting) => base44.entities.SiteSetting.update(setting.id, { setting_value: newVal })));
     } else {
       await base44.entities.SiteSetting.create({ setting_key: key, setting_value: newVal });
     }

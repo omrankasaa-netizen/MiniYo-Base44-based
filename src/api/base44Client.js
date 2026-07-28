@@ -23,6 +23,7 @@ async function request(method, url, body) {
     headers: {},
   };
   const sentinel = getSentinel();
+  if (sentinel) opts.cache = 'no-store';
   if (sentinel) opts.headers.Authorization = `Bearer ${sentinel}`;
   if (body !== undefined) {
     opts.headers['Content-Type'] = 'application/json';
@@ -63,17 +64,21 @@ function normalizeListArgs(a, b) {
   return { sort, limit };
 }
 
+function authBypassKey() {
+  return getSentinel() ? Date.now().toString(36) : null;
+}
+
 function makeEntity(name) {
   return {
     async list(sortOrLimit, limit) {
       const { sort, limit: lim } = normalizeListArgs(sortOrLimit, limit);
-      return request('GET', `/entities/${name}${qs({ sort, limit: lim })}`);
+      return request('GET', `/entities/${name}${qs({ sort, limit: lim, _ts: authBypassKey() })}`);
     },
     async filter(query = {}, sort = null, limit = null) {
-      return request('GET', `/entities/${name}${qs({ q: JSON.stringify(query), sort, limit })}`);
+      return request('GET', `/entities/${name}${qs({ q: JSON.stringify(query), sort, limit, _ts: authBypassKey() })}`);
     },
     async get(id) {
-      return request('GET', `/entities/${name}/${encodeURIComponent(id)}`);
+      return request('GET', `/entities/${name}/${encodeURIComponent(id)}${qs({ _ts: authBypassKey() })}`);
     },
     async create(data) {
       return request('POST', `/entities/${name}`, data || {});
