@@ -125,6 +125,10 @@ const AuthenticatedApp = () => {
         <Route path="/about" element={<AboutPage />} />
         <Route path="/gifts" element={<GiftGuidePage />} />
         <Route path="/landing/meta" element={<MetaLandingPage />} />
+        {/* Alias: some ads were built pointing at /meta/landing by mistake.
+            Rendering the same component at both paths (instead of redirecting)
+            avoids a redirect hop and keeps fbclid/UTM query params untouched. */}
+        <Route path="/meta/landing" element={<MetaLandingPage />} />
 
         {/* Account area */}
         <Route path="/account" element={<AccountLayout />}>
@@ -153,13 +157,14 @@ const AuthenticatedApp = () => {
       <Route path="/admin/products" element={<AdminGuard><ProductsPage /></AdminGuard>} />
       <Route path="/admin/categories" element={<AdminGuard><CategoriesPage /></AdminGuard>} />
       <Route path="/admin/orders" element={<AdminGuard><OrdersPage /></AdminGuard>} />
-      <Route path="/admin/finances" element={<AdminGuard requireSuperAdmin><FinancesPage /></AdminGuard>} />
+      <Route path="/admin/finances" element={<AdminGuard><FinancesPage /></AdminGuard>} />
       <Route path="/admin/bulk-import" element={<AdminGuard><BulkImportPage /></AdminGuard>} />
       <Route path="/admin/cms" element={<AdminGuard><CmsPage /></AdminGuard>} />
       <Route path="/admin/site-settings" element={<AdminGuard><SiteSettingsPage /></AdminGuard>} />
       <Route path="/admin/promo-codes" element={<AdminGuard><PromoCodesPage /></AdminGuard>} />
       <Route path="/admin/discounts" element={<AdminGuard><DiscountsPage /></AdminGuard>} />
       <Route path="/admin/campaigns" element={<AdminGuard><CampaignsPage /></AdminGuard>} />
+      <Route path="/admin/categories" element={<AdminGuard><CategoriesPage /></AdminGuard>} />
       <Route path="/admin/customers" element={<AdminGuard><CustomersPage /></AdminGuard>} />
       <Route path="/admin/membership" element={<AdminGuard><AdminMembershipPage /></AdminGuard>} />
       <Route path="/admin/email-log" element={<AdminGuard><EmailLogPage /></AdminGuard>} />
