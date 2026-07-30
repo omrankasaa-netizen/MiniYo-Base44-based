@@ -518,14 +518,16 @@ export default function ShopPage() {
           </h1>
         </div>
 
-        {/* Toolbar */}
-        <div className="flex items-center gap-3 mb-4">
+        {/* Toolbar — flex-wrap + min-w-0 keep search / filter / sort inside the
+            viewport on narrow phones (the sort select used to be pushed ~220px
+            off-screen to the right, reading as a "shifted / cut off" page). */}
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-4">
           {/* Search */}
-          <div className="flex items-center gap-2 bg-card border border-border rounded-xl px-3 py-2 flex-1 max-w-sm">
+          <div className="flex items-center gap-2 bg-card border border-border rounded-xl px-3 py-2 flex-1 min-w-0 max-w-sm">
             <Search className="w-4 h-4 text-muted-foreground shrink-0" />
             <input value={search} onChange={e => set({ q: e.target.value })}
               placeholder={t('Search…', 'بحث…')}
-              className="bg-transparent text-sm flex-1 outline-none text-foreground" />
+              className="bg-transparent text-sm flex-1 min-w-0 outline-none text-foreground" />
             {search && <button onClick={() => set({ q: '' })}><X className="w-3.5 h-3.5 text-muted-foreground" /></button>}
           </div>
 
@@ -543,7 +545,7 @@ export default function ShopPage() {
           <div className="ml-auto flex items-center gap-2">
             <span className="text-sm text-muted-foreground hidden sm:block">{filtered.length} {t('items', 'منتج')}</span>
             <select value={filterSort} onChange={e => set({ sort: e.target.value })}
-              className="bg-card border border-border rounded-xl px-3 py-2 text-sm text-foreground outline-none cursor-pointer">
+              className="bg-card border border-border rounded-xl px-3 py-2 text-sm text-foreground outline-none cursor-pointer max-w-[9rem] sm:max-w-none">
               <option value="new">{t('Newest', 'الأحدث')}</option>
               <option value="price_asc">{t('Price: Low → High', 'السعر: منخفض → عالٍ')}</option>
               <option value="price_desc">{t('Price: High → Low', 'السعر: عالٍ → منخفض')}</option>

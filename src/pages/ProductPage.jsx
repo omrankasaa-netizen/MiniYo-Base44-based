@@ -222,6 +222,23 @@ export default function ProductPage() {
     : availableQty(product);
   const canAdd = usesVariants ? !!selectedVariant && stockQty > 0 : stockQty > 0;
 
+  // CTA state: before the shopper finishes picking options the button should
+  // invite selection ("Select options"), not cry "Out of Stock" — stockQty is
+  // 0 whenever no variant is selected yet, which read as unavailable inventory.
+  const selectionComplete = !usesVariants || ((!needsSize || selectedSize) && (!needsColor || selectedColor));
+  const totalVariantStock = usesVariants ? variants.reduce((s, v) => s + availableQty(v), 0) : stockQty;
+  const allVariantsOos = usesVariants && variants.length > 0 && totalVariantStock <= 0;
+  const ctaOutOfStock = usesVariants
+    ? (allVariantsOos || (selectionComplete && stockQty <= 0))
+    : stockQty <= 0;
+  const ctaLabel = added
+    ? t('Added ✓', 'تمت الإضافة ✓')
+    : ctaOutOfStock
+      ? t('Out of Stock', 'نفذ المخزون')
+      : (usesVariants && !selectionComplete)
+        ? t('Select options', 'اختاري الخيارات')
+        : t('Add to Cart', 'أضف إلى السلة');
+
   const badgeCandidates = [];
   if (product.is_new) badgeCandidates.push({ key: 'new', label: t('New', 'جديد'), className: 'bg-primary text-primary-foreground' });
   if (product.is_featured) badgeCandidates.push({ key: 'best', label: t('Bestseller', 'الأكثر مبيعاً'), className: 'bg-primary text-primary-foreground' });
@@ -439,10 +456,10 @@ export default function ProductPage() {
                 <button
                   type="button"
                   onClick={() => handleAdd(true)}
-                  disabled={!canAdd && stockQty === 0}
+                  disabled={ctaOutOfStock}
                   className={`flex-1 min-h-[52px] rounded-2xl text-base font-semibold text-white active:scale-[0.97] transition-transform ${added ? 'bg-green-600' : 'bg-primary'}`}
                 >
-                  {added ? t('Added ✓', 'تمت الإضافة ✓') : (!canAdd && stockQty === 0 ? t('Out of Stock', 'نفذ المخزون') : t('Add to Cart', 'أضف إلى السلة'))}
+                  {ctaLabel}
                 </button>
               </div>
               {waHelpLink && (
@@ -569,10 +586,10 @@ export default function ProductPage() {
             <button
               type="button"
               onClick={() => handleAdd(false)}
-              disabled={!canAdd && stockQty === 0}
-              className={`min-h-[44px] px-4 rounded-xl text-sm font-semibold ${canAdd ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}
+              disabled={ctaOutOfStock}
+              className={`min-h-[44px] px-4 rounded-xl text-sm font-semibold ${!ctaOutOfStock ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}
             >
-              {t('Add to Cart', 'أضف إلى السلة')}
+              {ctaLabel}
             </button>
           </div>
         </div>
