@@ -27,3 +27,5 @@ export function productAvailableQty(product, variants) {
   }
   return availableQty(product);
 }
+
+// deploy-trigger: no-op comment to retrigger a cancelled Railway deployment
