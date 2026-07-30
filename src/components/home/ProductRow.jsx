@@ -6,6 +6,7 @@ import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import ProductCard from '@/components/storefront/ProductCard';
 import { buildImagesByProduct } from '@/lib/imageFraming';
+import { productAvailableQty } from '@/lib/inventory';
 import { ChevronRight, ChevronLeft } from 'lucide-react';
 
 export default function ProductRow({ title, titleAr, filter, viewAllLink, productIds = [] }) {
@@ -57,10 +58,33 @@ export default function ProductRow({ title, titleAr, filter, viewAllLink, produc
     staleTime: 60_000,
   });
 
+  // Variant stock enrichment (mirrors ShopPage): without availableStock,
+  // ProductCard can't flag out-of-stock variant products on the rails.
+  const { data: variants = [] } = useQuery({
+    queryKey: ['rail-variants'],
+    queryFn: () => base44.entities.ProductVariant.list('-created_date', 3000),
+    enabled: productEntityIds.length > 0,
+    staleTime: 60_000,
+  });
+
+  const variantsByProduct = React.useMemo(() => {
+    const m = {};
+    for (const v of variants) {
+      if (!m[v.product_id]) m[v.product_id] = [];
+      m[v.product_id].push(v);
+    }
+    return m;
+  }, [variants]);
+
   const imagesByProduct = buildImagesByProduct(allImages);
   const products = rawProducts.map(p => {
     const imgs = imagesByProduct[p.id] || [];
-    return { ...p, images: imgs, primaryImage: imgs[0]?.url || null };
+    return {
+      ...p,
+      images: imgs,
+      primaryImage: imgs[0]?.url || null,
+      availableStock: productAvailableQty(p, variantsByProduct[p.id] || []),
+    };
   });
 
   if (products.length === 0) return null;
