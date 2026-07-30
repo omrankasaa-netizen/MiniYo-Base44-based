@@ -303,6 +303,15 @@ export default function CheckoutPage() {
     // sees an "only N left / reserved" warning here, BEFORE submit — instead of
     // only discovering it when the server rejects the reservation. The final
     // reserveOrderStock() call below remains the source of truth.
+    //
+    // Variant matching is done client-side with the SAME null-safe semantics as
+    // the server engine: an unset size/color on the cart line is a wildcard, and
+    // a null stored color only matches an unset wanted color. The old version
+    // pushed size/color straight into the API filter — for size-only variants
+    // (color: null in the DB) the filter returned zero rows, availability was
+    // read as 0, and EVERY order containing such a product was falsely rejected
+    // with "only 0 left".
+    const normOpt = (x) => (x === undefined || x === null || x === '' ? null : String(x));
     const issues = [];
     for (const item of items) {
       try {
@@ -310,15 +319,20 @@ export default function CheckoutPage() {
         if (!currentProduct) {
           issues.push(`${item.product.name} ${t('is no longer available', 'لم يعد متوفراً')}`);
         } else if (currentProduct.has_variants) {
-          // Check variant availability
-          const variant = await base44.entities.ProductVariant?.filter?.(
-            { product_id: item.product.id, size: item.variant?.size, color: item.variant?.color },
+          const sizeWanted = normOpt(item.variant?.size);
+          const colorWanted = normOpt(item.variant?.color);
+          const pvs = await base44.entities.ProductVariant?.filter?.(
+            { product_id: item.product.id },
             'id',
-            1
+            100
+          ) || [];
+          const variant = pvs.find((v) =>
+            (sizeWanted ? String(v.size ?? '') === sizeWanted : true) &&
+            (colorWanted ? String(v.color ?? '') === colorWanted : true)
           );
-          const avail = variant?.length ? availableQty(variant[0]) : 0;
+          const avail = variant ? availableQty(variant) : 0;
           if (avail < item.quantity) {
-            issues.push(`${item.product.name} (${item.variant?.size}/${item.variant?.color}): ${t('only', 'فقط')} ${avail} ${t('left', 'متبقٍ')}`);
+            issues.push(`${item.product.name} (${[sizeWanted, colorWanted].filter(Boolean).join('/') || '—'}): ${t('only', 'فقط')} ${avail} ${t('left', 'متبقٍ')}`);
           }
         } else if (availableQty(currentProduct) < item.quantity) {
           issues.push(`${item.product.name}: ${t('only', 'فقط')} ${availableQty(currentProduct)} ${t('left', 'متبقٍ')}`);
