@@ -326,7 +326,7 @@ export default function ShopPage() {
     if (filterAge) chips.push({ label: lang === 'ar' ? (AGE_LABELS_AR[filterAge] || filterAge) : filterAge, key: 'age' });
     if (filterCollection) {
       const col = collectionMap[filterCollection];
-      chips.push({ label: `Collection: ${col ? (col.name_ar || col.name) : col.name}`, key: 'collection' });
+      chips.push({ label: `Collection: ${col ? (lang === 'ar' ? (col.name_ar || col.name) : col.name) : filterCollection}`, key: 'collection' });
     }
     filterSizes.forEach(s => chips.push({ label: `${t('Size', 'المقاس')}: ${lang === 'ar' ? (SIZE_LABELS_AR[s] || s) : s}`, key: 'sizes', val: s, isArr: true }));
     filterMaterials.forEach((m) => chips.push({ label: `${t('Fabric', 'الخامة')}: ${m}`, key: 'mat', val: m, isArr: true }));
