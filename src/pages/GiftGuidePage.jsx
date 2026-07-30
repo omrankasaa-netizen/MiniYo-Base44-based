@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Gift, Filter } from 'lucide-react';
 import ProductCard from '@/components/storefront/ProductCard';
 import { buildImagesByProduct } from '@/lib/imageFraming';
+import { productAvailableQty } from '@/lib/inventory';
 
 const GIFT_CATEGORIES = [
   { slug: 'newborn-essentials', name: 'Newborn Essentials', nameAr: 'ضروريات المواليد', ageGroup: 'Newborn' },
@@ -37,11 +38,33 @@ export default function GiftGuidePage() {
     staleTime: 60_000,
   });
 
+  // Variant stock enrichment so ProductCard can flag out-of-stock items here too.
+  const { data: variants = [] } = useQuery({
+    queryKey: ['gift-guide-variants'],
+    queryFn: () => base44.entities.ProductVariant.list('-created_date', 3000),
+    enabled: productIds.length > 0,
+    staleTime: 60_000,
+  });
+
+  const variantsByProduct = React.useMemo(() => {
+    const m = {};
+    for (const v of variants) {
+      if (!m[v.product_id]) m[v.product_id] = [];
+      m[v.product_id].push(v);
+    }
+    return m;
+  }, [variants]);
+
   const imagesByProduct = React.useMemo(() => buildImagesByProduct(images), [images]);
   const products = React.useMemo(() => rawProducts.map(p => {
     const imgs = imagesByProduct[p.id] || [];
-    return { ...p, images: imgs, primaryImage: imgs[0]?.url || null };
-  }), [rawProducts, imagesByProduct]);
+    return {
+      ...p,
+      images: imgs,
+      primaryImage: imgs[0]?.url || null,
+      availableStock: productAvailableQty(p, variantsByProduct[p.id] || []),
+    };
+  }), [rawProducts, imagesByProduct, variantsByProduct]);
 
   const selectedCat = GIFT_CATEGORIES.find(c => c.slug === selected);
 
