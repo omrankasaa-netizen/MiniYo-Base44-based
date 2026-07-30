@@ -3,6 +3,18 @@ import { ChevronDown, Search } from 'lucide-react';
 import { useLang } from '@/contexts/LanguageContext';
 import { COUNTRIES, findCountry, DEFAULT_COUNTRY } from '@/lib/countryCodes';
 
+// Common shorthand people actually type when searching a dial code.
+const ALIASES = {
+  uae: 'AE', emirates: 'AE', dubai: 'AE',
+  uk: 'GB', britain: 'GB', england: 'GB',
+  usa: 'US', america: 'US', states: 'US',
+  ksa: 'SA', saudi: 'SA',
+  leb: 'LB', lebanon: 'LB', beirut: 'LB',
+  q8: 'KW', kuwait: 'KW',
+  ivory: 'CI', congo: 'CG', drc: 'CD',
+  korea: 'KR', russia: 'RU', turkiye: 'TR', turkey: 'TR',
+};
+
 // Searchable country dial-code picker for checkout. Renders as the prefix of
 // the phone input; the national number is validated per-country in
 // src/lib/countryCodes.js.
@@ -32,9 +44,12 @@ export default function CountryCodeSelect({ value, onChange }) {
 
   const country = findCountry(value) || findCountry(DEFAULT_COUNTRY);
   const q = query.trim().toLowerCase().replace(/^\+/, '');
+  const aliasIsos = new Set(
+    Object.entries(ALIASES).filter(([a]) => a.startsWith(q) || q.startsWith(a)).map(([, iso]) => iso)
+  );
   const list = q
     ? COUNTRIES.filter((c) =>
-        c.name.toLowerCase().includes(q) || c.iso.toLowerCase().includes(q) || c.dial.includes(q))
+        c.name.toLowerCase().includes(q) || c.iso.toLowerCase().includes(q) || c.dial.includes(q) || aliasIsos.has(c.iso))
     : COUNTRIES;
 
   return (
