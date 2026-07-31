@@ -146,8 +146,14 @@ function reserveStock({ order_id }, user) {
 
   const runReservation = db.transaction(() => {
     // Pass 1: re-read fresh counts and validate EVERY line before mutating.
+    // `planned` accumulates quantities earmarked by earlier lines targeting
+    // the SAME variant/product, so duplicate lines can't validate against the
+    // same pool twice and oversell.
     const plan = [];
     const shortages = [];
+    const planned = new Map();
+    const claimed = (key) => planned.get(key) || 0;
+    const claim = (key, qty) => planned.set(key, claimed(key) + qty);
     for (const item of items) {
       const product = queryRecords('Product', { query: { id: item.product_id }, limit: 1 })[0];
       if (!product) {
@@ -161,18 +167,20 @@ function reserveStock({ order_id }, user) {
           continue;
         }
         const reservedBefore = variant.qty_reserved || 0;
-        const available = (variant.qty_on_hand || 0) - reservedBefore;
+        const available = (variant.qty_on_hand || 0) - reservedBefore - claimed(`v:${variant.id}`);
         if (available < item.quantity) {
           shortages.push({ name: `${item.product_name} (${[item.size, item.color].filter(Boolean).join(', ')})`, available, needed: item.quantity });
         } else {
+          claim(`v:${variant.id}`, item.quantity);
           plan.push({ kind: 'variant', id: variant.id, product_id: item.product_id, variant_sku: variant.variant_sku, qty: item.quantity, reservedBefore, available });
         }
       } else {
         const reservedBefore = product.qty_reserved || 0;
-        const available = (product.stock_quantity || 0) - reservedBefore;
+        const available = (product.stock_quantity || 0) - reservedBefore - claimed(`p:${product.id}`);
         if (available < item.quantity) {
           shortages.push({ name: item.product_name, available, needed: item.quantity });
         } else {
+          claim(`p:${product.id}`, item.quantity);
           plan.push({ kind: 'product', id: item.product_id, product_id: item.product_id, qty: item.quantity, reservedBefore, available });
         }
       }
@@ -184,15 +192,23 @@ function reserveStock({ order_id }, user) {
     }
 
     // Pass 2: apply the holds. qty_on_hand is NOT touched — only qty_reserved.
+    // Re-read inside the transaction: multiple lines can target the SAME
+    // variant/product (e.g. bulk import rows), and pass-1 snapshots are stale
+    // after the first update — using them loses earlier increments.
     const movements = [];
     for (const p of plan) {
-      const reservedAfter = p.reservedBefore + p.qty;
       if (p.kind === 'variant') {
-        updateRecord('ProductVariant', p.id, { qty_reserved: reservedAfter });
-        movements.push({ product_id: p.product_id, variant_sku: p.variant_sku, type: 'Reserved', quantity: -p.qty, previous_stock: p.available, new_stock: p.available - p.qty, reason, created_at: nowIso(), created_by: by });
+        const fresh = getRecord('ProductVariant', p.id);
+        const prev = fresh?.qty_reserved || 0;
+        const available = (fresh?.qty_on_hand || 0) - prev;
+        updateRecord('ProductVariant', p.id, { qty_reserved: prev + p.qty });
+        movements.push({ product_id: p.product_id, variant_sku: p.variant_sku, type: 'Reserved', quantity: -p.qty, previous_stock: available, new_stock: available - p.qty, reason, created_at: nowIso(), created_by: by });
       } else {
-        updateRecord('Product', p.id, { qty_reserved: reservedAfter });
-        movements.push({ product_id: p.product_id, type: 'Reserved', quantity: -p.qty, previous_stock: p.available, new_stock: p.available - p.qty, reason, created_at: nowIso(), created_by: by });
+        const fresh = getRecord('Product', p.id);
+        const prev = fresh?.qty_reserved || 0;
+        const available = (fresh?.stock_quantity || 0) - prev;
+        updateRecord('Product', p.id, { qty_reserved: prev + p.qty });
+        movements.push({ product_id: p.product_id, type: 'Reserved', quantity: -p.qty, previous_stock: available, new_stock: available - p.qty, reason, created_at: nowIso(), created_by: by });
       }
     }
     if (movements.length) bulkCreate('InventoryMovement', movements);
@@ -1431,6 +1447,388 @@ function upsertCustomer(body, user) {
   return { ok: true, customer: created };
 }
 
+// ─── Invoice photo → order prefill (admin) ─────────────────────────────
+// Uploads of supplier/customer invoice photos are parsed into order fields
+// (name, phone, address, amount) so staff can bulk-enter orders fast: the
+// modal prefills contact/address, and the admin adds the products manually.
+// Engines, tried in order (each activates by setting its env var):
+//   1. Gemini (Google) — GEMINI_API_KEY (+ optional SCAN_INVOICE_GEMINI_MODEL,
+//      default gemini-2.0-flash). Vision LLM: OCR + structured JSON in one
+//      call; free tier available; handles Arabic and messy layouts.
+//   2. OpenAI-compatible vision LLM — SCAN_INVOICE_API_KEY (+ optional
+//      SCAN_INVOICE_API_URL / SCAN_INVOICE_MODEL). Same structured extraction.
+//   3. Google Cloud Vision OCR — GOOGLE_VISION_API_KEY. DOCUMENT_TEXT_DETECTION
+//      (excellent Arabic OCR) → heuristic field parse. Raw text only, so less
+//      accurate field mapping than the LLM engines.
+//   4. Local Tesseract OCR (eng+ara) + heuristics — zero-config fallback,
+//      decent on clean printed English invoices, weak on Arabic/handwriting.
+const INVOICE_SCAN_PROMPT = `You are reading a photo of a retail order invoice or delivery receipt (Lebanese boutique context; text may be English, Arabic, French, or mixed). Extract these fields and reply with STRICT JSON only, no markdown:
+{
+  "customer_name": string|null,   // buyer/recipient full name
+  "customer_phone": string|null,  // phone in international format (+961... if Lebanese); digits and + only
+  "city": string|null,            // Lebanese city/area name in English if identifiable
+  "address": string|null,         // street/building/district detail, one line, English if possible
+  "amount": number|null,          // grand total the customer owes (number only)
+  "currency": string|null,        // "USD" | "LBP" | other ISO code
+  "notes": string|null            // anything notable (item counts, payment method, references)
+}
+If a field is not readable, use null. Never guess a phone digit.`;
+
+function sanitizeScanFields(raw) {
+  const f = raw && typeof raw === 'object' ? raw : {};
+  const cleanStr = (v, max = 200) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : null);
+  const phone = cleanStr(f.customer_phone, 32);
+  const amount = Number.isFinite(Number(f.amount)) && Number(f.amount) > 0 ? Number(f.amount) : null;
+  return {
+    customer_name: cleanStr(f.customer_name, 120),
+    customer_phone: phone ? phone.replace(/[^\d+]/g, '') : null,
+    city: cleanStr(f.city, 60),
+    address: cleanStr(f.address, 200),
+    amount,
+    currency: cleanStr(f.currency, 8),
+    notes: cleanStr(f.notes, 300),
+  };
+}
+
+// Heuristic field extraction for the Tesseract fallback path.
+function parseInvoiceText(text) {
+  const out = { customer_name: null, customer_phone: null, city: null, address: null, amount: null, currency: null, notes: null };
+  const lines = String(text || '').split('\n').map((l) => l.trim()).filter(Boolean);
+  if (!lines.length) return out;
+
+  const phoneMatch = text.match(/(?:\+?961[\s\-/]?)?0?(?:3|7[0-9]|8[01])[\s\-/]?\d{3}[\s\-/]?\d{3}(?!\d)/) || text.match(/\+\d[\d\s-]{6,14}\d/);
+  if (phoneMatch) out.customer_phone = phoneMatch[0].replace(/[\s\-/]/g, '');
+
+  const LB_CITY_RE = /(Tripoli|Beirut|Sidon|Saida|Tyre|Jounieh|Baalbek|Zahle|Nabatieh|Byblos|Jbail|Batroun|Akkar|Halba|Chtaura|Aley)/i;
+  const cityLine = lines.find((l) => LB_CITY_RE.test(l));
+  if (cityLine) {
+    out.city = cityLine.match(LB_CITY_RE)[1];
+    if (cityLine.length < 120) out.address = cityLine;
+  }
+
+  const totalLine = [...lines].reverse().find((l) => /total|amount|due|المجموع|الإجمالي|الاجمالي|المبلغ/i.test(l));
+  const moneyRe = /\$\s?([\d]+(?:[.,]\d{1,2})?)/g;
+  const pickAmount = (src) => {
+    let best = null;
+    for (const m of src.matchAll(moneyRe)) {
+      const v = parseFloat(m[1].replace(',', ''));
+      if (Number.isFinite(v) && v > 0 && (best === null || v > best)) best = v;
+    }
+    if (best !== null) return { amount: best, currency: 'USD' };
+    const lbp = src.match(/([\d][\d.,]*)\s?(?:L\.?L\.?|LBP|ل\.?ل)/i);
+    if (lbp) {
+      const v = parseFloat(lbp[1].replace(/[.,](?=\d{3}\b)/g, '').replace(',', '.'));
+      if (Number.isFinite(v) && v > 0) return { amount: v, currency: 'LBP' };
+    }
+    return null;
+  };
+  const found = (totalLine && pickAmount(totalLine)) || pickAmount(text);
+  if (found) { out.amount = found.amount; out.currency = found.currency; }
+
+  const skipRe = /invoice|receipt|فاتورة|order|tel|phone|date|address|total|amount|\d{4,}/i;
+  const nameLine = lines.find((l) => /[A-Za-z]{2,}/.test(l) && !/\d/.test(l) && !skipRe.test(l) && l.split(/\s+/).length >= 2 && l.length <= 60);
+  if (nameLine) {
+    // Strip a "Customer:" / "Name:" label prefix when the OCR kept it.
+    out.customer_name = nameLine.replace(/^(customer|client|name|buyer|recipient|الاسم)\s*[:\-]\s*/i, '').trim() || nameLine;
+  }
+
+  return out;
+}
+
+
+// ─── Bulk CSV order import (admin) ───────────────────────────────────────────
+// Rows are grouped by phone number: one order per unique customer_phone, one
+// line per row. Stock is reserved per order via the same all-or-nothing
+// reserveStock path as manual orders; an order that can't be fully reserved is
+// rolled back (its docs are deleted) and reported as failed.
+// Row shape: { customer_name, customer_phone, city, address, product, size,
+//   color, quantity, unit_price, delivery_fee, discount, notes }
+// `product` matches by SKU first (case-insensitive), then exact name.
+function bulkCreateOrders({ rows }, user) {
+  if (!Array.isArray(rows) || !rows.length) return { _status: 400, error: 'rows array is required' };
+  if (rows.length > 500) return { _status: 400, error: 'Max 500 rows per import' };
+
+  const clean = (v) => (typeof v === 'string' ? v.trim() : v == null ? '' : String(v).trim());
+  const num = (v, dflt = 0) => {
+    const n = Number(clean(v).replace(/[$,]/g, ''));
+    return Number.isFinite(n) && n >= 0 ? n : dflt;
+  };
+
+  const groups = new Map();
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i] || {};
+    const phone = clean(r.customer_phone).replace(/[\s\-/]/g, '');
+    const key = phone || `__norphone_${i}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push({ ...r, _row: i + 1, _phone: phone });
+  }
+
+  const by = user?.email || 'admin';
+  const results = [];
+  let created = 0;
+
+  for (const groupRows of groups.values()) {
+    const first = groupRows[0];
+    const label = clean(first.customer_name) || first._phone || `row ${first._row}`;
+    try {
+      if (!clean(first.customer_name)) throw new Error(`row ${first._row}: customer_name is required`);
+      if (!first._phone) throw new Error(`row ${first._row}: customer_phone is required`);
+
+      const lines = [];
+      for (const r of groupRows) {
+        const ref = clean(r.product);
+        if (!ref) throw new Error(`row ${r._row}: product (SKU or name) is required`);
+        const low = ref.toLowerCase();
+        const product = queryRecords('Product', { limit: 1000 })
+          .find((p) => (p.sku && p.sku.toLowerCase() === low) || p.name.toLowerCase() === low);
+        if (!product) throw new Error(`row ${r._row}: product "${ref}" not found (match by SKU or exact name)`);
+        const qty = Math.max(1, Math.round(num(r.quantity, 1)));
+        const size = clean(r.size);
+        const color = clean(r.color);
+        if (product.has_variants) {
+          if (!findVariant(product.id, size, color)) {
+            throw new Error(`row ${r._row}: variant ${[size, color].filter(Boolean).join('/')} not found for "${ref}"`);
+          }
+        }
+        const unit = clean(r.unit_price) ? num(r.unit_price) : (Number(product.price_usd) || 0);
+        lines.push({ product, qty, size, color, unit, row: r._row });
+      }
+
+      const subtotal = lines.reduce((s, l) => s + l.unit * l.qty, 0);
+      const discount = num(first.discount, 0);
+      const delivery = num(first.delivery_fee, 0);
+      const grand = Math.max(0, subtotal - discount) + delivery;
+
+      let order_number;
+      do {
+        order_number = `MNY-${Math.floor(Math.random() * 90000) + 10000}`;
+      } while (queryRecords('Order', { query: { order_number }, limit: 1 }).length);
+
+      const order = createRecord('Order', {
+        order_number,
+        order_date: nowIso(),
+        customer_name: clean(first.customer_name),
+        customer_phone: first._phone,
+        city: clean(first.city),
+        street: clean(first.address),
+        delivery_fee_usd: delivery,
+        channel: clean(first.channel) || 'bulk_import',
+        payment_method: clean(first.payment_method) || 'Cash on Delivery',
+        subtotal_usd: subtotal,
+        discount_usd: discount,
+        grand_total_usd: grand,
+        order_status: 'New',
+        stock_committed: false,
+        notes: clean(first.notes),
+      });
+
+      for (const l of lines) {
+        createRecord('OrderItem', {
+          order_id: order.id,
+          product_id: l.product.id,
+          product_name: l.product.name,
+          sku: l.product.sku || '',
+          size: l.size,
+          color: l.color,
+          quantity: l.qty,
+          unit_price_usd: l.unit,
+          line_total_usd: l.unit * l.qty,
+        });
+      }
+
+      const reservation = reserveStock({ order_id: order.id }, user);
+      if (!reservation?.ok) {
+        const names = (reservation?.shortages || []).map((s) => s.name).filter(Boolean).join(', ');
+        for (const it of queryRecords('OrderItem', { query: { order_id: order.id } })) deleteRecord('OrderItem', it.id);
+        deleteRecord('Order', order.id);
+        throw new Error(`insufficient stock: ${names || 'unavailable'}`);
+      }
+
+      createRecord('OrderStatusHistory', {
+        order_id: order.id,
+        status: 'New',
+        note: 'Order created via bulk CSV import',
+        changed_by: by,
+        changed_at: nowIso(),
+      });
+      try {
+        createRecord('AuditLog', {
+          action: 'created',
+          entity: 'Order',
+          entity_id: order.id,
+          details: `${order_number} (bulk import)`,
+          user_name: by,
+          created_at: nowIso(),
+        });
+      } catch { /* audit is best-effort */ }
+      created++;
+      results.push({ customer: label, ok: true, order_number, grand_total_usd: grand });
+    } catch (e) {
+      results.push({ customer: label, ok: false, error: e.message });
+    }
+  }
+
+  return { ok: true, created, failed: results.length - created, results };
+}
+
+async function scanInvoice({ image_base64, media_type }) {
+  if (!image_base64 || typeof image_base64 !== 'string' || image_base64.length < 100) {
+    return { _status: 400, error: 'image_base64 is required' };
+  }
+  if (image_base64.length > 14_000_000) {
+    return { _status: 413, error: 'Image too large — please use a photo under ~10MB' };
+  }
+  const mediaType = /^image\/(jpeg|jpg|png|webp)$/.test(media_type || '') ? media_type : 'image/jpeg';
+
+  // Engine 1: Gemini (Google vision LLM) — structured extraction in one call.
+  // Google retires model IDs on a fast cadence (gemini-2.0-flash shut down
+  // 2026-06-01 and started returning instant 404s — that was the "scan fails
+  // immediately" outage). So we walk a fallback chain: on a 404/400 "model
+  // not found" we try the next known-live model instead of dying.
+  const geminiKey = process.env.GEMINI_API_KEY;
+  if (geminiKey) {
+    const preferred = process.env.SCAN_INVOICE_GEMINI_MODEL;
+    const chain = [preferred, 'gemini-2.5-flash', 'gemini-3-flash', 'gemini-3.5-flash', 'gemini-2.5-flash-lite', 'gemini-1.5-flash']
+      .filter(Boolean)
+      .filter((m, i, a) => a.indexOf(m) === i);
+    let lastErr = '';
+    for (const model of chain) {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`;
+      try {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{
+              parts: [
+                { text: INVOICE_SCAN_PROMPT },
+                { inline_data: { mime_type: mediaType, data: image_base64 } },
+              ],
+            }],
+            generationConfig: { temperature: 0, maxOutputTokens: 800, responseMimeType: 'application/json' },
+          }),
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok) {
+          const msg = data?.error?.message || '';
+          console.error('[scanInvoice] gemini error', model, res.status, msg);
+          lastErr = `Gemini error (${res.status})`;
+          // Model retired/unknown → try next in chain; other errors (auth,
+          // quota) won't be fixed by switching models.
+          if (res.status === 404 || (res.status === 400 && /model/i.test(msg))) continue;
+          if (res.status === 401 || res.status === 403) return { _status: 502, error: 'Gemini rejected the API key — check GEMINI_API_KEY in Railway.' };
+          if (res.status === 429) return { _status: 502, error: 'Gemini rate limit hit — wait a minute and retry.' };
+          return { _status: 502, error: `Gemini error (${res.status}). Try again.` };
+        }
+        const content = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        let parsed = null;
+        try { parsed = JSON.parse(content); } catch {
+          const m = content.match(/\{[\s\S]*\}/);
+          if (m) { try { parsed = JSON.parse(m[0]); } catch { /* fall through */ } }
+        }
+        if (!parsed) return { _status: 502, error: 'Gemini returned an unreadable result — try a clearer photo.' };
+        return { ok: true, engine: `gemini:${model}`, fields: sanitizeScanFields(parsed) };
+      } catch (e) {
+        console.error('[scanInvoice] gemini call failed:', model, e?.message);
+        lastErr = 'Could not reach Gemini';
+      }
+    }
+    return { _status: 502, error: `${lastErr} — check GEMINI_API_KEY/model availability.` };
+  }
+
+  // Engine 2: OpenAI-compatible vision LLM endpoint.
+  const apiKey = process.env.SCAN_INVOICE_API_KEY;
+  if (apiKey) {
+    const apiUrl = process.env.SCAN_INVOICE_API_URL || 'https://api.openai.com/v1/chat/completions';
+    const model = process.env.SCAN_INVOICE_MODEL || 'gpt-4o-mini';
+    try {
+      const res = await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          model,
+          temperature: 0,
+          max_tokens: 600,
+          response_format: { type: 'json_object' },
+          messages: [{
+            role: 'user',
+            content: [
+              { type: 'text', text: INVOICE_SCAN_PROMPT },
+              { type: 'image_url', image_url: { url: `data:${mediaType};base64,${image_base64}` } },
+            ],
+          }],
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        console.error('[scanInvoice] vision API error', res.status, data?.error?.message || '');
+        return { _status: 502, error: `Vision service error (${res.status}). Check SCAN_INVOICE_API_KEY/model.` };
+      }
+      const content = data?.choices?.[0]?.message?.content || '';
+      let parsed = null;
+      try { parsed = JSON.parse(content); } catch {
+        const m = content.match(/\{[\s\S]*\}/);
+        if (m) { try { parsed = JSON.parse(m[0]); } catch { /* fall through */ } }
+      }
+      if (!parsed) return { _status: 502, error: 'Vision service returned an unreadable result — try a clearer photo.' };
+      return { ok: true, engine: 'vision', fields: sanitizeScanFields(parsed) };
+    } catch (e) {
+      console.error('[scanInvoice] vision call failed:', e?.message);
+      return { _status: 502, error: 'Could not reach the vision service — try again.' };
+    }
+  }
+
+  // Engine 3: Google Cloud Vision OCR (raw text) + heuristics.
+  const visionKey = process.env.GOOGLE_VISION_API_KEY;
+  if (visionKey) {
+    try {
+      const res = await fetch(`https://vision.googleapis.com/v1/images:annotate?key=${visionKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          requests: [{
+            image: { content: image_base64 },
+            features: [{ type: 'DOCUMENT_TEXT_DETECTION' }],
+          }],
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        console.error('[scanInvoice] vision api error', res.status, data?.error?.message || '');
+        return { _status: 502, error: `Google Vision error (${res.status}). Check GOOGLE_VISION_API_KEY.` };
+      }
+      const text = data?.responses?.[0]?.fullTextAnnotation?.text || '';
+      if (!text.trim()) return { _status: 502, error: 'No text found in this photo — try a sharper, well-lit shot.' };
+      return { ok: true, engine: 'vision-ocr', fields: sanitizeScanFields(parseInvoiceText(text)) };
+    } catch (e) {
+      console.error('[scanInvoice] vision api call failed:', e?.message);
+      return { _status: 502, error: 'Could not reach Google Vision — try again.' };
+    }
+  }
+
+  // Engine 4: local Tesseract OCR + heuristics (no key configured).
+  let Tesseract;
+  try {
+    Tesseract = (await import('tesseract.js')).default;
+  } catch {
+    return { _status: 503, error: 'Invoice scanning is not configured on the server (set GEMINI_API_KEY, SCAN_INVOICE_API_KEY, or GOOGLE_VISION_API_KEY).' };
+  }
+  try {
+    const buf = Buffer.from(image_base64, 'base64');
+    let result;
+    try {
+      result = await Tesseract.recognize(buf, 'eng+ara');
+    } catch {
+      result = await Tesseract.recognize(buf, 'eng');
+    }
+    const text = result?.data?.text || '';
+    return { ok: true, engine: 'ocr', fields: sanitizeScanFields(parseInvoiceText(text)) };
+  } catch (e) {
+    console.error('[scanInvoice] OCR failed:', e?.message);
+    return { _status: 502, error: 'Could not read this photo — try a sharper, well-lit shot.' };
+  }
+}
+
 const REGISTRY = {
   inventoryEngine,
   getFinancialsConfig,
@@ -1460,6 +1858,8 @@ const REGISTRY = {
   setCustomerNotes,
   setCustomerBlock,
   upsertCustomer,
+  scanInvoice,
+  bulkCreateOrders,
 };
 
 // ─── Centralized authorization ───────────────────────────────────────────────
@@ -1495,6 +1895,8 @@ const GUARDS = {
   setCustomerNotes: 'admin',
   setCustomerBlock: 'admin',
   upsertCustomer: 'admin',
+  scanInvoice: 'admin',
+  bulkCreateOrders: 'admin',
   getFinancialsConfig: 'super_admin',
   saveFinancialsConfig: 'super_admin',
   listUsers: 'super_admin',

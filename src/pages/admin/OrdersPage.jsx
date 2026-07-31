@@ -4,7 +4,39 @@ import { useAuthUser } from '@/contexts/AuthUserContext';
 import { base44 } from '@/api/base44Client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import AccessDenied from './AccessDenied';
-import { ShoppingBag, Plus, Search, ChevronRight, X } from 'lucide-react';
+import { ShoppingBag, Plus, Search, ChevronRight, X, FileSpreadsheet, Download, Loader2 } from 'lucide-react';
+
+// ─── Bulk CSV import ─────────────────────────────────────────────────────────
+// Template columns; rows sharing a customer_phone are merged into one order
+// (one line per row). `product` matches by SKU first, then exact name.
+const CSV_TEMPLATE = `customer_name,customer_phone,city,address,product,size,color,quantity,unit_price,delivery_fee,discount,notes
+Omar el Masri,76958533,Tripoli,"مشروع البيال, Block C",TEE-001,M,,2,12,3,0,Leave at door
+Nour Hassan,71958533,Beirut,Hamra Main St,DRESS-004,S,,1,,3,5,
+`;
+
+function parseCsv(text) {
+  const rows = [];
+  let row = [], cell = '', inQ = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQ) {
+      if (c === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else inQ = false; }
+      else cell += c;
+    } else if (c === '"') inQ = true;
+    else if (c === ',') { row.push(cell); cell = ''; }
+    else if (c === '\n' || c === '\r') {
+      if (c === '\r' && text[i + 1] === '\n') i++;
+      row.push(cell); cell = '';
+      if (row.some((v) => v.trim() !== '')) rows.push(row);
+      row = [];
+    } else cell += c;
+  }
+  row.push(cell);
+  if (row.some((v) => v.trim() !== '')) rows.push(row);
+  if (rows.length < 2) return [];
+  const headers = rows[0].map((h) => h.trim().toLowerCase().replace(/^﻿/, ''));
+  return rows.slice(1).map((r) => Object.fromEntries(headers.map((h, i) => [h, (r[i] || '').trim()])));
+}
 import NewOrderModal from '@/components/admin/NewOrderModal';
 import OrderDetailModal from '@/components/admin/OrderDetailModal';
 
@@ -20,6 +52,39 @@ const STATUS_COLORS = {
 export default function OrdersPage() {
   const { currentUser, canAccess } = useAuthUser();
   const qc = useQueryClient();
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState(null);
+  const csvInputRef = React.useRef(null);
+
+  function downloadCsvTemplate() {
+    const blob = new Blob(['﻿' + CSV_TEMPLATE], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'miniyo-orders-template.csv';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
+  async function handleCsvFile(file) {
+    if (!file) return;
+    setImporting(true);
+    setImportResult(null);
+    try {
+      const text = await file.text();
+      const rows = parseCsv(text);
+      if (!rows.length) throw new Error('No data rows found — use the template format.');
+      const res = await base44.functions.invoke('bulkCreateOrders', { rows });
+      const payload = res?.data || res;
+      if (!payload?.ok) throw new Error(payload?.error || 'Import failed');
+      setImportResult(payload);
+      qc.invalidateQueries({ queryKey: ['admin-orders'] });
+    } catch (e) {
+      setImportResult({ created: 0, failed: 1, results: [{ customer: file.name, ok: false, error: e?.data?.data?.error || e?.data?.error || e.message }] });
+    } finally {
+      setImporting(false);
+      if (csvInputRef.current) csvInputRef.current.value = '';
+    }
+  }
 
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
@@ -87,12 +152,43 @@ export default function OrdersPage() {
             </div>
           </div>
           {canAccess('edit_orders') && (
-            <button onClick={() => setShowNew(true)}
-              className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2.5 rounded-xl text-sm font-semibold shadow-sm hover:bg-primary/90 transition-colors">
-              <Plus className="w-4 h-4" /> New Order
-            </button>
+            <div className="flex items-center gap-2">
+              <input ref={csvInputRef} type="file" accept=".csv,text/csv" className="hidden" onChange={e => handleCsvFile(e.target.files?.[0])} />
+              <button onClick={downloadCsvTemplate} title="Download a ready CSV template for bulk order import"
+                className="flex items-center gap-1.5 border border-border bg-card text-foreground px-3 py-2.5 rounded-xl text-sm font-medium hover:bg-muted transition-colors">
+                <Download className="w-4 h-4" /> Template
+              </button>
+              <button onClick={() => csvInputRef.current?.click()} disabled={importing}
+                title="Import orders in bulk from a CSV file"
+                className="flex items-center gap-1.5 border border-border bg-card text-foreground px-3 py-2.5 rounded-xl text-sm font-medium hover:bg-muted transition-colors disabled:opacity-50">
+                {importing ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSpreadsheet className="w-4 h-4" />}
+                {importing ? 'Importing…' : 'Bulk CSV'}
+              </button>
+              <button onClick={() => setShowNew(true)}
+                className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2.5 rounded-xl text-sm font-semibold shadow-sm hover:bg-primary/90 transition-colors">
+                <Plus className="w-4 h-4" /> New Order
+              </button>
+            </div>
           )}
         </div>
+
+        {importResult && (
+          <div className="bg-card border border-border rounded-2xl p-4 space-y-2 text-sm">
+            <div className="flex items-center justify-between">
+              <p className="font-semibold text-foreground">
+                Bulk import: {importResult.created} created{importResult.failed ? `, ${importResult.failed} failed` : ''}
+              </p>
+              <button onClick={() => setImportResult(null)} className="p-1 rounded-lg hover:bg-muted text-muted-foreground"><X className="w-4 h-4" /></button>
+            </div>
+            <ul className="max-h-40 overflow-y-auto space-y-1">
+              {(importResult.results || []).map((r, i) => (
+                <li key={i} className={r.ok ? 'text-green-700' : 'text-destructive'}>
+                  {r.ok ? `✓ ${r.customer} → ${r.order_number} ($${Number(r.grand_total_usd || 0).toFixed(2)})` : `✗ ${r.customer}: ${r.error}`}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {/* Filters */}
         <div className="flex flex-wrap gap-2 bg-card border border-border rounded-2xl p-3">
