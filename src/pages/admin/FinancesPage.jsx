@@ -5,7 +5,7 @@ import { base44 } from '@/api/base44Client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { logAction } from '@/lib/auditLog';
 import AccessDenied from './AccessDenied';
-import { BarChart2, Plus, Pencil, Trash2, X, Receipt, TrendingUp, Tag } from 'lucide-react';
+import { BarChart2, Plus, Pencil, Trash2, X, Receipt, TrendingUp, Tag, Package } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 
 const TABS = ['Summary', 'Projected Revenue', 'Purchases', 'Overhead', 'Promo Codes'];
@@ -14,6 +14,20 @@ const PIE_COLORS = ['#2F5D57', '#7FA99B', '#E8C7C4', '#f59e0b', '#6366f1'];
 const CHANNELS = ['Website', 'Instagram', 'Facebook', 'WhatsApp', 'Other'];
 
 function monthKey(d) { return d ? d.slice(0, 7) : ''; }
+
+// Month keys in LOCAL time. The old code used d.toISOString().slice(0,7) (UTC),
+// which sits a month behind Lebanon time (UTC+3) for the first/last hours of a
+// month — purchases made on the 1st looked like "no purchases this month".
+function localMonthKey(dstr) {
+  if (!dstr) return '';
+  const d = new Date(dstr);
+  if (isNaN(d)) return String(dstr).slice(0, 7);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+function currentLocalMonth() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
 
 // ── Purchase Form Modal ────────────────────────────────────────────────────────
 function PurchaseModal({ purchase, onClose, onSaved, currentUser }) {
@@ -227,7 +241,7 @@ export default function FinancesPage() {
   const { currentUser, canAccess } = useAuthUser();
   const qc = useQueryClient();
   const [tab, setTab] = useState('Summary');
-  const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [selectedMonth, setSelectedMonth] = useState(currentLocalMonth());
   const [editPurchase, setEditPurchase] = useState(null);
   const [showPurchaseModal, setShowPurchaseModal] = useState(false);
   const [editPromo, setEditPromo] = useState(null);
@@ -235,6 +249,7 @@ export default function FinancesPage() {
 
   const { data: orders = [] } = useQuery({ queryKey: ['fin-orders'], queryFn: () => base44.entities.Order.list('-order_date', 500) });
   const { data: purchases = [] } = useQuery({ queryKey: ['fin-purchases'], queryFn: () => base44.entities.Purchase.list('-purchase_date', 300) });
+  const { data: orderItems = [] } = useQuery({ queryKey: ['fin-order-items'], queryFn: () => base44.entities.OrderItem.list('-created_date', 5000) });
   const { data: overheads = [] } = useQuery({ queryKey: ['fin-overhead'], queryFn: () => base44.entities.Overhead.list('-month', 24) });
   const { data: promos = [] } = useQuery({ queryKey: ['fin-promos'], queryFn: () => base44.entities.PromoCode.list('-created_date', 200) });
 
@@ -336,14 +351,55 @@ export default function FinancesPage() {
 
   // Summary calcs
   const monthOrders = useMemo(() => orders.filter(o => {
-    const d = o.order_date || o.created_date;
-    return d && d.slice(0, 7) === selectedMonth && ['Confirmed', 'Packed', 'Out for Delivery', 'Delivered'].includes(o.order_status);
+    return localMonthKey(o.order_date || o.created_date) === selectedMonth && ['Confirmed', 'Packed', 'Out for Delivery', 'Delivered'].includes(o.order_status);
   }), [orders, selectedMonth]);
 
   const monthRevenue = monthOrders.reduce((s, o) => s + (o.grand_total_usd || 0), 0);
-  const monthPurchases = purchases.filter(p => (p.purchase_date || '').slice(0, 7) === selectedMonth).reduce((s, p) => s + (p.amount_usd || 0), 0);
+  const monthPurchases = purchases.filter(p => localMonthKey(p.purchase_date) === selectedMonth).reduce((s, p) => s + (p.amount_usd || 0), 0);
   const overheadTotal = (currentOverhead?.rent_usd || 0) + (currentOverhead?.utilities_usd || 0) + (currentOverhead?.marketing_usd || 0) + (currentOverhead?.other_usd || 0);
-  const netProfit = monthRevenue - monthPurchases - overheadTotal;
+
+  // ── COGS-model monthly P&L ────────────────────────────────────────────────
+  // Profit = what customers paid for products − base cost of what SOLD −
+  // overheads. Purchases (restocking) are a cash log, NOT deducted here —
+  // counting both purchases and unit cost would double-count the same money.
+  const productById = useMemo(() => Object.fromEntries(products.map(p => [p.id, p])), [products]);
+  const DEFAULT_COST_RATIO = 0.6; // same fallback as the projection tab
+  const unitCostOf = (p, fallbackPrice) => {
+    const c = Number(p?.cost_usd) > 0 ? Number(p.cost_usd) : (Number(p?.cost) > 0 ? Number(p.cost) : null);
+    return c != null ? c : fallbackPrice * DEFAULT_COST_RATIO;
+  };
+
+  const monthPnl = useMemo(() => {
+    const ids = new Set(monthOrders.map(o => o.id));
+    const items = orderItems.filter(it => ids.has(it.order_id));
+    let units = 0, productSales = 0, cogs = 0, itemsEstimated = 0;
+    const byProduct = new Map();
+    for (const it of items) {
+      const qty = Number(it.quantity) || 0;
+      const price = Number(it.unit_price_usd) || 0;
+      const line = Number(it.line_total_usd) || qty * price;
+      const p = productById[it.product_id];
+      const hadCost = !!(p && (Number(p.cost_usd) > 0 || Number(p.cost) > 0));
+      if (!hadCost) itemsEstimated += qty;
+      const cost = unitCostOf(p, price);
+      units += qty;
+      productSales += line;
+      cogs += cost * qty;
+      const key = it.product_name || p?.name || '(unknown)';
+      const agg = byProduct.get(key) || { name: key, qty: 0, sales: 0, cost: 0 };
+      agg.qty += qty; agg.sales += line; agg.cost += cost * qty;
+      byProduct.set(key, agg);
+    }
+    const discounts = monthOrders.reduce((s, o) => s + (Number(o.discount_usd) || 0), 0);
+    const deliveryCollected = monthOrders.reduce((s, o) => s + (Number(o.delivery_fee_usd) || 0), 0);
+    const netProductSales = Math.max(0, productSales - discounts);
+    const gross = netProductSales - cogs;
+    const top = [...byProduct.values()].sort((a, b) => b.qty - a.qty).slice(0, 5)
+      .map(t => ({ ...t, margin: t.sales - t.cost }));
+    return { units, productSales, discounts, deliveryCollected, netProductSales, cogs, gross, top, itemsEstimated };
+  }, [monthOrders, orderItems, productById]);
+
+  const netProfit = monthPnl.gross + monthPnl.deliveryCollected - overheadTotal;
 
   // Chart data — last 6 months revenue
   const last6 = useMemo(() => {
@@ -351,8 +407,8 @@ export default function FinancesPage() {
     for (let i = 5; i >= 0; i--) {
       const d = new Date();
       d.setMonth(d.getMonth() - i);
-      const key = d.toISOString().slice(0, 7);
-      const rev = orders.filter(o => (o.order_date || o.created_date || '').slice(0, 7) === key && ['Confirmed','Packed','Out for Delivery','Delivered'].includes(o.order_status)).reduce((s, o) => s + (o.grand_total_usd || 0), 0);
+      const key = localMonthKey(d.toISOString());
+      const rev = orders.filter(o => localMonthKey(o.order_date || o.created_date) === key && ['Confirmed','Packed','Out for Delivery','Delivered'].includes(o.order_status)).reduce((s, o) => s + (o.grand_total_usd || 0), 0);
       months.push({ month: key.slice(5), revenue: parseFloat(rev.toFixed(2)) });
     }
     return months;
@@ -361,7 +417,7 @@ export default function FinancesPage() {
   // Purchase by category donut
   const byCategory = useMemo(() => {
     const map = {};
-    purchases.filter(p => (p.purchase_date || '').slice(0, 7) === selectedMonth).forEach(p => {
+    purchases.filter(p => localMonthKey(p.purchase_date) === selectedMonth).forEach(p => {
       map[p.category || 'Other'] = (map[p.category || 'Other'] || 0) + (p.amount_usd || 0);
     });
     return Object.entries(map).map(([name, value]) => ({ name, value: parseFloat(value.toFixed(2)) }));
@@ -370,7 +426,7 @@ export default function FinancesPage() {
   // Orders by channel
   const byChannel = useMemo(() => {
     const map = {};
-    orders.filter(o => (o.order_date || o.created_date || '').slice(0, 7) === selectedMonth).forEach(o => {
+    orders.filter(o => localMonthKey(o.order_date || o.created_date) === selectedMonth).forEach(o => {
       const ch = o.channel || 'Website';
       map[ch] = (map[ch] || 0) + 1;
     });
@@ -423,21 +479,80 @@ export default function FinancesPage() {
         {/* SUMMARY */}
         {tab === 'Summary' && (
           <div className="space-y-6">
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
               {[
-                { label: 'Revenue', value: `$${monthRevenue.toFixed(2)}`, color: 'bg-green-50 text-green-700', icon: TrendingUp },
-                { label: 'Purchases', value: `$${monthPurchases.toFixed(2)}`, color: 'bg-amber-50 text-amber-700', icon: Receipt },
-                { label: 'Overhead', value: `$${overheadTotal.toFixed(2)}`, color: 'bg-blue-50 text-blue-700', icon: BarChart2 },
-                { label: 'Est. Net Profit', value: `$${netProfit.toFixed(2)}`, color: netProfit >= 0 ? 'bg-primary/10 text-primary' : 'bg-destructive/10 text-destructive', icon: TrendingUp },
-              ].map(({ label, value, color, icon: Icon }) => (
+                { label: 'Product Sales', value: `$${monthPnl.netProductSales.toFixed(2)}`, sub: monthPnl.discounts > 0 ? `after $${monthPnl.discounts.toFixed(2)} discounts` : null, color: 'bg-green-50 text-green-700', icon: TrendingUp },
+                { label: 'Units Sold', value: monthPnl.units, sub: `${monthOrders.length} orders`, color: 'bg-sky-50 text-sky-700', icon: Package },
+                { label: 'Base Cost (COGS)', value: `$${monthPnl.cogs.toFixed(2)}`, sub: monthPnl.itemsEstimated > 0 ? `${monthPnl.itemsEstimated} unit(s) at estimated cost` : null, color: 'bg-amber-50 text-amber-700', icon: Receipt },
+                { label: 'Gross Profit', value: `$${monthPnl.gross.toFixed(2)}`, sub: monthPnl.netProductSales > 0 ? `${((monthPnl.gross / monthPnl.netProductSales) * 100).toFixed(1)}% margin` : null, color: 'bg-blue-50 text-blue-700', icon: BarChart2 },
+                { label: 'Expenses', value: `$${overheadTotal.toFixed(2)}`, sub: 'rent · utilities · ads · other', color: 'bg-violet-50 text-violet-700', icon: Tag },
+                { label: 'Net Profit', value: `$${netProfit.toFixed(2)}`, sub: `+ $${monthPnl.deliveryCollected.toFixed(2)} delivery fees in`, color: netProfit >= 0 ? 'bg-primary/10 text-primary' : 'bg-destructive/10 text-destructive', icon: TrendingUp },
+              ].map(({ label, value, sub, color, icon: Icon }) => (
                 <div key={label} className="bg-card border border-border rounded-2xl p-5 shadow-sm">
                   <div className={`w-9 h-9 rounded-xl flex items-center justify-center mb-3 ${color}`}>
                     <Icon className="w-4 h-4" />
                   </div>
                   <p className="text-xs text-muted-foreground mb-1">{label}</p>
                   <p className="text-2xl font-heading font-bold text-foreground">{value}</p>
+                  {sub && <p className="text-[11px] text-muted-foreground mt-0.5">{sub}</p>}
                 </div>
               ))}
+            </div>
+
+            <div className="grid lg:grid-cols-2 gap-5">
+              {/* P&L breakdown */}
+              <div className="bg-card border border-border rounded-2xl p-5 shadow-sm">
+                <h3 className="font-heading font-semibold text-foreground mb-4">Profit Breakdown (this month)</h3>
+                <dl className="space-y-2 text-sm">
+                  {[
+                    ['Product sales (lines)', monthPnl.productSales, false],
+                    ['Order discounts', -monthPnl.discounts, false],
+                    ['Base cost of items sold (COGS)', -monthPnl.cogs, false],
+                    ['Gross profit', monthPnl.gross, true],
+                    ['Delivery fees collected', monthPnl.deliveryCollected, false],
+                    ['Expenses / overhead', -overheadTotal, false],
+                    ['Net profit', netProfit, true],
+                  ].map(([label, val, bold]) => (
+                    <div key={label} className={`flex justify-between ${bold ? 'pt-2 border-t border-border font-semibold text-foreground' : 'text-muted-foreground'}`}>
+                      <dt>{label}</dt>
+                      <dd className={val < 0 ? 'text-destructive' : ''}>{val < 0 ? `−$${Math.abs(val).toFixed(2)}` : `$${val.toFixed(2)}`}</dd>
+                    </div>
+                  ))}
+                </dl>
+                <p className="text-[11px] text-muted-foreground mt-4">
+                  Restocking purchases this month: <b>${monthPurchases.toFixed(2)}</b> — tracked as cash out on the Purchases tab, deliberately NOT deducted here (unit costs already account for the goods sold).
+                </p>
+              </div>
+
+              {/* Top sellers */}
+              <div className="bg-card border border-border rounded-2xl p-5 shadow-sm">
+                <h3 className="font-heading font-semibold text-foreground mb-4">Top Sellers (this month)</h3>
+                {monthPnl.top.length === 0
+                  ? <p className="text-sm text-muted-foreground">No items sold this month.</p>
+                  : (
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-left text-xs text-muted-foreground border-b border-border">
+                          <th className="pb-2 font-medium">Product</th>
+                          <th className="pb-2 font-medium text-right">Qty</th>
+                          <th className="pb-2 font-medium text-right">Sales</th>
+                          <th className="pb-2 font-medium text-right">Margin</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border/50">
+                        {monthPnl.top.map(t => (
+                          <tr key={t.name}>
+                            <td className="py-2 pr-2 font-medium text-foreground truncate max-w-[180px]">{t.name}</td>
+                            <td className="py-2 text-right">{t.qty}</td>
+                            <td className="py-2 text-right">${t.sales.toFixed(2)}</td>
+                            <td className={`py-2 text-right ${t.margin >= 0 ? 'text-green-700' : 'text-destructive'}`}>${t.margin.toFixed(2)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )
+                }
+              </div>
             </div>
 
             <div className="grid lg:grid-cols-3 gap-5">
