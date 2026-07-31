@@ -320,6 +320,177 @@ function releaseStock({ order_id }, user) {
   return { ok: true, movements_created: runRelease() };
 }
 
+// ─── Edit order items (admin) ────────────────────────────────────────────────
+// Replaces an order's line items after placement (size/variant swaps, quantity
+// changes, removals, additions) and moves inventory atomically to match.
+// Mode depends on how far the order's stock has progressed:
+//   • stock_reserved (New, held)      → drop old holds, hold the new lines.
+//   • stock_committed (Confirmed+)    → return old units, sell the new lines.
+//   • neither (legacy in-flight)      → validate only; confirm commits later.
+// Everything runs inside ONE db.transaction: the release of current lines and
+// the availability check + application of the new lines see one consistent
+// snapshot, and ANY shortage throws — rolling back the release too, so an edit
+// either fully applies or leaves the order completely untouched (never half).
+// Order docs (OrderItem rows + Order totals) are updated in the same
+// transaction; discount and delivery fee are preserved as originally set.
+const ORDER_EDIT_LOCKED_STATUSES = ['Out for Delivery', 'Delivered', 'Cancelled'];
+
+function editOrderItems({ order_id, items: newItems, note }, user) {
+  const o = queryRecords('Order', { query: { id: order_id }, limit: 1 })[0];
+  if (!o) return { _status: 404, error: 'Order not found' };
+  if (ORDER_EDIT_LOCKED_STATUSES.includes(o.order_status)) {
+    return { _status: 409, ok: false, error: `Orders that are ${o.order_status} can no longer be edited` };
+  }
+  if (!Array.isArray(newItems) || newItems.length === 0) {
+    return { _status: 400, error: 'items must be a non-empty array (use Cancel Order to remove everything)' };
+  }
+  for (const it of newItems) {
+    if (!it.product_id) return { _status: 400, error: 'Every item needs a product_id' };
+    const q = Number(it.quantity);
+    if (!Number.isInteger(q) || q < 1 || q > 99) {
+      return { _status: 400, error: 'Every item needs an integer quantity between 1 and 99' };
+    }
+  }
+
+  const orderLabel = o.order_number || order_id;
+  const reason = `Order ${orderLabel} edited`;
+  const by = user?.email || 'system';
+  const mode = o.stock_committed ? 'commit' : o.stock_reserved ? 'reserve' : 'none';
+  const currentItems = queryRecords('OrderItem', { query: { order_id } });
+
+  const runEdit = db.transaction(() => {
+    const movements = [];
+
+    // Pass 1 — release every current line (undo its stock effect).
+    for (const item of currentItems) {
+      const product = queryRecords('Product', { query: { id: item.product_id }, limit: 1 })[0];
+      if (!product) continue;
+      const isVariant = isVariantLine(product, item);
+      const target = isVariant ? findVariant(item.product_id, item.size, item.color) : product;
+      if (!target) continue;
+      if (mode === 'commit') {
+        const prev = isVariant ? (target.qty_on_hand || 0) : (target.stock_quantity || 0);
+        const next = prev + item.quantity;
+        updateRecord(isVariant ? 'ProductVariant' : 'Product', target.id, isVariant ? { qty_on_hand: next } : { stock_quantity: next });
+        movements.push({ product_id: item.product_id, variant_sku: isVariant ? target.variant_sku : undefined, type: 'Returned', quantity: item.quantity, previous_stock: prev, new_stock: next, reason, created_at: nowIso(), created_by: by });
+      } else if (mode === 'reserve') {
+        const reservedPrev = target.qty_reserved || 0;
+        const reservedNext = Math.max(0, reservedPrev - item.quantity);
+        updateRecord(isVariant ? 'ProductVariant' : 'Product', target.id, { qty_reserved: reservedNext });
+        const availPrev = (isVariant ? (target.qty_on_hand || 0) : (target.stock_quantity || 0)) - reservedPrev;
+        movements.push({ product_id: item.product_id, variant_sku: isVariant ? target.variant_sku : undefined, type: 'Released', quantity: item.quantity, previous_stock: availPrev, new_stock: availPrev + item.quantity, reason, created_at: nowIso(), created_by: by });
+      }
+    }
+
+    // Pass 2 — validate every NEW line against post-release availability.
+    const plan = [];
+    const shortages = [];
+    for (const it of newItems) {
+      const qty = Number(it.quantity);
+      const product = queryRecords('Product', { query: { id: it.product_id }, limit: 1 })[0];
+      if (!product) {
+        shortages.push({ name: it.product_name || it.product_id, available: 0, needed: qty, reason: 'Product not found' });
+        continue;
+      }
+      const line = { size: it.size || '', color: it.color || '' };
+      if (isVariantLine(product, line)) {
+        const variant = findVariant(it.product_id, line.size, line.color);
+        if (!variant) {
+          shortages.push({ name: product.name, available: 0, needed: qty, reason: `Variant not found (${[line.size, line.color].filter(Boolean).join(', ')})` });
+          continue;
+        }
+        const available = (variant.qty_on_hand || 0) - (variant.qty_reserved || 0);
+        if (available < qty) {
+          shortages.push({ name: `${product.name} (${[line.size, line.color].filter(Boolean).join(', ')})`, available, needed: qty });
+        } else {
+          plan.push({ kind: 'variant', target: variant, product, line, qty, available });
+        }
+      } else {
+        const available = (product.stock_quantity || 0) - (product.qty_reserved || 0);
+        if (available < qty) {
+          shortages.push({ name: product.name, available, needed: qty });
+        } else {
+          plan.push({ kind: 'product', target: product, product, line, qty, available });
+        }
+      }
+    }
+    if (shortages.length) {
+      const err = new Error('Insufficient stock for edited order');
+      err._shortages = shortages;
+      throw err; // rolls back — original order + stock fully intact
+    }
+
+    // Pass 3 — apply the new lines' stock effect (mirror-image of pass 1).
+    for (const p of plan) {
+      const isVariant = p.kind === 'variant';
+      if (mode === 'commit') {
+        const prev = isVariant ? (p.target.qty_on_hand || 0) : (p.target.stock_quantity || 0);
+        const next = prev - p.qty; // availability was validated, so prev >= qty
+        updateRecord(isVariant ? 'ProductVariant' : 'Product', p.target.id, isVariant ? { qty_on_hand: next } : { stock_quantity: next });
+        movements.push({ product_id: p.product.id, variant_sku: isVariant ? p.target.variant_sku : undefined, type: 'Sold', quantity: -p.qty, previous_stock: prev, new_stock: next, reason, created_at: nowIso(), created_by: by });
+      } else if (mode === 'reserve') {
+        const reservedPrev = p.target.qty_reserved || 0;
+        updateRecord(isVariant ? 'ProductVariant' : 'Product', p.target.id, { qty_reserved: reservedPrev + p.qty });
+        movements.push({ product_id: p.product.id, variant_sku: isVariant ? p.target.variant_sku : undefined, type: 'Reserved', quantity: -p.qty, previous_stock: p.available, new_stock: p.available - p.qty, reason, created_at: nowIso(), created_by: by });
+      }
+    }
+    if (movements.length) bulkCreate('InventoryMovement', movements);
+
+    // Replace the OrderItem docs (snapshot fields, same shape as checkout).
+    for (const old of currentItems) deleteRecord('OrderItem', old.id);
+    const itemDocs = newItems.map((it) => {
+      const p = plan.find((x) => x.product.id === it.product_id
+        && (x.line.size || '') === (it.size || '') && (x.line.color || '') === (it.color || ''));
+      const unit = Number.isFinite(Number(it.unit_price_usd)) && Number(it.unit_price_usd) >= 0
+        ? Number(it.unit_price_usd)
+        : Number(p?.product.price_usd || 0);
+      const qty = Number(it.quantity);
+      return {
+        order_id,
+        product_id: it.product_id,
+        product_name: p?.product.name || it.product_name || '',
+        sku: p?.product.sku || it.sku || '',
+        size: it.size || '',
+        color: it.color || '',
+        quantity: qty,
+        unit_price_usd: unit,
+        line_total_usd: unit * qty,
+      };
+    });
+    bulkCreate('OrderItem', itemDocs);
+
+    // Recalculate totals. Discount and delivery fee stay as originally agreed.
+    const subtotal = itemDocs.reduce((s, d) => s + d.line_total_usd, 0);
+    const discount = Number(o.discount_usd || 0);
+    const delivery = Number(o.delivery_fee_usd || 0);
+    const grand = Math.max(0, subtotal - discount) + delivery;
+    updateRecord('Order', order_id, { subtotal_usd: subtotal, grand_total_usd: grand });
+
+    return { movements: movements.length, items: itemDocs.length, subtotal_usd: subtotal, grand_total_usd: grand };
+  });
+
+  try {
+    const result = runEdit();
+    invalidateDashboardCache();
+    try {
+      createRecord('AuditLog', {
+        action: 'order_items_edited',
+        entity: 'Order',
+        entity_id: order_id,
+        details: `${orderLabel}: ${currentItems.length} → ${result.items} line(s), total $${Number(o.grand_total_usd || 0).toFixed(2)} → $${result.grand_total_usd.toFixed(2)}${note ? ` · ${String(note).slice(0, 200)}` : ''}`,
+        user_name: by,
+        created_at: nowIso(),
+      });
+    } catch (auditErr) {
+      console.error('[audit] order edit log failed:', auditErr?.message);
+    }
+    return { ok: true, ...result };
+  } catch (e) {
+    if (e && e._shortages) return { _status: 409, ok: false, shortages: e._shortages };
+    throw e;
+  }
+}
+
 function manualAdjust({ product_id, variant_sku, new_qty, movement_type, reason }, user) {
   if (!['Received', 'Correction', 'Damaged'].includes(movement_type)) {
     return { _status: 400, error: 'Invalid movement_type. Use Received, Correction, or Damaged.' };
@@ -355,19 +526,20 @@ function manualAdjust({ product_id, variant_sku, new_qty, movement_type, reason 
 // The engine itself is registered as 'public' (guest checkout must reserve at
 // placement without a login), so per-action authorization is enforced here:
 //   check_stock / reserve_stock : public (read + placement-time hold)
-//   commit_stock / release_stock / manual_adjust : admin only
+//   commit_stock / release_stock / manual_adjust / edit_order_items : admin only
 // This is STRICTER than before for the mutating actions (they were previously
 // reachable by any authenticated customer under the 'auth' guard).
 function inventoryEngine(body, user) {
   const { action } = body;
   if (action === 'check_stock') return checkStock(body);
   if (action === 'reserve_stock') return reserveStock(body, user);
-  if (action === 'commit_stock' || action === 'release_stock' || action === 'manual_adjust') {
+  if (action === 'commit_stock' || action === 'release_stock' || action === 'manual_adjust' || action === 'edit_order_items') {
     if (!isAdmin(user)) {
       return { _status: user ? 403 : 401, error: user ? 'Forbidden: admin access required' : 'Authentication required' };
     }
     if (action === 'commit_stock') return commitStock(body, user);
     if (action === 'release_stock') return releaseStock(body, user);
+    if (action === 'edit_order_items') return editOrderItems(body, user);
     return manualAdjust(body, user);
   }
   return { _status: 400, error: 'Unknown action' };

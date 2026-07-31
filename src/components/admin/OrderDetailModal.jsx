@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { base44 } from '@/api/base44Client';
-import { useQuery } from '@tanstack/react-query';
-import { X, Printer, MessageCircle, ChevronRight, Gift, Star, TicketPercent, Copy } from 'lucide-react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { X, Printer, MessageCircle, ChevronRight, Gift, Star, TicketPercent, Copy, Pencil, Plus, Minus, Trash2 } from 'lucide-react';
 import { logAction } from '@/lib/auditLog';
-import { commitStock, releaseStock } from '@/lib/inventory';
+import { commitStock, releaseStock, editOrderItems } from '@/lib/inventory';
 import { whatsappLink } from '@/lib/adminExport';
+import { isDiscountLive, getEffectiveUnitPrice } from '@/lib/discounts';
+import { availableQty } from '@/lib/availableQty';
 import { normalizeImage, imageSrc, IMAGE_PLACEHOLDER, handleImageError } from '@/lib/imageFraming';
 
 // Resolve a small thumbnail URL for a product using the app's canonical image
@@ -31,12 +33,24 @@ const STATUS_COLORS = {
 };
 
 export default function OrderDetailModal({ order, onClose, onUpdated, currentUser }) {
+  const queryClient = useQueryClient();
   const [updating, setUpdating] = useState(false);
   const [err, setErr] = useState('');
   const [reviewToast, setReviewToast] = useState(false);
   const [thanksCode, setThanksCode] = useState('');
   const [thanksErr, setThanksErr] = useState('');
   const [creatingCode, setCreatingCode] = useState(false);
+
+  // ── Edit-items mode ──────────────────────────────────────────────────────
+  // Editable while the order is New / Confirmed / Packed. Locked from
+  // 'Out for Delivery' on (goods physically moving) and when Cancelled.
+  const canEdit = ['New', 'Confirmed', 'Packed'].includes(order.order_status);
+  const [editing, setEditing] = useState(false);
+  const [editItems, setEditItems] = useState([]);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editErr, setEditErr] = useState('');
+  const [editShortages, setEditShortages] = useState([]);
+  const [addSearch, setAddSearch] = useState('');
 
   const { data: items = [] } = useQuery({
     queryKey: ['order-items', order.id],
@@ -68,6 +82,126 @@ export default function OrderDetailModal({ order, onClose, onUpdated, currentUse
 
   const currentIdx = STATUS_FLOW.indexOf(order.order_status);
   const nextStatus = currentIdx >= 0 && currentIdx < STATUS_FLOW.length - 1 ? STATUS_FLOW[currentIdx + 1] : null;
+
+  // ── Edit-mode data (products + variants + live discounts, only when editing) ──
+  const { data: allProducts = [] } = useQuery({
+    queryKey: ['order-edit-products'],
+    queryFn: () => base44.entities.Product.filter({ status: 'Active' }, 'name', 500),
+    enabled: editing,
+  });
+  const { data: allVariants = [] } = useQuery({
+    queryKey: ['order-edit-variants'],
+    queryFn: () => base44.entities.ProductVariant.list('-created_date', 2000),
+    enabled: editing,
+  });
+  const { data: editDiscounts = [] } = useQuery({
+    queryKey: ['active-discounts'],
+    queryFn: () => base44.entities.Discount.filter({ is_active: true }, '-created_date', 100),
+    enabled: editing,
+    staleTime: 60_000,
+  });
+
+  const editVariantsByProduct = {};
+  for (const v of allVariants) {
+    if (!editVariantsByProduct[v.product_id]) editVariantsByProduct[v.product_id] = [];
+    editVariantsByProduct[v.product_id].push(v);
+  }
+  const editProductsById = {};
+  for (const p of allProducts) editProductsById[p.id] = p;
+
+  function startEditing() {
+    setEditItems(items.map(it => ({
+      key: it.id,
+      product_id: it.product_id,
+      product_name: it.product_name,
+      sku: it.sku || '',
+      size: it.size || '',
+      color: it.color || '',
+      quantity: it.quantity,
+      unit_price_usd: Number(it.unit_price_usd || 0),
+    })));
+    setEditErr('');
+    setEditShortages([]);
+    setAddSearch('');
+    setEditing(true);
+  }
+
+  function patchEditItem(key, patch) {
+    setEditItems(prev => prev.map(it => {
+      if (it.key !== key) return it;
+      const next = { ...it, ...patch };
+      // Switching variant resets nothing else; price stays as agreed on the order.
+      return next;
+    }));
+  }
+
+  function addProductToEdit(product) {
+    const pvs = editVariantsByProduct[product.id] || [];
+    const basePrice = parseFloat(pvs[0]?.price_usd || product.price_usd) || 0;
+    const effective = getEffectiveUnitPrice(editDiscounts.filter(isDiscountLive), product, basePrice);
+    const first = pvs[0];
+    setEditItems(prev => [...prev, {
+      key: `new-${Date.now()}-${Math.random()}`,
+      product_id: product.id,
+      product_name: product.name,
+      sku: product.sku || '',
+      size: first?.size || '',
+      color: first?.color || '',
+      quantity: 1,
+      unit_price_usd: effective,
+    }]);
+    setAddSearch('');
+  }
+
+  const editSubtotal = editItems.reduce((s, it) => s + it.unit_price_usd * it.quantity, 0);
+  const editGrand = Math.max(0, editSubtotal - Number(order.discount_usd || 0)) + Number(order.delivery_fee_usd || 0);
+
+  async function saveEdit() {
+    setEditErr('');
+    setEditShortages([]);
+    if (editItems.length === 0) {
+      setEditErr('An order needs at least one item — use Cancel Order instead.');
+      return;
+    }
+    for (const it of editItems) {
+      const product = editProductsById[it.product_id] || productsById[it.product_id];
+      const pvs = editVariantsByProduct[it.product_id] || [];
+      if (product?.has_variants && pvs.length > 0 && !pvs.some(v => (v.size || '') === (it.size || '') && (v.color || '') === (it.color || ''))) {
+        setEditErr(`Pick a valid variant for "${it.product_name}".`);
+        return;
+      }
+      if (!Number.isInteger(it.quantity) || it.quantity < 1) {
+        setEditErr(`Quantity for "${it.product_name}" must be at least 1.`);
+        return;
+      }
+    }
+    setEditSaving(true);
+    try {
+      const res = await editOrderItems(order.id, editItems.map(it => ({
+        product_id: it.product_id,
+        size: it.size || '',
+        color: it.color || '',
+        quantity: it.quantity,
+        unit_price_usd: it.unit_price_usd,
+      })));
+      if (!res || res.ok !== true) {
+        setEditShortages(res?.shortages || []);
+        setEditErr(res?.error || 'Not enough stock for this edit — nothing was changed.');
+        return;
+      }
+      await logAction({ action: 'order_items_edited', entity: 'Order', entityId: order.id, userName: currentUser?.email });
+      queryClient.invalidateQueries({ queryKey: ['order-items', order.id] });
+      queryClient.invalidateQueries({ queryKey: ['orders'] });
+      setEditing(false);
+      onUpdated({ ...order, subtotal_usd: res.subtotal_usd, grand_total_usd: res.grand_total_usd });
+    } catch (e) {
+      const data = e?.data?.data || e?.data || {};
+      setEditShortages(data.shortages || []);
+      setEditErr(data.error || e.message || 'Edit failed — nothing was changed.');
+    } finally {
+      setEditSaving(false);
+    }
+  }
 
   async function changeStatus(newStatus) {
     setUpdating(true);
@@ -234,13 +368,13 @@ export default function OrderDetailModal({ order, onClose, onUpdated, currentUse
             </div>
             <div className="flex gap-2 mt-3">
               {nextStatus && order.order_status !== 'Cancelled' && (
-                <button onClick={() => changeStatus(nextStatus)} disabled={updating}
+                <button onClick={() => changeStatus(nextStatus)} disabled={updating || editing}
                   className="px-4 py-2 rounded-xl bg-primary text-primary-foreground text-sm font-semibold disabled:opacity-50 hover:bg-primary/90">
                   {updating ? '…' : `Mark as ${nextStatus}`}
                 </button>
               )}
               {order.order_status !== 'Cancelled' && order.order_status !== 'Delivered' && (
-                <button onClick={() => changeStatus('Cancelled')} disabled={updating}
+                <button onClick={() => changeStatus('Cancelled')} disabled={updating || editing}
                   className="px-4 py-2 rounded-xl border border-destructive text-destructive text-sm font-medium disabled:opacity-50 hover:bg-destructive/10">
                   Cancel Order
                 </button>
@@ -280,7 +414,17 @@ export default function OrderDetailModal({ order, onClose, onUpdated, currentUse
 
           {/* Items */}
           <div>
-            <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Items</h4>
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Items</h4>
+              {canEdit && !editing && (
+                <button onClick={startEditing}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-muted text-xs font-medium hover:bg-muted/80 text-foreground">
+                  <Pencil className="w-3.5 h-3.5" /> Edit Items
+                </button>
+              )}
+            </div>
+
+            {!editing && (
             <div className="bg-muted/30 rounded-xl overflow-hidden">
               {items.map((item, i) => {
                 const product = productsById[item.product_id];
@@ -293,7 +437,7 @@ export default function OrderDetailModal({ order, onClose, onUpdated, currentUse
                     onError={handleImageError}
                     alt={item.product_name || ''}
                     className="w-11 h-11 rounded-lg object-cover bg-muted border border-border shrink-0"
-                  />
+                    />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-foreground">{item.product_name}</p>
                     <p className="text-xs text-muted-foreground">{[item.size, item.color].filter(Boolean).join(' / ')} {sku && `· ${sku}`}</p>
@@ -304,6 +448,132 @@ export default function OrderDetailModal({ order, onClose, onUpdated, currentUse
                 );
               })}
             </div>
+            )}
+
+            {editing && (
+              <div className="space-y-3">
+                <div className="bg-muted/30 rounded-xl overflow-hidden divide-y divide-border">
+                  {editItems.map((it) => {
+                    const product = editProductsById[it.product_id] || productsById[it.product_id];
+                    const pvs = editVariantsByProduct[it.product_id] || [];
+                    const hasVariants = pvs.length > 0;
+                    const selVariant = pvs.find(v => (v.size || '') === (it.size || '') && (v.color || '') === (it.color || ''));
+                    return (
+                      <div key={it.key} className="px-4 py-3 space-y-2">
+                        <div className="flex items-center gap-3">
+                          <img src={productThumbSrc(product) || IMAGE_PLACEHOLDER} onError={handleImageError} alt=""
+                            className="w-10 h-10 rounded-lg object-cover bg-muted border border-border shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-foreground truncate">{it.product_name}</p>
+                            <p className="text-xs text-muted-foreground">${it.unit_price_usd.toFixed(2)} each</p>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <button onClick={() => patchEditItem(it.key, { quantity: Math.max(1, it.quantity - 1) })}
+                              className="p-1 rounded-lg bg-muted hover:bg-muted/80"><Minus className="w-3.5 h-3.5" /></button>
+                            <span className="w-7 text-center text-sm font-semibold">{it.quantity}</span>
+                            <button onClick={() => patchEditItem(it.key, { quantity: Math.min(99, it.quantity + 1) })}
+                              className="p-1 rounded-lg bg-muted hover:bg-muted/80"><Plus className="w-3.5 h-3.5" /></button>
+                          </div>
+                          <span className="text-sm font-semibold w-16 text-right">${(it.unit_price_usd * it.quantity).toFixed(2)}</span>
+                          <button onClick={() => setEditItems(prev => prev.filter(x => x.key !== it.key))}
+                            className="p-1.5 rounded-lg text-destructive hover:bg-destructive/10"><Trash2 className="w-4 h-4" /></button>
+                        </div>
+                        {hasVariants && (
+                          <div className="flex items-center gap-2 pl-1">
+                            <select
+                              value={`${it.size}|||${it.color}`}
+                              onChange={e => {
+                                const [size, color] = e.target.value.split('|||');
+                                patchEditItem(it.key, { size, color });
+                              }}
+                              className="text-xs border border-border rounded-lg px-2 py-1.5 bg-card text-foreground max-w-full">
+                              {pvs.map(v => (
+                                <option key={v.id} value={`${v.size || ''}|||${v.color || ''}`}>
+                                  {[v.size, v.color].filter(Boolean).join(' / ') || 'Default'} — {availableQty(v) + (selVariant && v.id === selVariant.id ? it.quantity : 0)} available
+                                </option>
+                              ))}
+                            </select>
+                            {selVariant && availableQty(selVariant) === 0 && it.quantity > 0 && (
+                              <span className="text-xs text-amber-600">only the {it.quantity} on this order in stock</span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {editItems.length === 0 && (
+                    <p className="px-4 py-6 text-sm text-muted-foreground text-center">All items removed — add one below, or cancel the order instead.</p>
+                  )}
+                </div>
+
+                {/* Add item */}
+                <div className="relative">
+                  <input
+                    value={addSearch}
+                    onChange={e => setAddSearch(e.target.value)}
+                    placeholder="Search products to add…"
+                    className="w-full text-sm border border-border rounded-xl px-3 py-2 bg-card text-foreground"
+                  />
+                  {addSearch.trim() && (
+                    <div className="absolute z-10 left-0 right-0 mt-1 bg-card border border-border rounded-xl shadow-lg max-h-48 overflow-y-auto">
+                      {allProducts
+                        .filter(p => p.name?.toLowerCase().includes(addSearch.trim().toLowerCase()) || (p.sku || '').toLowerCase().includes(addSearch.trim().toLowerCase()))
+                        .filter(p => !editItems.some(it => it.product_id === p.id))
+                        .slice(0, 8)
+                        .map(p => (
+                          <button key={p.id} onClick={() => addProductToEdit(p)}
+                            className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-muted/50 text-sm">
+                            <img src={productThumbSrc(p) || IMAGE_PLACEHOLDER} onError={handleImageError} alt=""
+                              className="w-7 h-7 rounded object-cover bg-muted border border-border" />
+                            <span className="flex-1 truncate">{p.name}</span>
+                            <span className="text-xs text-muted-foreground">${Number(p.price_usd || 0).toFixed(2)}</span>
+                          </button>
+                        ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Live totals preview */}
+                <div className="bg-primary/5 border border-primary/20 rounded-xl p-3 space-y-1 text-sm">
+                  <div className="flex justify-between"><span className="text-muted-foreground">New subtotal</span><span>${editSubtotal.toFixed(2)}</span></div>
+                  {order.discount_usd > 0 && <div className="flex justify-between text-green-700"><span>Discount (kept)</span><span>-${Number(order.discount_usd).toFixed(2)}</span></div>}
+                  <div className="flex justify-between"><span className="text-muted-foreground">Delivery (kept)</span><span>${Number(order.delivery_fee_usd || 0).toFixed(2)}</span></div>
+                  <div className="flex justify-between font-bold border-t border-border pt-1.5">
+                    <span>New total</span>
+                    <span className="text-primary">${editGrand.toFixed(2)}
+                      {Math.abs(editGrand - Number(order.grand_total_usd || 0)) > 0.001 && (
+                        <span className="text-xs font-normal text-muted-foreground"> (was ${Number(order.grand_total_usd || 0).toFixed(2)})</span>
+                      )}
+                    </span>
+                  </div>
+                  {order.payment_method === 'Cash on Delivery' && Math.abs(editGrand - Number(order.grand_total_usd || 0)) > 0.001 && (
+                    <p className="text-xs text-amber-700 pt-1">💵 COD: tell the courier the new amount is ${editGrand.toFixed(2)}.</p>
+                  )}
+                </div>
+
+                {editErr && <p className="text-xs text-destructive">{editErr}</p>}
+                {editShortages.length > 0 && (
+                  <div className="bg-destructive/10 border border-destructive/20 rounded-xl p-3 space-y-1">
+                    <p className="text-xs font-semibold text-destructive">Not enough stock — the order was NOT changed:</p>
+                    {editShortages.map((s, i) => (
+                      <p key={i} className="text-xs text-destructive">• {s.name}: {s.available} available, {s.needed} needed{s.reason ? ` (${s.reason})` : ''}</p>
+                    ))}
+                  </div>
+                )}
+
+                <div className="flex gap-2">
+                  <button onClick={saveEdit} disabled={editSaving}
+                    className="px-4 py-2 rounded-xl bg-primary text-primary-foreground text-sm font-semibold disabled:opacity-50 hover:bg-primary/90">
+                    {editSaving ? 'Saving…' : 'Save Changes'}
+                  </button>
+                  <button onClick={() => setEditing(false)} disabled={editSaving}
+                    className="px-4 py-2 rounded-xl border border-border text-sm font-medium hover:bg-muted">
+                    Discard
+                  </button>
+                </div>
+                <p className="text-xs text-muted-foreground">Stock updates automatically: freed items go back on sale, new items are taken out of stock — all-or-nothing.</p>
+              </div>
+            )}
           </div>
 
           {/* Totals */}
