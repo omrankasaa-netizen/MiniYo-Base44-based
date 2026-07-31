@@ -36,3 +36,5 @@ data.db-wal
 
 .env
 .vite
+*.traineddata
+*.traineddata
