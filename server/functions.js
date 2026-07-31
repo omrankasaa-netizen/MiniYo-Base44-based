@@ -1538,9 +1538,10 @@ function parseInvoiceText(text) {
 
 // ─── Bulk CSV order import (admin) ───────────────────────────────────────────
 // Rows are grouped by phone number: one order per unique customer_phone, one
-// line per row. Stock is reserved per order via the same all-or-nothing
-// reserveStock path as manual orders; an order that can't be fully reserved is
-// rolled back (its docs are deleted) and reported as failed.
+// line per row. Orders are ALWAYS created: unresolvable products/variants,
+// missing fields, or stock shortages flag the order needs_review +
+// import_errors and skip reservation, so staff fix it with Edit Items (stock
+// is reserved on save once the lines are valid).
 // Row shape: { customer_name, customer_phone, city, address, product, size,
 //   color, quantity, unit_price, delivery_fee, discount, notes }
 // `product` matches by SKU first (case-insensitive), then exact name.
@@ -1571,27 +1572,40 @@ function bulkCreateOrders({ rows }, user) {
     const first = groupRows[0];
     const label = clean(first.customer_name) || first._phone || `row ${first._row}`;
     try {
-      if (!clean(first.customer_name)) throw new Error(`row ${first._row}: customer_name is required`);
-      if (!first._phone) throw new Error(`row ${first._row}: customer_phone is required`);
+      // Never reject a group: the order is ALWAYS created. Unresolvable
+      // lines / missing fields become `import_errors` on a needs_review order
+      // the admin completes via Edit Items; stock is only reserved once every
+      // line resolves and suffices.
+      const issues = [];
+      if (!clean(first.customer_name)) issues.push(`row ${first._row}: customer_name is missing`);
+      if (!first._phone) issues.push(`row ${first._row}: customer_phone is missing`);
 
       const lines = [];
       for (const r of groupRows) {
         const ref = clean(r.product);
-        if (!ref) throw new Error(`row ${r._row}: product (SKU or name) is required`);
-        const low = ref.toLowerCase();
-        const product = queryRecords('Product', { limit: 1000 })
-          .find((p) => (p.sku && p.sku.toLowerCase() === low) || p.name.toLowerCase() === low);
-        if (!product) throw new Error(`row ${r._row}: product "${ref}" not found (match by SKU or exact name)`);
         const qty = Math.max(1, Math.round(num(r.quantity, 1)));
         const size = clean(r.size);
         const color = clean(r.color);
-        if (product.has_variants) {
-          if (!findVariant(product.id, size, color)) {
-            throw new Error(`row ${r._row}: variant ${[size, color].filter(Boolean).join('/')} not found for "${ref}"`);
-          }
+        if (!ref) {
+          issues.push(`row ${r._row}: product (SKU or name) is missing`);
+          lines.push({ product: null, qty, size, color, unit: 0, ref: '(missing product)', row: r._row });
+          continue;
+        }
+        const low = ref.toLowerCase();
+        const product = queryRecords('Product', { limit: 1000 })
+          .find((p) => (p.sku && p.sku.toLowerCase() === low) || p.name.toLowerCase() === low);
+        if (!product) {
+          issues.push(`row ${r._row}: product "${ref}" not found`);
+          lines.push({ product: null, qty, size, color, unit: clean(r.unit_price) ? num(r.unit_price) : 0, ref, row: r._row });
+          continue;
+        }
+        if (product.has_variants && !findVariant(product.id, size, color)) {
+          issues.push(`row ${r._row}: variant ${[size, color].filter(Boolean).join('/') || '(none given)'} not found for "${ref}"`);
+          lines.push({ product, qty, size, color, unit: clean(r.unit_price) ? num(r.unit_price) : (Number(product.price_usd) || 0), ref, variantBroken: true, row: r._row });
+          continue;
         }
         const unit = clean(r.unit_price) ? num(r.unit_price) : (Number(product.price_usd) || 0);
-        lines.push({ product, qty, size, color, unit, row: r._row });
+        lines.push({ product, qty, size, color, unit, ref, row: r._row });
       }
 
       const subtotal = lines.reduce((s, l) => s + l.unit * l.qty, 0);
@@ -1625,23 +1639,29 @@ function bulkCreateOrders({ rows }, user) {
       for (const l of lines) {
         createRecord('OrderItem', {
           order_id: order.id,
-          product_id: l.product.id,
-          product_name: l.product.name,
-          sku: l.product.sku || '',
+          product_id: l.product ? l.product.id : null,
+          product_name: l.product ? l.product.name : l.ref,
+          sku: l.product ? (l.product.sku || '') : '',
           size: l.size,
           color: l.color,
           quantity: l.qty,
           unit_price_usd: l.unit,
           line_total_usd: l.unit * l.qty,
+          import_unresolved: !l.product || !!l.variantBroken || undefined,
         });
       }
 
-      const reservation = reserveStock({ order_id: order.id }, user);
-      if (!reservation?.ok) {
-        const names = (reservation?.shortages || []).map((s) => s.name).filter(Boolean).join(', ');
-        for (const it of queryRecords('OrderItem', { query: { order_id: order.id } })) deleteRecord('OrderItem', it.id);
-        deleteRecord('Order', order.id);
-        throw new Error(`insufficient stock: ${names || 'unavailable'}`);
+      // Reserve only when every line resolved cleanly; on shortage keep the
+      // order (nothing was held — reserve is all-or-nothing) and flag it.
+      if (issues.length) {
+        updateRecord('Order', order.id, { needs_review: true, import_errors: issues.join(' · ') });
+      } else {
+        const reservation = reserveStock({ order_id: order.id }, user);
+        if (!reservation?.ok) {
+          const names = (reservation?.shortages || []).map((x) => x.name).filter(Boolean).join(', ');
+          issues.push(`insufficient stock (not reserved): ${names || 'unavailable'}`);
+          updateRecord('Order', order.id, { needs_review: true, import_errors: issues.join(' · ') });
+        }
       }
 
       createRecord('OrderStatusHistory', {
@@ -1662,7 +1682,7 @@ function bulkCreateOrders({ rows }, user) {
         });
       } catch { /* audit is best-effort */ }
       created++;
-      results.push({ customer: label, ok: true, order_number, grand_total_usd: grand });
+      results.push({ customer: label, ok: true, order_number, grand_total_usd: grand, warnings: issues.length ? issues : undefined });
     } catch (e) {
       results.push({ customer: label, ok: false, error: e.message });
     }
