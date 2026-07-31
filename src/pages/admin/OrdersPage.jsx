@@ -182,8 +182,8 @@ export default function OrdersPage() {
             </div>
             <ul className="max-h-40 overflow-y-auto space-y-1">
               {(importResult.results || []).map((r, i) => (
-                <li key={i} className={r.ok ? 'text-green-700' : 'text-destructive'}>
-                  {r.ok ? `✓ ${r.customer} → ${r.order_number} ($${Number(r.grand_total_usd || 0).toFixed(2)})` : `✗ ${r.customer}: ${r.error}`}
+                <li key={i} className={!r.ok ? 'text-destructive' : r.warnings?.length ? 'text-amber-700' : 'text-green-700'}>
+                  r.ok ? `✓ ${r.customer} → ${r.order_number} ($${Number(r.grand_total_usd || 0).toFixed(2)})${r.warnings?.length ? ` — ⚠ ${r.warnings.join('; ')}` : ''}` : `✗ ${r.customer}: ${r.error}`}
                 </li>
               ))}
             </ul>
@@ -241,7 +241,14 @@ export default function OrdersPage() {
                 {!isLoading && filtered.length === 0 && <tr><td colSpan={7} className="px-4 py-10 text-center text-muted-foreground">No orders found.</td></tr>}
                 {filtered.map(o => (
                   <tr key={o.id} className="hover:bg-muted/20 transition-colors cursor-pointer" onClick={() => setDetailOrder(o)}>
-                    <td className="px-4 py-3 font-mono text-xs font-semibold text-foreground">{o.order_number || o.id.slice(0, 8)}</td>
+                    <td className="px-4 py-3 font-mono text-xs font-semibold text-foreground">
+                      {o.order_number || o.id.slice(0, 8)}
+                      {o.needs_review && (
+                        <span className="ml-2 px-1.5 py-0.5 rounded-full bg-destructive/10 text-destructive text-[10px] font-sans font-semibold" title={o.import_errors || 'Needs review'}>
+                          ⚠ review
+                        </span>
+                      )}
+                    </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2 flex-wrap">
                         <p className="font-medium text-foreground">{o.customer_name}</p>

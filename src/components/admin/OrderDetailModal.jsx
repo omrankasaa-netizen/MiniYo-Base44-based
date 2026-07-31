@@ -3,7 +3,7 @@ import { base44 } from '@/api/base44Client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { X, Printer, MessageCircle, ChevronRight, Gift, Star, TicketPercent, Copy, Pencil, Plus, Minus, Trash2 } from 'lucide-react';
 import { logAction } from '@/lib/auditLog';
-import { commitStock, releaseStock, editOrderItems } from '@/lib/inventory';
+import { commitStock, releaseStock, editOrderItems, reserveOrderStock } from '@/lib/inventory';
 import { whatsappLink } from '@/lib/adminExport';
 import { isDiscountLive, getEffectiveUnitPrice } from '@/lib/discounts';
 import { availableQty } from '@/lib/availableQty';
@@ -49,6 +49,7 @@ export default function OrderDetailModal({ order, onClose, onUpdated, currentUse
   const [editItems, setEditItems] = useState([]);
   const [editSaving, setEditSaving] = useState(false);
   const [editErr, setEditErr] = useState('');
+  const [reserveErr, setReserveErr] = useState('');
   const [editShortages, setEditShortages] = useState([]);
   const [addSearch, setAddSearch] = useState('');
 
@@ -164,6 +165,10 @@ export default function OrderDetailModal({ order, onClose, onUpdated, currentUse
       return;
     }
     for (const it of editItems) {
+      if (!it.product_id) {
+        setEditErr(`"${it.product_name}" is an unresolved import line — remove it and add the real product instead.`);
+        return;
+      }
       const product = editProductsById[it.product_id] || productsById[it.product_id];
       const pvs = editVariantsByProduct[it.product_id] || [];
       if (product?.has_variants && pvs.length > 0 && !pvs.some(v => (v.size || '') === (it.size || '') && (v.color || '') === (it.color || ''))) {
@@ -190,10 +195,25 @@ export default function OrderDetailModal({ order, onClose, onUpdated, currentUse
         return;
       }
       await logAction({ action: 'order_items_edited', entity: 'Order', entityId: order.id, userName: currentUser?.email });
+      // Needs-review imports are unreserved: now that the lines are valid,
+      // hold the stock. On shortage the EDIT STAYS but the order keeps its
+      // needs_review flag so staff adjust quantities and retry.
+      let extra = {};
+      if (!order.stock_reserved && !order.stock_committed) {
+        const reservation = await reserveOrderStock(order.id);
+        if (reservation?.ok) {
+          await base44.entities.Order.update(order.id, { needs_review: false, import_errors: null });
+          extra = { stock_reserved: true, needs_review: false, import_errors: null };
+          setReserveErr('');
+        } else {
+          const names = (reservation?.shortages || []).map(x => x.name).filter(Boolean).join(', ');
+          setReserveErr(`Items saved, but stock could not be reserved${names ? `: ${names}` : ' — insufficient stock'}. Adjust quantities and Edit Items again.`);
+        }
+      }
       queryClient.invalidateQueries({ queryKey: ['order-items', order.id] });
       queryClient.invalidateQueries({ queryKey: ['orders'] });
       setEditing(false);
-      onUpdated({ ...order, subtotal_usd: res.subtotal_usd, grand_total_usd: res.grand_total_usd });
+      onUpdated({ ...order, subtotal_usd: res.subtotal_usd, grand_total_usd: res.grand_total_usd, ...extra });
     } catch (e) {
       const data = e?.data?.data || e?.data || {};
       setEditShortages(data.shortages || []);
@@ -344,6 +364,16 @@ export default function OrderDetailModal({ order, onClose, onUpdated, currentUse
         </div>
 
         <div className="flex-1 overflow-y-auto p-6 space-y-5">
+          {/* Needs-review import banner */}
+          {(order.needs_review || reserveErr) && (
+            <div className="bg-destructive/5 border border-destructive/25 rounded-xl px-4 py-3 space-y-1">
+              <p className="text-sm font-semibold text-destructive">⚠ Needs review before this order can ship</p>
+              {order.import_errors && <p className="text-xs text-destructive/90">{order.import_errors}</p>}
+              {reserveErr && <p className="text-xs text-destructive/90">{reserveErr}</p>}
+              <p className="text-xs text-muted-foreground">Fix the lines with <b>Edit Items</b> — stock is reserved automatically once everything resolves.</p>
+            </div>
+          )}
+
           {/* COD highlight */}
           {codAmount && (
             <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-center justify-between">
