@@ -1447,95 +1447,6 @@ function upsertCustomer(body, user) {
   return { ok: true, customer: created };
 }
 
-// ─── Invoice photo → order prefill (admin) ─────────────────────────────
-// Uploads of supplier/customer invoice photos are parsed into order fields
-// (name, phone, address, amount) so staff can bulk-enter orders fast: the
-// modal prefills contact/address, and the admin adds the products manually.
-// Engines, tried in order (each activates by setting its env var):
-//   1. Gemini (Google) — GEMINI_API_KEY (+ optional SCAN_INVOICE_GEMINI_MODEL,
-//      default gemini-2.0-flash). Vision LLM: OCR + structured JSON in one
-//      call; free tier available; handles Arabic and messy layouts.
-//   2. OpenAI-compatible vision LLM — SCAN_INVOICE_API_KEY (+ optional
-//      SCAN_INVOICE_API_URL / SCAN_INVOICE_MODEL). Same structured extraction.
-//   3. Google Cloud Vision OCR — GOOGLE_VISION_API_KEY. DOCUMENT_TEXT_DETECTION
-//      (excellent Arabic OCR) → heuristic field parse. Raw text only, so less
-//      accurate field mapping than the LLM engines.
-//   4. Local Tesseract OCR (eng+ara) + heuristics — zero-config fallback,
-//      decent on clean printed English invoices, weak on Arabic/handwriting.
-const INVOICE_SCAN_PROMPT = `You are reading a photo of a retail order invoice or delivery receipt (Lebanese boutique context; text may be English, Arabic, French, or mixed). Extract these fields and reply with STRICT JSON only, no markdown:
-{
-  "customer_name": string|null,   // buyer/recipient full name
-  "customer_phone": string|null,  // phone in international format (+961... if Lebanese); digits and + only
-  "city": string|null,            // Lebanese city/area name in English if identifiable
-  "address": string|null,         // street/building/district detail, one line, English if possible
-  "amount": number|null,          // grand total the customer owes (number only)
-  "currency": string|null,        // "USD" | "LBP" | other ISO code
-  "notes": string|null            // anything notable (item counts, payment method, references)
-}
-If a field is not readable, use null. Never guess a phone digit.`;
-
-function sanitizeScanFields(raw) {
-  const f = raw && typeof raw === 'object' ? raw : {};
-  const cleanStr = (v, max = 200) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : null);
-  const phone = cleanStr(f.customer_phone, 32);
-  const amount = Number.isFinite(Number(f.amount)) && Number(f.amount) > 0 ? Number(f.amount) : null;
-  return {
-    customer_name: cleanStr(f.customer_name, 120),
-    customer_phone: phone ? phone.replace(/[^\d+]/g, '') : null,
-    city: cleanStr(f.city, 60),
-    address: cleanStr(f.address, 200),
-    amount,
-    currency: cleanStr(f.currency, 8),
-    notes: cleanStr(f.notes, 300),
-  };
-}
-
-// Heuristic field extraction for the Tesseract fallback path.
-function parseInvoiceText(text) {
-  const out = { customer_name: null, customer_phone: null, city: null, address: null, amount: null, currency: null, notes: null };
-  const lines = String(text || '').split('\n').map((l) => l.trim()).filter(Boolean);
-  if (!lines.length) return out;
-
-  const phoneMatch = text.match(/(?:\+?961[\s\-/]?)?0?(?:3|7[0-9]|8[01])[\s\-/]?\d{3}[\s\-/]?\d{3}(?!\d)/) || text.match(/\+\d[\d\s-]{6,14}\d/);
-  if (phoneMatch) out.customer_phone = phoneMatch[0].replace(/[\s\-/]/g, '');
-
-  const LB_CITY_RE = /(Tripoli|Beirut|Sidon|Saida|Tyre|Jounieh|Baalbek|Zahle|Nabatieh|Byblos|Jbail|Batroun|Akkar|Halba|Chtaura|Aley)/i;
-  const cityLine = lines.find((l) => LB_CITY_RE.test(l));
-  if (cityLine) {
-    out.city = cityLine.match(LB_CITY_RE)[1];
-    if (cityLine.length < 120) out.address = cityLine;
-  }
-
-  const totalLine = [...lines].reverse().find((l) => /total|amount|due|المجموع|الإجمالي|الاجمالي|المبلغ/i.test(l));
-  const moneyRe = /\$\s?([\d]+(?:[.,]\d{1,2})?)/g;
-  const pickAmount = (src) => {
-    let best = null;
-    for (const m of src.matchAll(moneyRe)) {
-      const v = parseFloat(m[1].replace(',', ''));
-      if (Number.isFinite(v) && v > 0 && (best === null || v > best)) best = v;
-    }
-    if (best !== null) return { amount: best, currency: 'USD' };
-    const lbp = src.match(/([\d][\d.,]*)\s?(?:L\.?L\.?|LBP|ل\.?ل)/i);
-    if (lbp) {
-      const v = parseFloat(lbp[1].replace(/[.,](?=\d{3}\b)/g, '').replace(',', '.'));
-      if (Number.isFinite(v) && v > 0) return { amount: v, currency: 'LBP' };
-    }
-    return null;
-  };
-  const found = (totalLine && pickAmount(totalLine)) || pickAmount(text);
-  if (found) { out.amount = found.amount; out.currency = found.currency; }
-
-  const skipRe = /invoice|receipt|فاتورة|order|tel|phone|date|address|total|amount|\d{4,}/i;
-  const nameLine = lines.find((l) => /[A-Za-z]{2,}/.test(l) && !/\d/.test(l) && !skipRe.test(l) && l.split(/\s+/).length >= 2 && l.length <= 60);
-  if (nameLine) {
-    // Strip a "Customer:" / "Name:" label prefix when the OCR kept it.
-    out.customer_name = nameLine.replace(/^(customer|client|name|buyer|recipient|الاسم)\s*[:\-]\s*/i, '').trim() || nameLine;
-  }
-
-  return out;
-}
-
-
 // ─── Bulk CSV order import (admin) ───────────────────────────────────────────
 // Rows are grouped by phone number: one order per unique customer_phone, one
 // line per row. Orders are ALWAYS created: unresolvable products/variants,
@@ -1691,162 +1602,30 @@ function bulkCreateOrders({ rows }, user) {
   return { ok: true, created, failed: results.length - created, results };
 }
 
-async function scanInvoice({ image_base64, media_type }) {
-  if (!image_base64 || typeof image_base64 !== 'string' || image_base64.length < 100) {
-    return { _status: 400, error: 'image_base64 is required' };
-  }
-  if (image_base64.length > 14_000_000) {
-    return { _status: 413, error: 'Image too large — please use a photo under ~10MB' };
-  }
-  const mediaType = /^image\/(jpeg|jpg|png|webp)$/.test(media_type || '') ? media_type : 'image/jpeg';
 
-  // Engine 1: Gemini (Google vision LLM) — structured extraction in one call.
-  // Google retires model IDs on a fast cadence (gemini-2.0-flash shut down
-  // 2026-06-01 and started returning instant 404s — that was the "scan fails
-  // immediately" outage). So we walk a fallback chain: on a 404/400 "model
-  // not found" we try the next known-live model instead of dying.
-  const geminiKey = process.env.GEMINI_API_KEY;
-  if (geminiKey) {
-    const preferred = process.env.SCAN_INVOICE_GEMINI_MODEL;
-    const chain = [preferred, 'gemini-2.5-flash', 'gemini-3-flash', 'gemini-3.5-flash', 'gemini-2.5-flash-lite', 'gemini-1.5-flash']
-      .filter(Boolean)
-      .filter((m, i, a) => a.indexOf(m) === i);
-    let lastErr = '';
-    for (const model of chain) {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`;
-      try {
-        const res = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{
-              parts: [
-                { text: INVOICE_SCAN_PROMPT },
-                { inline_data: { mime_type: mediaType, data: image_base64 } },
-              ],
-            }],
-            generationConfig: { temperature: 0, maxOutputTokens: 800, responseMimeType: 'application/json' },
-          }),
-        });
-        const data = await res.json().catch(() => null);
-        if (!res.ok) {
-          const msg = data?.error?.message || '';
-          console.error('[scanInvoice] gemini error', model, res.status, msg);
-          lastErr = `Gemini error (${res.status})`;
-          // Model retired/unknown → try next in chain; other errors (auth,
-          // quota) won't be fixed by switching models.
-          if (res.status === 404 || (res.status === 400 && /model/i.test(msg))) continue;
-          if (res.status === 401 || res.status === 403) return { _status: 502, error: 'Gemini rejected the API key — check GEMINI_API_KEY in Railway.' };
-          if (res.status === 429) return { _status: 502, error: 'Gemini rate limit hit — wait a minute and retry.' };
-          return { _status: 502, error: `Gemini error (${res.status}). Try again.` };
-        }
-        const content = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-        let parsed = null;
-        try { parsed = JSON.parse(content); } catch {
-          const m = content.match(/\{[\s\S]*\}/);
-          if (m) { try { parsed = JSON.parse(m[0]); } catch { /* fall through */ } }
-        }
-        if (!parsed) return { _status: 502, error: 'Gemini returned an unreadable result — try a clearer photo.' };
-        return { ok: true, engine: `gemini:${model}`, fields: sanitizeScanFields(parsed) };
-      } catch (e) {
-        console.error('[scanInvoice] gemini call failed:', model, e?.message);
-        lastErr = 'Could not reach Gemini';
-      }
-    }
-    return { _status: 502, error: `${lastErr} — check GEMINI_API_KEY/model availability.` };
-  }
-
-  // Engine 2: OpenAI-compatible vision LLM endpoint.
-  const apiKey = process.env.SCAN_INVOICE_API_KEY;
-  if (apiKey) {
-    const apiUrl = process.env.SCAN_INVOICE_API_URL || 'https://api.openai.com/v1/chat/completions';
-    const model = process.env.SCAN_INVOICE_MODEL || 'gpt-4o-mini';
-    try {
-      const res = await fetch(apiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-        body: JSON.stringify({
-          model,
-          temperature: 0,
-          max_tokens: 600,
-          response_format: { type: 'json_object' },
-          messages: [{
-            role: 'user',
-            content: [
-              { type: 'text', text: INVOICE_SCAN_PROMPT },
-              { type: 'image_url', image_url: { url: `data:${mediaType};base64,${image_base64}` } },
-            ],
-          }],
-        }),
-      });
-      const data = await res.json().catch(() => null);
-      if (!res.ok) {
-        console.error('[scanInvoice] vision API error', res.status, data?.error?.message || '');
-        return { _status: 502, error: `Vision service error (${res.status}). Check SCAN_INVOICE_API_KEY/model.` };
-      }
-      const content = data?.choices?.[0]?.message?.content || '';
-      let parsed = null;
-      try { parsed = JSON.parse(content); } catch {
-        const m = content.match(/\{[\s\S]*\}/);
-        if (m) { try { parsed = JSON.parse(m[0]); } catch { /* fall through */ } }
-      }
-      if (!parsed) return { _status: 502, error: 'Vision service returned an unreadable result — try a clearer photo.' };
-      return { ok: true, engine: 'vision', fields: sanitizeScanFields(parsed) };
-    } catch (e) {
-      console.error('[scanInvoice] vision call failed:', e?.message);
-      return { _status: 502, error: 'Could not reach the vision service — try again.' };
-    }
-  }
-
-  // Engine 3: Google Cloud Vision OCR (raw text) + heuristics.
-  const visionKey = process.env.GOOGLE_VISION_API_KEY;
-  if (visionKey) {
-    try {
-      const res = await fetch(`https://vision.googleapis.com/v1/images:annotate?key=${visionKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          requests: [{
-            image: { content: image_base64 },
-            features: [{ type: 'DOCUMENT_TEXT_DETECTION' }],
-          }],
-        }),
-      });
-      const data = await res.json().catch(() => null);
-      if (!res.ok) {
-        console.error('[scanInvoice] vision api error', res.status, data?.error?.message || '');
-        return { _status: 502, error: `Google Vision error (${res.status}). Check GOOGLE_VISION_API_KEY.` };
-      }
-      const text = data?.responses?.[0]?.fullTextAnnotation?.text || '';
-      if (!text.trim()) return { _status: 502, error: 'No text found in this photo — try a sharper, well-lit shot.' };
-      return { ok: true, engine: 'vision-ocr', fields: sanitizeScanFields(parseInvoiceText(text)) };
-    } catch (e) {
-      console.error('[scanInvoice] vision api call failed:', e?.message);
-      return { _status: 502, error: 'Could not reach Google Vision — try again.' };
-    }
-  }
-
-  // Engine 4: local Tesseract OCR + heuristics (no key configured).
-  let Tesseract;
+// ─── Delete a cancelled order (admin) ────────────────────────────────────────
+// Hard-deletes the order plus its items and status history. Restricted to
+// Cancelled orders: anything live holds reservations/commit history that must
+// go through the normal cancel flow instead of disappearing.
+function deleteOrder({ order_id }, user) {
+  if (!order_id) return { _status: 400, error: 'order_id is required' };
+  const o = queryRecords('Order', { query: { id: order_id }, limit: 1 })[0];
+  if (!o) return { _status: 404, error: 'Order not found' };
+  if (o.order_status !== 'Cancelled') return { _status: 409, error: 'Only Cancelled orders can be deleted' };
+  for (const it of queryRecords('OrderItem', { query: { order_id } })) deleteRecord('OrderItem', it.id);
+  for (const h of queryRecords('OrderStatusHistory', { query: { order_id } })) deleteRecord('OrderStatusHistory', h.id);
+  deleteRecord('Order', order_id);
   try {
-    Tesseract = (await import('tesseract.js')).default;
-  } catch {
-    return { _status: 503, error: 'Invoice scanning is not configured on the server (set GEMINI_API_KEY, SCAN_INVOICE_API_KEY, or GOOGLE_VISION_API_KEY).' };
-  }
-  try {
-    const buf = Buffer.from(image_base64, 'base64');
-    let result;
-    try {
-      result = await Tesseract.recognize(buf, 'eng+ara');
-    } catch {
-      result = await Tesseract.recognize(buf, 'eng');
-    }
-    const text = result?.data?.text || '';
-    return { ok: true, engine: 'ocr', fields: sanitizeScanFields(parseInvoiceText(text)) };
-  } catch (e) {
-    console.error('[scanInvoice] OCR failed:', e?.message);
-    return { _status: 502, error: 'Could not read this photo — try a sharper, well-lit shot.' };
-  }
+    createRecord('AuditLog', {
+      action: 'deleted',
+      entity: 'Order',
+      entity_id: order_id,
+      details: `${o.order_number || order_id} (cancelled order deleted)`,
+      user_name: user?.email || 'admin',
+      created_at: nowIso(),
+    });
+  } catch { /* audit is best-effort */ }
+  return { ok: true };
 }
 
 const REGISTRY = {
@@ -1878,8 +1657,8 @@ const REGISTRY = {
   setCustomerNotes,
   setCustomerBlock,
   upsertCustomer,
-  scanInvoice,
   bulkCreateOrders,
+  deleteOrder,
 };
 
 // ─── Centralized authorization ───────────────────────────────────────────────
@@ -1915,8 +1694,8 @@ const GUARDS = {
   setCustomerNotes: 'admin',
   setCustomerBlock: 'admin',
   upsertCustomer: 'admin',
-  scanInvoice: 'admin',
   bulkCreateOrders: 'admin',
+  deleteOrder: 'admin',
   getFinancialsConfig: 'super_admin',
   saveFinancialsConfig: 'super_admin',
   listUsers: 'super_admin',

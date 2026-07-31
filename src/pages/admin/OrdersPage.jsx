@@ -4,7 +4,7 @@ import { useAuthUser } from '@/contexts/AuthUserContext';
 import { base44 } from '@/api/base44Client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import AccessDenied from './AccessDenied';
-import { ShoppingBag, Plus, Search, ChevronRight, X, FileSpreadsheet, Download, Loader2 } from 'lucide-react';
+import { ShoppingBag, Plus, Search, ChevronRight, X, FileSpreadsheet, Download, Loader2, Trash2 } from 'lucide-react';
 
 // ─── Bulk CSV import ─────────────────────────────────────────────────────────
 // Template columns; rows sharing a customer_phone are merged into one order
@@ -52,8 +52,25 @@ const STATUS_COLORS = {
 export default function OrdersPage() {
   const { currentUser, canAccess } = useAuthUser();
   const qc = useQueryClient();
+  const [activeOnly, setActiveOnly] = useState(true);
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
+
+  async function handleDeleteOrder(o) {
+    if (!window.confirm(`Delete ${o.order_number || 'this order'} permanently? This cannot be undone.`)) return;
+    setDeletingId(o.id);
+    try {
+      const res = await base44.functions.invoke('deleteOrder', { order_id: o.id });
+      const payload = res?.data || res;
+      if (!payload?.ok) throw new Error(payload?.error || 'Delete failed');
+      qc.invalidateQueries({ queryKey: ['admin-orders'] });
+    } catch (e) {
+      alert(e?.data?.data?.error || e?.data?.error || e.message || 'Delete failed');
+    } finally {
+      setDeletingId(null);
+    }
+  }
   const csvInputRef = React.useRef(null);
 
   function downloadCsvTemplate() {
@@ -127,6 +144,7 @@ export default function OrdersPage() {
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
     return orders.filter(o => {
+      if (activeOnly && !filterStatus && (o.order_status === 'Cancelled' || o.order_status === 'Delivered')) return false;
       if (q && !o.customer_name?.toLowerCase().includes(q) && !o.customer_phone?.includes(q) && !o.order_number?.toLowerCase().includes(q)) return false;
       if (filterStatus && o.order_status !== filterStatus) return false;
       if (filterChannel && o.channel !== filterChannel) return false;
@@ -135,7 +153,7 @@ export default function OrdersPage() {
       if (filterDateTo && (o.order_date || o.created_date) > filterDateTo + 'T23:59:59') return false;
       return true;
     });
-  }, [orders, search, filterStatus, filterChannel, filterZone, filterDateFrom, filterDateTo]);
+  }, [orders, search, filterStatus, filterChannel, filterZone, filterDateFrom, filterDateTo, activeOnly]);
 
   if (!canAccess('view_orders')) return <AdminLayout><AccessDenied /></AdminLayout>;
 
@@ -198,6 +216,11 @@ export default function OrdersPage() {
               placeholder="Search name, phone, order #…"
               className="bg-transparent text-sm flex-1 outline-none text-foreground placeholder:text-muted-foreground" />
           </div>
+          <button onClick={() => setActiveOnly(v => !v)}
+            title="Hide Cancelled and Delivered orders"
+            className={`text-xs font-medium px-3 py-2 rounded-xl border transition-colors ${activeOnly ? 'bg-primary/10 border-primary/30 text-primary' : 'bg-card border-border text-muted-foreground hover:bg-muted'}`}>
+            {activeOnly ? 'Active only ✓' : 'All orders'}
+          </button>
           {[
             { value: filterStatus, setter: setFilterStatus, label: 'Status', options: ['New','Confirmed','Packed','Out for Delivery','Delivered','Cancelled'] },
             { value: filterChannel, setter: setFilterChannel, label: 'Channel', options: ['Website','Instagram','Facebook','WhatsApp','Other'] },
@@ -267,7 +290,20 @@ export default function OrdersPage() {
                         {o.order_status}
                       </span>
                     </td>
-                    <td className="px-4 py-3"><ChevronRight className="w-4 h-4 text-muted-foreground" /></td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1 justify-end">
+                        {o.order_status === 'Cancelled' && canAccess('edit_orders') && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleDeleteOrder(o); }}
+                            disabled={deletingId === o.id}
+                            title="Delete this cancelled order permanently"
+                            className="p-1.5 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 disabled:opacity-40">
+                            {deletingId === o.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                          </button>
+                        )}
+                        <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
