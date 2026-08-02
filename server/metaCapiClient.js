@@ -65,7 +65,10 @@ export function buildUserData({ email, phone, clientIp, userAgent, fbp, fbc } = 
   if (clientIp) data.client_ip_address = clientIp;
   if (userAgent) data.client_user_agent = userAgent;
   if (fbp) data.fbp = fbp;
-  if (fbc) data.fbc = fbc;
+  // fbc must be fb.1.{creationTime_ms}.{fbclid}. A seconds-era creation time
+  // (legacy cookie bug, ~10 digits) makes Meta flag "invalid creationTime" and
+  // can hurt attribution — drop malformed values rather than send them.
+  if (fbc && /^fb\.1\.\d{13,}\..+/.test(String(fbc))) data.fbc = fbc;
   return data;
 }
 
