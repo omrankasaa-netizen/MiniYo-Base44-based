@@ -294,7 +294,7 @@ export default function CategoriesPage() {
   return (
     <AdminLayout>
       <div className="p-5 lg:p-8 max-w-screen-xl mx-auto space-y-5">
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-2xl font-heading font-bold text-foreground">Categories</h1>
             <p className="text-sm text-muted-foreground">{allCategories.length} total · Nest subcategories with the + button</p>

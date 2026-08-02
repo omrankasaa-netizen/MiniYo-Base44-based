@@ -417,7 +417,7 @@ export default function InventoryPage() {
     <AdminLayout>
       <div className="p-5 lg:p-8 max-w-screen-xl mx-auto space-y-5">
         {/* Header */}
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <Warehouse className="w-6 h-6 text-primary" />
             <div>
