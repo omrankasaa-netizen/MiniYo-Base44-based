@@ -475,14 +475,23 @@ function editOrderItems({ order_id, items: newItems, note, delivery_fee_usd, dis
     });
     bulkCreate('OrderItem', itemDocs);
 
-    // Recalculate totals. Discount and delivery fee stay as originally agreed.
+    // Recalculate totals. Delivery fee / discount can be overridden by the
+    // admin (e.g. free delivery, rounding); otherwise they stay as agreed.
     const subtotal = itemDocs.reduce((s, d) => s + d.line_total_usd, 0);
-    const discount = Number(o.discount_usd || 0);
-    const delivery = Number(o.delivery_fee_usd || 0);
-    const grand = Math.max(0, subtotal - discount) + delivery;
-    updateRecord('Order', order_id, { subtotal_usd: subtotal, grand_total_usd: grand });
+    const validMoney = (v) => Number.isFinite(Number(v)) && Number(v) >= 0;
+    const discount = validMoney(discount_usd) ? Number(discount_usd) : Number(o.discount_usd || 0);
+    const delivery = validMoney(delivery_fee_usd) ? Number(delivery_fee_usd) : Number(o.delivery_fee_usd || 0);
+    const overridden = !!total_overridden && validMoney(grand_total_usd);
+    const grand = overridden ? Number(grand_total_usd) : Math.max(0, subtotal - discount) + delivery;
+    updateRecord('Order', order_id, {
+      subtotal_usd: subtotal,
+      discount_usd: discount,
+      delivery_fee_usd: delivery,
+      grand_total_usd: grand,
+      total_overridden: overridden ? true : false,
+    });
 
-    return { movements: movements.length, items: itemDocs.length, subtotal_usd: subtotal, grand_total_usd: grand };
+    return { movements: movements.length, items: itemDocs.length, subtotal_usd: subtotal, grand_total_usd: grand, delivery_fee_usd: delivery };
   });
 
   try {
