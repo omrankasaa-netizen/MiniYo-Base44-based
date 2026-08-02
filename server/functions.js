@@ -399,8 +399,11 @@ function editOrderItems({ order_id, items: newItems, note, delivery_fee_usd, dis
     }
 
     // Pass 2 — validate every NEW line against post-release availability.
+    // Quantities accumulate per variant/product (claimed) so duplicate lines
+    // can't jointly oversell what each would pass individually.
     const plan = [];
     const shortages = [];
+    const claimed = new Map();
     for (const it of newItems) {
       const qty = Number(it.quantity);
       const product = queryRecords('Product', { query: { id: it.product_id }, limit: 1 })[0];
