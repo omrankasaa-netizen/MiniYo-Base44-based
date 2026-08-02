@@ -252,7 +252,12 @@ export default function CheckoutPage() {
   }
 
   const totalDiscount = Number(effectivePromoDiscount + effectiveMemberDiscount);
-  const effectiveDelivery = isFreeShipping || qualifiesForThreshold ? 0 : deliveryFee;
+  // Membership free-delivery credit (Bronze registration credits etc.) zeroes
+  // the delivery fee when no promo/threshold already did — and marks a credit
+  // to be consumed on order placement.
+  const hasDeliveryCredit = !!(customer && (customer.free_delivery_credits_remaining || 0) > 0);
+  const creditApplied = hasDeliveryCredit && !isFreeShipping && !qualifiesForThreshold && deliveryFee > 0;
+  const effectiveDelivery = isFreeShipping || qualifiesForThreshold || creditApplied ? 0 : deliveryFee;
   const grandTotal = Number((subtotal - totalDiscount + effectiveDelivery).toFixed(2));
 
   // Meta Advanced Matching: enrich pixel with hashed PII as soon as user data
@@ -640,8 +645,9 @@ export default function CheckoutPage() {
         return;
       }
 
-      // Handle free delivery credit consumption (if under $50 and member wants it)
-      if (customer && customer.free_delivery_credits_remaining > 0 && effectiveDelivery > 0 && subtotal < 50) {
+      // Handle free delivery credit consumption (membership credit applied to
+      // this order's delivery fee — see creditApplied above)
+      if (creditApplied && customer) {
         try {
           await base44.functions.invoke('membershipEngine', {
             action: 'consume_credit',
@@ -1199,8 +1205,8 @@ export default function CheckoutPage() {
                   </span>
                 </div>
 
-                {/* Free shipping progress (if not yet qualified and no promo) */}
-                {!qualifiesForThreshold && !isFreeShipping && (
+                {/* Free shipping progress (if not yet qualified and no promo/credit) */}
+                {!qualifiesForThreshold && !isFreeShipping && !creditApplied && (
                   <div className="pt-2 border-t border-border">
                     <div className="flex justify-between items-center mb-1.5">
                       <span className="text-xs text-muted-foreground">{t('Free shipping threshold', 'حد الشحن المجاني')}</span>
