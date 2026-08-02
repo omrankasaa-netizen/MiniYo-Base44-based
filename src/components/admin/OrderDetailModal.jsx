@@ -500,6 +500,12 @@ export default function OrderDetailModal({ order, onClose, onUpdated, currentUse
                     const pvs = editVariantsByProduct[it.product_id] || [];
                     const hasVariants = pvs.length > 0;
                     const selVariant = pvs.find(v => (v.size || '') === (it.size || '') && (v.color || '') === (it.color || ''));
+                    // Variants already picked by other lines of the same product —
+                    // disabled in the dropdown so each line is a distinct variant.
+                    const takenByOthers = new Set(
+                      editItems.filter(x => x.product_id === it.product_id && x.key !== it.key)
+                        .map(x => `${x.size || ''}|||${x.color || ''}`)
+                    );
                     return (
                       <div key={it.key} className="px-4 py-3 space-y-2">
                         <div className="flex items-center gap-3">
@@ -530,8 +536,9 @@ export default function OrderDetailModal({ order, onClose, onUpdated, currentUse
                               }}
                               className="text-xs border border-border rounded-lg px-2 py-1.5 bg-card text-foreground max-w-full">
                               {pvs.map(v => (
-                                <option key={v.id} value={`${v.size || ''}|||${v.color || ''}`}>
-                                  {[v.size, v.color].filter(Boolean).join(' / ') || 'Default'} — {availableQty(v) + (selVariant && v.id === selVariant.id ? it.quantity : 0)} available
+                                <option key={v.id} value={`${v.size || ''}|||${v.color || ''}`}
+                                  disabled={takenByOthers.has(`${v.size || ''}|||${v.color || ''}`)}>
+                                  {[v.size, v.color].filter(Boolean).join(' / ') || 'Default'} — {availableQty(v) + (selVariant && v.id === selVariant.id ? it.quantity : 0)} available{takenByOthers.has(`${v.size || ''}|||${v.color || ''}`) ? ' (on another line)' : ''}
                                 </option>
                               ))}
                             </select>
@@ -560,7 +567,7 @@ export default function OrderDetailModal({ order, onClose, onUpdated, currentUse
                     <div className="absolute z-10 left-0 right-0 mt-1 bg-card border border-border rounded-xl shadow-lg max-h-48 overflow-y-auto">
                       {allProducts
                         .filter(p => p.name?.toLowerCase().includes(addSearch.trim().toLowerCase()) || (p.sku || '').toLowerCase().includes(addSearch.trim().toLowerCase()))
-                        .filter(p => !editItems.some(it => it.product_id === p.id))
+                        .filter(p => p.has_variants || !editItems.some(it => it.product_id === p.id))
                         .slice(0, 8)
                         .map(p => (
                           <button key={p.id} onClick={() => addProductToEdit(p)}

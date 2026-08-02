@@ -415,17 +415,21 @@ function editOrderItems({ order_id, items: newItems, note, delivery_fee_usd, dis
           shortages.push({ name: product.name, available: 0, needed: qty, reason: `Variant not found (${[line.size, line.color].filter(Boolean).join(', ')})` });
           continue;
         }
-        const available = (variant.qty_on_hand || 0) - (variant.qty_reserved || 0);
+        const claimKey = `v:${variant.id}`;
+        const available = (variant.qty_on_hand || 0) - (variant.qty_reserved || 0) - (claimed.get(claimKey) || 0);
         if (available < qty) {
-          shortages.push({ name: `${product.name} (${[line.size, line.color].filter(Boolean).join(', ')})`, available, needed: qty });
+          shortages.push({ name: `${product.name} (${[line.size, line.color].filter(Boolean).join(', ')})`, available: Math.max(0, available), needed: qty });
         } else {
+          claimed.set(claimKey, (claimed.get(claimKey) || 0) + qty);
           plan.push({ kind: 'variant', target: variant, product, line, qty, available });
         }
       } else {
-        const available = (product.stock_quantity || 0) - (product.qty_reserved || 0);
+        const claimKey = `p:${product.id}`;
+        const available = (product.stock_quantity || 0) - (product.qty_reserved || 0) - (claimed.get(claimKey) || 0);
         if (available < qty) {
-          shortages.push({ name: product.name, available, needed: qty });
+          shortages.push({ name: product.name, available: Math.max(0, available), needed: qty });
         } else {
+          claimed.set(claimKey, (claimed.get(claimKey) || 0) + qty);
           plan.push({ kind: 'product', target: product, product, line, qty, available });
         }
       }
