@@ -64,7 +64,18 @@ export function captureFbclid() {
   try {
     const fbclid = new URLSearchParams(window.location.search).get('fbclid');
     if (!fbclid) return;
-    const fbc = `fb.1.${Math.floor(Date.now() / 1000)}.${fbclid}`;
+    // Don't clobber a valid _fbc the Meta pixel already set. Repair only a
+    // missing cookie or a legacy one whose creation time was written in
+    // SECONDS (our old bug): Meta's fbc spec requires MILLISECONDS
+    // (fb.1.{ms}.{fbclid}); a seconds value reads as ~1970, which is exactly
+    // the "creationTime dated before the click ID" Events Manager diagnostic.
+    const existing = document.cookie.split('; ').find((c) => c.startsWith('_fbc='));
+    if (existing) {
+      const val = decodeURIComponent(existing.split('=').slice(1).join('='));
+      const ts = Number(val.split('.')[2]);
+      if (val.startsWith('fb.1.') && ts > 1e12) return; // already valid (ms)
+    }
+    const fbc = `fb.1.${Date.now()}.${fbclid}`;
     // 90-day cookie — matches Meta's default retention window.
     document.cookie = `_fbc=${encodeURIComponent(fbc)};path=/;max-age=${90 * 24 * 60 * 60};SameSite=Lax`;
   } catch { /* never throw */ }
