@@ -431,7 +431,20 @@ export default function NewOrderModal({ onClose, onSaved, currentUser }) {
             {totals.discount > 0 && (
               <div className="flex justify-between text-sm text-green-700"><span>{t('Discount', 'الخصم')}{form.discount_type === 'percentage' ? ` (${Number(form.discount_value) || 0}%)` : ''}</span><span>-${totals.discount.toFixed(2)}</span></div>
             )}
-            <div className="flex justify-between text-sm"><span className="text-muted-foreground">{t('Delivery Fee', 'رسوم التوصيل')}</span><span className="font-medium">${totals.delivery.toFixed(2)}</span></div>
+            <div className="flex items-center justify-between text-sm gap-2">
+              <span className="text-muted-foreground">{t('Delivery Fee', 'رسوم التوصيل')}</span>
+              <div className="flex items-center gap-1.5">
+                {Number(form.delivery_fee_usd) !== (DELIVERY_FEES[form.delivery_zone] ?? 3) && (
+                  <button type="button" onClick={() => setField('delivery_fee_usd', DELIVERY_FEES[form.delivery_zone] ?? 3)}
+                    className="text-[11px] text-muted-foreground hover:text-foreground underline">{t('reset', 'إعادة')}</button>
+                )}
+                <span className="text-muted-foreground">$</span>
+                <input type="number" min="0" step="0.5" value={form.delivery_fee_usd}
+                  onChange={e => setField('delivery_fee_usd', Math.max(0, Number(e.target.value)))}
+                  title={t('Set 0 for free delivery', 'ضع 0 للتوصيل المجاني')}
+                  className="w-20 text-right px-2 py-1 rounded-lg border border-input bg-background text-sm font-medium" />
+              </div>
+            </div>
             <div className="flex items-center justify-between border-t border-border pt-3 mt-2 gap-2">
               <span className="text-base font-bold">{t('Total', 'الإجمالي')}</span>
               <div className="flex items-center gap-2">

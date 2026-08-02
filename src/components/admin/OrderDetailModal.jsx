@@ -52,6 +52,11 @@ export default function OrderDetailModal({ order, onClose, onUpdated, currentUse
   const [reserveErr, setReserveErr] = useState('');
   const [editShortages, setEditShortages] = useState([]);
   const [addSearch, setAddSearch] = useState('');
+  // Admin money controls in edit mode: custom delivery fee (0 removes it),
+  // total override, and a round-up helper.
+  const [editDelivery, setEditDelivery] = useState('0');
+  const [editTotalInput, setEditTotalInput] = useState('0.00');
+  const [editTotalOverridden, setEditTotalOverridden] = useState(false);
 
   const { data: items = [] } = useQuery({
     queryKey: ['order-items', order.id],
@@ -124,6 +129,9 @@ export default function OrderDetailModal({ order, onClose, onUpdated, currentUse
     setEditErr('');
     setEditShortages([]);
     setAddSearch('');
+    setEditDelivery(String(Number(order.delivery_fee_usd || 0)));
+    setEditTotalOverridden(!!order.total_overridden);
+    setEditTotalInput(Number(order.grand_total_usd || 0).toFixed(2));
     setEditing(true);
   }
 
@@ -155,7 +163,8 @@ export default function OrderDetailModal({ order, onClose, onUpdated, currentUse
   }
 
   const editSubtotal = editItems.reduce((s, it) => s + it.unit_price_usd * it.quantity, 0);
-  const editGrand = Math.max(0, editSubtotal - Number(order.discount_usd || 0)) + Number(order.delivery_fee_usd || 0);
+  const editAutoGrand = Math.max(0, editSubtotal - Number(order.discount_usd || 0)) + (parseFloat(editDelivery) || 0);
+  const editGrand = editTotalOverridden ? (parseFloat(editTotalInput) || 0) : editAutoGrand;
 
   async function saveEdit() {
     setEditErr('');
@@ -188,7 +197,10 @@ export default function OrderDetailModal({ order, onClose, onUpdated, currentUse
         color: it.color || '',
         quantity: it.quantity,
         unit_price_usd: it.unit_price_usd,
-      })));
+      })), '', {
+        delivery_fee_usd: parseFloat(editDelivery) || 0,
+        ...(editTotalOverridden ? { grand_total_usd: parseFloat(editTotalInput) || 0, total_overridden: true } : {}),
+      });
       if (!res || res.ok !== true) {
         setEditShortages(res?.shortages || []);
         setEditErr(res?.error || 'Not enough stock for this edit — nothing was changed.');
@@ -213,7 +225,7 @@ export default function OrderDetailModal({ order, onClose, onUpdated, currentUse
       queryClient.invalidateQueries({ queryKey: ['order-items', order.id] });
       queryClient.invalidateQueries({ queryKey: ['orders'] });
       setEditing(false);
-      onUpdated({ ...order, subtotal_usd: res.subtotal_usd, grand_total_usd: res.grand_total_usd, ...extra });
+      onUpdated({ ...order, subtotal_usd: res.subtotal_usd, grand_total_usd: res.grand_total_usd, delivery_fee_usd: res.delivery_fee_usd, total_overridden: editTotalOverridden, ...extra });
     } catch (e) {
       const data = e?.data?.data || e?.data || {};
       setEditShortages(data.shortages || []);
@@ -564,18 +576,47 @@ export default function OrderDetailModal({ order, onClose, onUpdated, currentUse
                 </div>
 
                 {/* Live totals preview */}
-                <div className="bg-primary/5 border border-primary/20 rounded-xl p-3 space-y-1 text-sm">
+                <div className="bg-primary/5 border border-primary/20 rounded-xl p-3 space-y-2 text-sm">
                   <div className="flex justify-between"><span className="text-muted-foreground">New subtotal</span><span>${editSubtotal.toFixed(2)}</span></div>
                   {order.discount_usd > 0 && <div className="flex justify-between text-green-700"><span>Discount (kept)</span><span>-${Number(order.discount_usd).toFixed(2)}</span></div>}
-                  <div className="flex justify-between"><span className="text-muted-foreground">Delivery (kept)</span><span>${Number(order.delivery_fee_usd || 0).toFixed(2)}</span></div>
-                  <div className="flex justify-between font-bold border-t border-border pt-1.5">
-                    <span>New total</span>
-                    <span className="text-primary">${editGrand.toFixed(2)}
-                      {Math.abs(editGrand - Number(order.grand_total_usd || 0)) > 0.001 && (
-                        <span className="text-xs font-normal text-muted-foreground"> (was ${Number(order.grand_total_usd || 0).toFixed(2)})</span>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-muted-foreground">Delivery fee</span>
+                    <div className="flex items-center gap-1.5">
+                      {(parseFloat(editDelivery) || 0) !== Number(order.delivery_fee_usd || 0) && (
+                        <button type="button" onClick={() => setEditDelivery(String(Number(order.delivery_fee_usd || 0)))}
+                          className="text-[11px] text-muted-foreground hover:text-foreground underline">reset</button>
                       )}
-                    </span>
+                      <span className="text-muted-foreground">$</span>
+                      <input type="number" min="0" step="0.5" value={editDelivery}
+                        onChange={e => setEditDelivery(e.target.value)}
+                        title="Set 0 to remove the delivery fee"
+                        className="w-20 text-right px-2 py-1 rounded-lg border border-input bg-background text-sm" />
+                    </div>
                   </div>
+                  <div className="flex items-center justify-between gap-2 font-bold border-t border-border pt-1.5">
+                    <span>New total</span>
+                    <div className="flex items-center gap-1.5">
+                      <button type="button"
+                        onClick={() => { setEditTotalOverridden(true); setEditTotalInput(String(Math.ceil(editGrand))); }}
+                        title="Round up to the next whole dollar"
+                        className="text-[11px] font-medium px-2 py-1 rounded-lg bg-muted text-muted-foreground hover:text-foreground">Round ↑</button>
+                      {editTotalOverridden && (
+                        <button type="button" onClick={() => setEditTotalOverridden(false)}
+                          title="Reset to auto total"
+                          className="text-[11px] text-muted-foreground hover:text-foreground underline">auto</button>
+                      )}
+                      <span className="text-primary">$</span>
+                      <input type="number" min="0" step="0.01" value={editTotalOverridden ? editTotalInput : editAutoGrand.toFixed(2)}
+                        onChange={e => { setEditTotalOverridden(true); setEditTotalInput(e.target.value); }}
+                        className="w-24 text-right px-2 py-1 rounded-lg border border-input bg-background text-sm font-bold text-primary" />
+                      {Math.abs(editGrand - Number(order.grand_total_usd || 0)) > 0.001 && (
+                        <span className="text-xs font-normal text-muted-foreground">(was ${Number(order.grand_total_usd || 0).toFixed(2)})</span>
+                      )}
+                    </div>
+                  </div>
+                  {editTotalOverridden && (
+                    <p className="text-[11px] text-amber-700 text-right">Manual total override — this is the stored total.</p>
+                  )}
                   {order.payment_method === 'Cash on Delivery' && Math.abs(editGrand - Number(order.grand_total_usd || 0)) > 0.001 && (
                     <p className="text-xs text-amber-700 pt-1">💵 COD: tell the courier the new amount is ${editGrand.toFixed(2)}.</p>
                   )}
