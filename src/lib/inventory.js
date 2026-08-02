@@ -65,12 +65,16 @@ export async function releaseStock({ orderId }) {
  * { ok: false, shortages } on insufficient stock.
  * items: [{ product_id, size, color, quantity, unit_price_usd? }]
  */
-export async function editOrderItems(orderId, items, note) {
+export async function editOrderItems(orderId, items, note, totals = {}) {
   const res = await base44.functions.invoke('inventoryEngine', {
     action: 'edit_order_items',
     order_id: orderId,
     items,
     note: note || '',
+    ...(totals.delivery_fee_usd != null ? { delivery_fee_usd: totals.delivery_fee_usd } : {}),
+    ...(totals.discount_usd != null ? { discount_usd: totals.discount_usd } : {}),
+    ...(totals.grand_total_usd != null ? { grand_total_usd: totals.grand_total_usd } : {}),
+    ...(totals.total_overridden ? { total_overridden: true } : {}),
   });
   return res.data;
 }

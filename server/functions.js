@@ -351,7 +351,7 @@ function releaseStock({ order_id }, user) {
 // transaction; discount and delivery fee are preserved as originally set.
 const ORDER_EDIT_LOCKED_STATUSES = ['Out for Delivery', 'Delivered', 'Cancelled'];
 
-function editOrderItems({ order_id, items: newItems, note }, user) {
+function editOrderItems({ order_id, items: newItems, note, delivery_fee_usd, discount_usd, grand_total_usd, total_overridden }, user) {
   const o = queryRecords('Order', { query: { id: order_id }, limit: 1 })[0];
   if (!o) return { _status: 404, error: 'Order not found' };
   if (ORDER_EDIT_LOCKED_STATUSES.includes(o.order_status)) {
