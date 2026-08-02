@@ -210,7 +210,7 @@ export default function DiscountsPage() {
             <table className="w-full text-sm">
               <thead className="bg-muted/50 text-xs uppercase tracking-wide text-muted-foreground">
                 <tr>
-                  <th className="px-4 py-3 text-left">Name</th>
+                  <th className="px-4 py-3 text-left min-w-[140px]">Name</th>
                   <th className="px-4 py-3 text-left">Discount</th>
                   <th className="px-4 py-3 text-left hidden sm:table-cell">Applies To</th>
                   <th className="px-4 py-3 text-left hidden lg:table-cell">Schedule</th>
