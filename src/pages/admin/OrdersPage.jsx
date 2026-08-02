@@ -161,7 +161,7 @@ export default function OrdersPage() {
     <AdminLayout>
       <div className="p-5 lg:p-8 max-w-screen-xl mx-auto space-y-5">
         {/* Header */}
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <ShoppingBag className="w-6 h-6 text-primary" />
             <div>
@@ -173,17 +173,17 @@ export default function OrdersPage() {
             <div className="flex items-center gap-2">
               <input ref={csvInputRef} type="file" accept=".csv,text/csv" className="hidden" onChange={e => handleCsvFile(e.target.files?.[0])} />
               <button onClick={downloadCsvTemplate} title="Download a ready CSV template for bulk order import"
-                className="flex items-center gap-1.5 border border-border bg-card text-foreground px-3 py-2.5 rounded-xl text-sm font-medium hover:bg-muted transition-colors">
+                className="flex items-center gap-1.5 border border-border bg-card text-foreground px-3 py-2.5 rounded-xl text-sm font-medium whitespace-nowrap hover:bg-muted transition-colors">
                 <Download className="w-4 h-4" /> Template
               </button>
               <button onClick={() => csvInputRef.current?.click()} disabled={importing}
                 title="Import orders in bulk from a CSV file"
-                className="flex items-center gap-1.5 border border-border bg-card text-foreground px-3 py-2.5 rounded-xl text-sm font-medium hover:bg-muted transition-colors disabled:opacity-50">
+                className="flex items-center gap-1.5 border border-border bg-card text-foreground px-3 py-2.5 rounded-xl text-sm font-medium whitespace-nowrap hover:bg-muted transition-colors disabled:opacity-50">
                 {importing ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileSpreadsheet className="w-4 h-4" />}
                 {importing ? 'Importing…' : 'Bulk CSV'}
               </button>
               <button onClick={() => setShowNew(true)}
-                className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2.5 rounded-xl text-sm font-semibold shadow-sm hover:bg-primary/90 transition-colors">
+                className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2.5 rounded-xl text-sm font-semibold whitespace-nowrap shadow-sm hover:bg-primary/90 transition-colors">
                 <Plus className="w-4 h-4" /> New Order
               </button>
             </div>
@@ -214,7 +214,7 @@ export default function OrdersPage() {
             <Search className="w-4 h-4 text-muted-foreground shrink-0" />
             <input value={search} onChange={e => setSearch(e.target.value)}
               placeholder="Search name, phone, order #…"
-              className="bg-transparent text-sm flex-1 outline-none text-foreground placeholder:text-muted-foreground" />
+              className="bg-transparent text-sm flex-1 min-w-0 outline-none text-foreground placeholder:text-muted-foreground" />
           </div>
           <button onClick={() => setActiveOnly(v => !v)}
             title="Hide Cancelled and Delivered orders"

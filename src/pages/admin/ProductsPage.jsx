@@ -196,7 +196,7 @@ export default function ProductsPage() {
     <AdminLayout>
       <div className="p-5 lg:p-8 max-w-screen-xl mx-auto space-y-5">
         {/* Header */}
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-2xl font-heading font-bold text-foreground">Products</h1>
             <p className="text-sm text-muted-foreground">{products.length} total</p>
