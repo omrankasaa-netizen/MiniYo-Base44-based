@@ -279,7 +279,7 @@ export default function ProductsPage() {
                     <input type="checkbox" checked={selected.size === filtered.length && filtered.length > 0}
                       onChange={toggleAll} className="rounded" />
                   </th>
-                  <th className="px-4 py-3 text-left">Product</th>
+                  <th className="px-4 py-3 text-left min-w-[220px]">Product</th>
                   <th className="px-4 py-3 text-left hidden md:table-cell">Category</th>
                   <th className="px-4 py-3 text-left">Price</th>
                   <th className="px-4 py-3 text-left hidden sm:table-cell">Stock</th>
@@ -309,8 +309,8 @@ export default function ProductsPage() {
                           <div className="w-10 h-10 rounded-lg bg-muted shrink-0 overflow-hidden">
                             {img ? <img src={img} alt={p.name} className="w-full h-full object-cover" /> : <div className="w-full h-full bg-muted" />}
                           </div>
-                          <div>
-                            <div className="flex items-center gap-1.5">
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
                               <p className="font-medium text-foreground">{p.name}</p>
                               {p.is_new && <span className="text-xs bg-accent/50 text-accent-foreground px-1.5 py-0.5 rounded-full">New</span>}
                               {p.is_featured && <span className="text-xs bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded-full">★</span>}
@@ -320,10 +320,10 @@ export default function ProductsPage() {
                         </div>
                       </td>
                       <td className="px-4 py-3 hidden md:table-cell text-muted-foreground">{catMap[p.category_id] || '—'}</td>
-                      <td className="px-4 py-3 font-semibold text-foreground">
+                      <td className="px-4 py-3 font-semibold text-foreground whitespace-nowrap">
                         ${p.price_usd?.toFixed(2)}
                         {p.compare_at_price_usd > p.price_usd && (
-                          <span className="text-xs text-muted-foreground line-through ml-1">${p.compare_at_price_usd?.toFixed(2)}</span>
+                          <span className="text-xs text-muted-foreground line-through ml-1 hidden sm:inline">${p.compare_at_price_usd?.toFixed(2)}</span>
                         )}
                       </td>
                       <td className="px-4 py-3 hidden sm:table-cell">
@@ -336,7 +336,7 @@ export default function ProductsPage() {
                           {p.status}
                         </span>
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3 whitespace-nowrap">
                         {canAccess('edit_products') && (
                           <div className="flex items-center gap-1">
                             <button onClick={() => { setEditProduct(p); setShowForm(true); }} title="Edit"

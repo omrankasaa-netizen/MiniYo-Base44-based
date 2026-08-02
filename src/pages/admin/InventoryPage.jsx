@@ -474,7 +474,7 @@ export default function InventoryPage() {
               <table className="w-full text-sm">
                 <thead className="bg-muted/50 text-muted-foreground text-xs uppercase tracking-wide">
                   <tr>
-                    <th className="text-left px-4 py-3">Product</th>
+                    <th className="text-left px-4 py-3 min-w-[170px]">Product</th>
                     <th className="text-left px-4 py-3">Reorder At</th>
                     <th className="text-left px-4 py-3">Stock</th>
                     <th className="text-left px-4 py-3">Reserved</th>
@@ -524,7 +524,7 @@ export default function InventoryPage() {
                   <thead className="bg-muted/50 text-muted-foreground text-xs uppercase tracking-wide">
                     <tr>
                       <th className="text-left px-4 py-3">Date</th>
-                      <th className="text-left px-4 py-3">Product</th>
+                      <th className="text-left px-4 py-3 min-w-[170px]">Product</th>
                       <th className="text-left px-4 py-3">Type</th>
                       <th className="text-left px-4 py-3">Qty</th>
                       <th className="text-left px-4 py-3">Before → After</th>

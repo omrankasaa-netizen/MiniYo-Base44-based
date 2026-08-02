@@ -451,7 +451,7 @@ export default function CustomersPage() {
             <table className="w-full text-sm">
               <thead className="bg-muted/50 text-xs uppercase tracking-wide text-muted-foreground">
                 <tr>
-                  <th className="px-4 py-3 text-left">Name</th>
+                  <th className="px-4 py-3 text-left min-w-[150px]">Name</th>
                   <th className="px-4 py-3 text-left hidden sm:table-cell">Email</th>
                   <th className="px-4 py-3 text-left hidden md:table-cell">Phone</th>
                   <th className="px-4 py-3 text-left">Tier</th>
