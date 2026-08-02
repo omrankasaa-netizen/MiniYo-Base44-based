@@ -47,6 +47,9 @@ function resolveRange(preset, customFrom, customTo) {
   if (preset === 'today') return { from: startToday, to: endOfToday };
   if (preset === '7d') return { from: new Date(now.getTime() - ms(7)), to: endOfToday };
   if (preset === '30d') return { from: new Date(now.getTime() - ms(30)), to: endOfToday };
+  // "All time": a window from long before the store existed, so the server
+  // range block covers every order ever placed.
+  if (preset === 'all') return { from: new Date('2020-01-01T00:00:00'), to: endOfToday };
   if (preset === 'custom') {
     if (!customFrom || !customTo) return null;
     const from = new Date(customFrom + 'T00:00:00');
@@ -211,9 +214,11 @@ export default function AdminDashboard() {
     }
   }
 
-  const rangeLabel = range
-    ? `${range.from.toLocaleDateString()} → ${range.to.toLocaleDateString()}`
-    : 'All time';
+  const rangeLabel = preset === 'all'
+    ? 'All time'
+    : range
+      ? `${range.from.toLocaleDateString()} → ${range.to.toLocaleDateString()}`
+      : 'All time';
 
   return (
     <AdminLayout>
