@@ -284,7 +284,12 @@ export function queryRecords(entity, { query = {}, sort = null, limit = null } =
         whereParts.push(
           `(json_extract(doc, '$.${key}') = ? OR CAST(json_extract(doc, '$.${key}') AS TEXT) = ?)`
         );
-        params.push(val, String(val ?? ''));
+        // better-sqlite3 rejects raw booleans ("can only bind numbers,
+        // strings, bigints, buffers, and null"); JSON true/false extract as
+        // 1/0 in SQLite, so coerce — the TEXT-cast branch still matches
+        // 'true'/'false' via String(val).
+        const bound = val === true ? 1 : val === false ? 0 : val;
+        params.push(bound, String(val ?? ''));
       }
     }
 
