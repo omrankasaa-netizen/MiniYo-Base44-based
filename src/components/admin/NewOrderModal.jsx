@@ -76,6 +76,48 @@ export default function NewOrderModal({ onClose, onSaved, currentUser }) {
   const productsById = {};
   for (const p of products) productsById[p.id] = p;
 
+  // ── Stock awareness ─────────────────────────────────────────────────────────
+  // Available = on_hand minus reserved (same math as the inventory engine).
+  // `claimed` subtracts quantities already in THIS order so re-adding the same
+  // variant greys out once the order would exceed what's on the shelf.
+  const availByVariantKey = {};
+  for (const v of variants) {
+    availByVariantKey[`${v.product_id}|${v.size || ''}|${v.color || ''}`] =
+      (v.qty_on_hand || 0) - (v.qty_reserved || 0);
+  }
+  const claimedByKey = {};
+  for (const it of items) {
+    const k = `${it.product_id}|${it.size || ''}|${it.color || ''}`;
+    claimedByKey[k] = (claimedByKey[k] || 0) + (Number(it.quantity) || 0);
+  }
+  function remainingFor(productId, size = '', color = '', excludeItemId = null) {
+    const pvs = variantsByProduct[productId] || [];
+    let base;
+    if (pvs.length > 0) {
+      base = availByVariantKey[`${productId}|${size}|${color}`];
+      if (base == null) return 0; // combo doesn't exist as a variant row
+    } else {
+      const p = productsById[productId];
+      if (!p) return 0;
+      base = (p.stock_quantity || 0) - (p.qty_reserved || 0);
+    }
+    const k = `${productId}|${size}|${color}`;
+    let claimed = claimedByKey[k] || 0;
+    if (excludeItemId) {
+      const own = items.find(i => i._id === excludeItemId);
+      if (own && `${own.product_id}|${own.size || ''}|${own.color || ''}` === k) {
+        claimed -= Number(own.quantity) || 0;
+      }
+    }
+    return base - claimed;
+  }
+  function productRemainingTotal(p) {
+    const pvs = variantsByProduct[p.id] || [];
+    if (!pvs.length) return remainingFor(p.id);
+    return pvs.reduce((s, v) => s + Math.max(0, remainingFor(p.id, v.size || '', v.color || '')), 0);
+  }
+  function outOfStockLabel() { return t('Out of stock', 'نفد المخزون'); }
+
   const totals = calcManualOrderTotals({
     items,
     deliveryFee: form.delivery_fee_usd,
@@ -99,17 +141,25 @@ export default function NewOrderModal({ onClose, onSaved, currentUser }) {
 
   function addProductToOrder(product) {
     const pvs = variantsByProduct[product.id] || [];
+    // Default to the first variant that still has stock instead of blindly
+    // taking the first row.
+    const chosen = pvs.length > 0
+      ? (pvs.find(v => remainingFor(product.id, v.size || '', v.color || '') > 0) || pvs[0])
+      : null;
+    // Refuse to add something that isn't on the shelf — the picker greys these
+    // out, but guard here too so a stale click can't sneak one in.
+    if (remainingFor(product.id, chosen?.size || '', chosen?.color || '') <= 0) return;
     // Base price honours a variant price when present (matches CartContext), then
     // the shared discount helper applies the best live auto-discount by default.
-    const basePrice = parseFloat(pvs[0]?.price_usd || product.price_usd) || 0;
+    const basePrice = parseFloat(chosen?.price_usd || product.price_usd) || 0;
     const effective = getEffectiveUnitPrice(liveDiscounts, product, basePrice);
     const newItem = {
       _id: Date.now() + Math.random(),
       product_id: product.id,
       product_name: product.name,
       sku: product.sku || '',
-      size: pvs.length > 0 ? pvs[0].size || '' : '',
-      color: pvs.length > 0 ? pvs[0].color || '' : '',
+      size: chosen ? chosen.size || '' : '',
+      color: chosen ? chosen.color || '' : '',
       base_price_usd: basePrice,
       unit_price_usd: effective,
       quantity: 1,
@@ -319,9 +369,12 @@ export default function NewOrderModal({ onClose, onSaved, currentUser }) {
                 <div className="max-h-40 overflow-y-auto space-y-0.5">
                   {filteredProducts.map(p => {
                     const thumb = productThumbSrc(p);
+                    const remaining = productRemainingTotal(p);
+                    const out = remaining <= 0;
                     return (
-                    <button key={p.id} onClick={() => addProductToOrder(p)}
-                      className="w-full flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-card text-sm transition-colors text-start">
+                    <button key={p.id} onClick={() => !out && addProductToOrder(p)}
+                      disabled={out}
+                      className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm transition-colors text-start ${out ? 'opacity-45 cursor-not-allowed' : 'hover:bg-card'}`}>
                       <img
                         src={thumb || IMAGE_PLACEHOLDER}
                         onError={handleImageError}
@@ -329,9 +382,14 @@ export default function NewOrderModal({ onClose, onSaved, currentUser }) {
                         className="w-10 h-10 rounded-lg object-cover bg-muted border border-border shrink-0"
                       />
                       <span className="flex-1 min-w-0">
-                        <span className="block font-medium text-foreground truncate">{p.name}</span>
+                        <span className={`block font-medium truncate ${out ? 'text-muted-foreground line-through' : 'text-foreground'}`}>{p.name}</span>
                         {p.sku && <span className="block text-xs text-muted-foreground truncate">{p.sku}</span>}
                       </span>
+                      {out ? (
+                        <span className="text-[11px] font-medium text-muted-foreground bg-muted border border-border rounded-full px-2 py-0.5 shrink-0">{outOfStockLabel()}</span>
+                      ) : (
+                        <span className="text-[11px] text-muted-foreground shrink-0">{t('{n} in stock', '{n} بالمخزون').replace('{n}', remaining)}</span>
+                      )}
                       <span className="text-muted-foreground shrink-0">${p.price_usd?.toFixed(2)}</span>
                     </button>
                     );
@@ -365,13 +423,19 @@ export default function NewOrderModal({ onClose, onSaved, currentUser }) {
                         {item.availableSizes.length > 0 && (
                           <select value={item.size} onChange={e => updateItem(item._id, 'size', e.target.value)}
                             className="px-2 py-1 rounded-lg border border-input bg-background text-xs">
-                            {item.availableSizes.map(s => <option key={s}>{s}</option>)}
+                            {item.availableSizes.map(s => {
+                              const out = s !== item.size && remainingFor(item.product_id, s, item.color || '', item._id) <= 0;
+                              return <option key={s} value={s} disabled={out}>{s}{out ? ` (${outOfStockLabel()})` : ''}</option>;
+                            })}
                           </select>
                         )}
                         {item.availableColors.length > 0 && (
                           <select value={item.color} onChange={e => updateItem(item._id, 'color', e.target.value)}
                             className="px-2 py-1 rounded-lg border border-input bg-background text-xs">
-                            {item.availableColors.map(c => <option key={c}>{c}</option>)}
+                            {item.availableColors.map(c => {
+                              const out = c !== item.color && remainingFor(item.product_id, item.size || '', c, item._id) <= 0;
+                              return <option key={c} value={c} disabled={out}>{c}{out ? ` (${outOfStockLabel()})` : ''}</option>;
+                            })}
                           </select>
                         )}
                         {/* Per-item price override — defaults to the discounted price */}
