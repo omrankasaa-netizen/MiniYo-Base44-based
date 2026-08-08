@@ -89,9 +89,16 @@ export default function Footer() {
         </div>
         <div className="border-t border-white/20 pt-6 flex flex-col sm:flex-row items-center justify-between gap-3">
           <p className="text-xs opacity-60">© {new Date().getFullYear()} {storeName}. {t('All rights reserved.', 'جميع الحقوق محفوظة.')}</p>
-          <p className="text-xs opacity-60 flex items-center gap-1">
-            {t('Made with', 'صنع بـ')} <Heart className="w-3 h-3 text-blush fill-blush" /> {t("for Lebanon's little ones", 'لصغار لبنان')}
-          </p>
+          <div className="flex flex-col items-center gap-1">
+            <p className="text-xs opacity-60 flex items-center gap-1">
+              {t('Made with', 'صنع بـ')} <Heart className="w-3 h-3 text-blush fill-blush" /> {t("for Lebanon's little ones", 'لصغار لبنان')}
+            </p>
+            <a href="https://ops-shift.com" target="_blank" rel="noopener"
+              className="text-xs opacity-60 hover:opacity-90 transition-opacity">
+              {t('Developed for', 'طُوِّر لصالح')} {storeName} {t('by', 'من')}{' '}
+              <span className="font-semibold tracking-tight">OPS<span className="text-[#00d4c8] font-light">/</span>SHFT</span>
+            </a>
+          </div>
           <Link to="/admin/login" className="opacity-20 hover:opacity-60 transition-opacity" title="Staff access">
             <Lock className="w-3 h-3" />
           </Link>
