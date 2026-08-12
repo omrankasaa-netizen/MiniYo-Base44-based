@@ -25,7 +25,7 @@ import { optimizeAndStore, bufferFromBase64 } from './imageOptimize.js';
 import { getProductPagePayloadBySlug, injectProductMeta } from './productMeta.js';
 import { buildFeedCsv } from './metaFeed.js';
 import { buildTiktokFeedCsv } from './tiktokFeed.js';
-import { sendCapiEvent, buildUserData } from './metaCapiClient.js';
+import { sendCapiEvent, buildUserData, mergeClientHashedUserData } from './metaCapiClient.js';
 import {
   derivePurchaseEventId, buildPurchaseCustomData, buildPurchaseUserData,
   purchaseConsentAllowed, isSendableValue,
@@ -682,8 +682,9 @@ app.post('/api/meta/purchase', async (req, res) => {
 // ─── Meta Conversions API: client-originated events ─────────────────────────
 // Server-side twin for the browser Pixel's ViewContent / AddToCart /
 // InitiateCheckout. The storefront posts the SAME event_id it passed to fbq so
-// Meta dedups the two. Only NON-PII custom_data is accepted from the client;
-// user_data (ip/ua/fbp/fbc) is derived server-side. Purchase is NOT accepted
+// Meta dedups the two. Only NON-PII custom_data is accepted from the client,
+// plus PRE-HASHED (SHA-256) identity fields for EMQ; raw PII is never accepted
+// and ip/ua/fbp/fbc are always derived server-side. Purchase is NOT accepted
 // here — it fires only from the trusted order flow above. Fire-and-forget: the
 // response never waits on Meta and tracking can never break a page load.
 app.post('/api/meta/track', (req, res) => {
@@ -695,8 +696,10 @@ app.post('/api/meta/track', (req, res) => {
     }
 
     const customData = buildTrackCustomData(body);
-    // PII is never trusted from the client; only request-derived signals.
-    const userData = buildUserData(metaClientSignals(req));
+    // Raw PII is never trusted from the client — only request-derived signals
+    // plus PRE-HASHED identity fields (validated 64-hex) the browser persisted
+    // from a previous checkout, merged via mergeClientHashedUserData.
+    const userData = mergeClientHashedUserData(buildUserData(metaClientSignals(req)), body.user_data);
 
     sendCapiEvent({
       eventName,

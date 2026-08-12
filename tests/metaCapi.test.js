@@ -10,7 +10,7 @@ import crypto from 'node:crypto';
 
 import {
   normalizeEmail, normalizePhone, sha256, buildUserData, buildContents,
-  buildEventPayload, sendCapiEvent,
+  buildEventPayload, sendCapiEvent, mergeClientHashedUserData,
 } from '../server/metaCapiClient.js';
 import {
   derivePurchaseEventId, buildPurchaseCustomData, buildPurchaseUserData,
@@ -45,7 +45,7 @@ test('buildUserData hashes email + phone, passes ip/ua/fbp/fbc raw', () => {
     clientIp: '1.2.3.4',
     userAgent: 'UA/1.0',
     fbp: 'fb.1.123.456',
-    fbc: 'fb.1.789.abc',
+    fbc: 'fb.1.1700000000000.abc',
   });
   assert.equal(ud.em[0], sha256('foo@bar.com'));
   assert.equal(ud.ph[0], sha256('9613123456'));
@@ -53,7 +53,7 @@ test('buildUserData hashes email + phone, passes ip/ua/fbp/fbc raw', () => {
   assert.equal(ud.client_ip_address, '1.2.3.4');
   assert.equal(ud.client_user_agent, 'UA/1.0');
   assert.equal(ud.fbp, 'fb.1.123.456');
-  assert.equal(ud.fbc, 'fb.1.789.abc');
+  assert.equal(ud.fbc, 'fb.1.1700000000000.abc');
   // Raw PII must never appear:
   const json = JSON.stringify(ud);
   assert.ok(!json.includes('foo@bar.com'));
@@ -166,4 +166,67 @@ test('buildPurchaseUserData maps order contact + request signals', () => {
   assert.equal(ud.em[0], sha256('a@b.com'));
   assert.equal(ud.client_ip_address, '9.9.9.9');
   assert.equal(ud.fbp, 'p');
+});
+
+test('buildPurchaseUserData adds hashed fn/ln/ct/st/country from the order', () => {
+  const ud = buildPurchaseUserData(
+    {
+      customer_name: 'Ahmad Al-Hassan',
+      customer_email: 'a@b.com',
+      customer_phone: '03123456',
+      city: 'Tripoli',
+      district: 'El Mina',
+      phone_country: 'LB',
+    },
+    {},
+  );
+  assert.equal(ud.fn[0], sha256('ahmad'));
+  assert.equal(ud.ln[0], sha256('alhassan'));
+  assert.equal(ud.ct[0], sha256('tripoli'));
+  assert.equal(ud.st[0], sha256('elmina'));
+  assert.equal(ud.country[0], sha256('lb'));
+  // Raw values must never appear:
+  const json = JSON.stringify(ud);
+  for (const raw of ['Ahmad', 'Hassan', 'Tripoli', 'Mina']) assert.ok(!json.includes(raw));
+});
+
+test('buildPurchaseUserData falls back to lb when phone_country missing', () => {
+  const ud = buildPurchaseUserData({ customer_name: 'Sara' }, {});
+  assert.equal(ud.country[0], sha256('lb'));
+  assert.equal(ud.fn[0], sha256('sara'));
+  assert.ok(!ud.ln);
+});
+
+test('buildUserData hashes name/geo/dob/gender fields', () => {
+  const ud = buildUserData({
+    firstName: 'Ahmad', lastName: 'Hassan', city: 'Beirut',
+    state: 'Mount Lebanon', zip: '1100', country: 'LB',
+    gender: 'Male', dateOfBirth: '1990-05-14',
+  });
+  assert.equal(ud.fn[0], sha256('ahmad'));
+  assert.equal(ud.ln[0], sha256('hassan'));
+  assert.equal(ud.ct[0], sha256('beirut'));
+  assert.equal(ud.st[0], sha256('mountlebanon'));
+  assert.equal(ud.zp[0], sha256('1100'));
+  assert.equal(ud.country[0], sha256('lb'));
+  assert.equal(ud.ge[0], sha256('m'));
+  assert.equal(ud.db[0], sha256('19900514'));
+});
+
+test('mergeClientHashedUserData merges valid hex, rejects junk + raw PII', () => {
+  const base = { client_ip_address: '1.2.3.4', em: [sha256('server@x.com')] };
+  const good = 'a'.repeat(64);
+  const merged = mergeClientHashedUserData(base, {
+    ph: good,
+    em: 'b'.repeat(64),          // must NOT overwrite server-derived em
+    fn: 'rawname',               // not hex → dropped
+    ct: 'G'.repeat(64),          // uppercase → dropped
+    evil: good,                  // not allowlisted → dropped
+  });
+  assert.deepEqual(merged.ph, [good]);
+  assert.deepEqual(merged.em, base.em);
+  assert.ok(!merged.fn);
+  assert.ok(!merged.ct);
+  assert.ok(!merged.evil);
+  assert.equal(merged.client_ip_address, '1.2.3.4');
 });
