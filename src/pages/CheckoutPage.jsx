@@ -267,9 +267,14 @@ export default function CheckoutPage() {
     updateAdvancedMatching({
       email: form.customer_email,
       phone: form.customer_phone ? toE164(activeCountry, form.customer_phone) : '',
+      firstName: form.customer_name?.split(' ')[0],
+      lastName: form.customer_name?.split(' ').slice(1).join(' ') || undefined,
+      city: form.city || undefined,
+      state: form.district || undefined,
+      country: activeCountry?.iso,
     }).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [!!form.customer_email, !!form.customer_phone]);
+  }, [!!form.customer_email, !!form.customer_phone, !!form.customer_name, !!form.city]);
 
   // Meta Pixel InitiateCheckout — fire once when the checkout page opens with a
   // non-empty cart.
@@ -490,6 +495,9 @@ export default function CheckoutPage() {
         phone: normalizedPhone,
         firstName: form.customer_name?.split(' ')[0],
         lastName: form.customer_name?.split(' ').slice(1).join(' ') || undefined,
+        city: form.city || undefined,
+        state: form.district || undefined,
+        country: activeCountry?.iso,
       }).catch(() => { /* tracking must never break checkout */ });
 
       // Create guest account if opted in (requires an email — the account is

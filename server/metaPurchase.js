@@ -40,10 +40,21 @@ export function buildPurchaseCustomData(order, items = []) {
 }
 
 // Build Purchase user_data from the order's contact fields + request signals.
+// Adds first/last name (split from customer_name), city, district (Meta's `st`)
+// and the store's country so the Purchase event earns full EMQ credit. All of
+// these are normalized + SHA-256 hashed inside buildUserData.
 export function buildPurchaseUserData(order, req = {}) {
+  const nameParts = String(order?.customer_name || '').trim().split(/\s+/);
   return buildUserData({
     email: order?.customer_email,
     phone: order?.customer_phone,
+    firstName: nameParts[0],
+    lastName: nameParts.slice(1).join(' ') || undefined,
+    city: order?.city,
+    state: order?.district,
+    // The storefront sells/ships in Lebanon; use the order's phone country when
+    // present (ISO alpha-2), falling back to 'lb'.
+    country: (order?.phone_country || 'lb').toLowerCase(),
     clientIp: req.clientIp,
     userAgent: req.userAgent,
     fbp: req.fbp,

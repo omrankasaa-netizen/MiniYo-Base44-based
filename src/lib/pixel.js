@@ -82,20 +82,49 @@ export function captureFbclid() {
 }
 
 // Re-call fbq('init') with hashed Advanced Matching params so every subsequent
-// event carries email / phone / external_id for Meta's Event Match Quality score.
-// All PII is SHA-256 hashed client-side. Also sends the anonymous visitor ID as
-// external_id even when no PII is provided, which alone gives a significant
-// match-quality lift according to Meta's EMQ documentation.
-export async function updateAdvancedMatching({ email, phone, firstName, lastName } = {}) {
+// event carries email / phone / names / geo / external_id for Meta's Event Match
+// Quality score. All PII is SHA-256 hashed client-side (Meta accepts pre-hashed
+// values). Also sends the anonymous visitor ID as external_id even when no PII
+// is provided, which alone gives a match-quality lift per Meta's EMQ docs.
+//
+// The hashed blob (never raw PII) is persisted in safeLocalStorage so a
+// RETURNING visitor's very first PageView/ViewContent already carries identity
+// — this is what moves the ViewContent EMQ score between checkout sessions.
+const AM_KEY = '_meta_am';
+
+export function getStoredAdvancedMatching() {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = safeLocalStorage.getItem(AM_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    // Only keep well-formed SHA-256 hex values (64 chars) — anything else is
+    // dropped rather than sent to Meta.
+    const clean = {};
+    for (const k of ['em', 'ph', 'fn', 'ln', 'ct', 'st', 'zp', 'country']) {
+      if (typeof parsed[k] === 'string' && /^[0-9a-f]{64}$/.test(parsed[k])) clean[k] = parsed[k];
+    }
+    return Object.keys(clean).length ? clean : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function updateAdvancedMatching({ email, phone, firstName, lastName, city, state, zip, country } = {}) {
   if (typeof window === 'undefined' || typeof window.fbq !== 'function') return;
   try {
     const vid = getOrCreateVisitorId();
     const normPhone = phone ? String(phone).replace(/[\s\-()]/g, '') : undefined;
-    const [em, ph, fn, ln, extId] = await Promise.all([
+    const [em, ph, fn, ln, ct, st, zp, ctr, extId] = await Promise.all([
       sha256hex(email),
       sha256hex(normPhone),
       sha256hex(firstName),
       sha256hex(lastName),
+      sha256hex(city),
+      sha256hex(state),
+      sha256hex(zip),
+      sha256hex(country ? String(country).trim().toLowerCase() : undefined),
       sha256hex(vid),
     ]);
     const userData = {};
@@ -103,9 +132,19 @@ export async function updateAdvancedMatching({ email, phone, firstName, lastName
     if (ph)    userData.ph          = ph;
     if (fn)    userData.fn          = fn;
     if (ln)    userData.ln          = ln;
+    if (ct)    userData.ct          = ct;
+    if (st)    userData.st          = st;
+    if (zp)    userData.zp          = zp;
+    if (ctr)   userData.country     = ctr;
     if (extId) userData.external_id = extId;
     if (Object.keys(userData).length === 0) return;
     window.fbq('init', META_PIXEL_ID, userData);
+    // Persist only the hashed identity (minus external_id, which comes from
+    // the visitor-id helper) for future sessions' init + CAPI track twins.
+    const { external_id, ...hashed } = userData;
+    if (Object.keys(hashed).length) {
+      try { safeLocalStorage.setItem(AM_KEY, JSON.stringify(hashed)); } catch { /* quota */ }
+    }
   } catch { /* tracking must never break the UX */ }
 }
 
@@ -164,7 +203,20 @@ function ensureMetaPixel() {
   metaInitialized = true;
   // Non-blocking: enrich with anonymous external_id immediately so every event
   // after consent carries it. PII fields are added later from checkout data.
+  // Non-blocking: enrich with the anonymous external_id plus any hashed
+  // identity persisted from a previous checkout, so every event after consent
+  // (including this session's ViewContents) carries match parameters.
   setTimeout(() => updateAdvancedMatching({}), 0);
+  // Note: updateAdvancedMatching hashes raw inputs; stored values are already
+  // hashed, so apply them via a direct re-init instead of re-hashing.
+  setTimeout(() => {
+    try {
+      const stored = getStoredAdvancedMatching();
+      if (stored && typeof window.fbq === 'function') {
+        window.fbq('init', META_PIXEL_ID, stored);
+      }
+    } catch { /* never throw */ }
+  }, 0);
 }
 
 function ensureTikTokPixel() {

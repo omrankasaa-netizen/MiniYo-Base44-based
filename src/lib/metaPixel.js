@@ -9,7 +9,7 @@
 // shared event_id so Meta deduplicates the pair. Server-side CAPI still reads
 // trusted order totals/line-items from the database.
 
-import { track, genEventId, hasMarketingConsent } from '@/lib/pixel';
+import { track, genEventId, hasMarketingConsent, getStoredAdvancedMatching } from '@/lib/pixel';
 import {
   contentId,
   buildAddToWishlistParams,
@@ -44,6 +44,11 @@ function postCapiTrack(eventName, eventId, params) {
         event_name: eventName,
         event_id: eventId,
         event_source_url: typeof window !== 'undefined' ? window.location?.href : undefined,
+        // Hashed-only identity (SHA-256, persisted after a previous checkout) so
+        // ViewContent/AddToCart/InitiateCheckout CAPI twins carry em/ph/etc. and
+        // earn EMQ credit. Raw PII never leaves the browser unhashed; the server
+        // validates hex format before merging with request-derived ip/ua/fbp/fbc.
+        user_data: getStoredAdvancedMatching() || undefined,
         content_ids: params.content_ids,
         contents: params.contents,
         content_type: params.content_type,

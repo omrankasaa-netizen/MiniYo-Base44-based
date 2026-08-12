@@ -54,14 +54,51 @@ function hashOrUndefined(normalized) {
   return normalized ? sha256(normalized) : undefined;
 }
 
-// Build Meta `user_data`. email/phone are hashed; ip/ua/fbp/fbc are sent raw.
+// Normalize free-text PII per Meta's spec before hashing: lowercase, trim,
+// strip all punctuation/whitespace runs (names, city, state).
+function normalizeText(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, '');
+}
+
+// dateOfBirth must be YYYYMMDD; gender is 'm'/'f'.
+function normalizeDob(value) {
+  const c = String(value || '').replace(/\D/g, '');
+  return c.length === 8 ? c : '';
+}
+
+function normalizeGender(value) {
+  const c = String(value || '').trim().toLowerCase().charAt(0);
+  return c === 'm' || c === 'f' ? c : '';
+}
+
+// Build Meta `user_data`. em/ph/fn/ln/ct/st/zp/country/ge/db are SHA-256
+// hashed after normalization; ip/ua/fbp/fbc are sent raw as Meta expects.
 // Returns only the keys that have values.
-export function buildUserData({ email, phone, clientIp, userAgent, fbp, fbc } = {}) {
+export function buildUserData({ email, phone, firstName, lastName, city, state, zip, country, gender, dateOfBirth, clientIp, userAgent, fbp, fbc } = {}) {
   const em = hashOrUndefined(normalizeEmail(email));
   const ph = hashOrUndefined(normalizePhone(phone));
+  const fn = hashOrUndefined(normalizeText(firstName));
+  const ln = hashOrUndefined(normalizeText(lastName));
+  const ct = hashOrUndefined(normalizeText(city));
+  const st = hashOrUndefined(normalizeText(state));
+  const zp = hashOrUndefined(normalizeText(zip));
+  const ctr = hashOrUndefined(normalizeText(country));
+  const ge = hashOrUndefined(normalizeGender(gender));
+  const db = hashOrUndefined(normalizeDob(dateOfBirth));
   const data = {};
   if (em) data.em = [em];
   if (ph) data.ph = [ph];
+  if (fn) data.fn = [fn];
+  if (ln) data.ln = [ln];
+  if (ct) data.ct = [ct];
+  if (st) data.st = [st];
+  if (zp) data.zp = [zp];
+  if (ctr) data.country = [ctr];
+  if (ge) data.ge = [ge];
+  if (db) data.db = [db];
   if (clientIp) data.client_ip_address = clientIp;
   if (userAgent) data.client_user_agent = userAgent;
   if (fbp) data.fbp = fbp;
@@ -70,6 +107,22 @@ export function buildUserData({ email, phone, clientIp, userAgent, fbp, fbc } = 
   // can hurt attribution — drop malformed values rather than send them.
   if (fbc && /^fb\.1\.\d{13,}\..+/.test(String(fbc))) data.fbc = fbc;
   return data;
+}
+
+// Merge CLIENT-PRE-HASHED identity fields into a server-built user_data object.
+// Used by /api/meta/track: the browser can only offer SHA-256 hashes it
+// persisted from a previous checkout (raw PII is never accepted from the
+// client). Only well-formed 64-char lowercase-hex values under an allowlist of
+// keys are merged, as single-element arrays like buildUserData produces.
+const CLIENT_HASHED_KEYS = ['em', 'ph', 'fn', 'ln', 'ct', 'st', 'zp', 'country', 'ge', 'db'];
+export function mergeClientHashedUserData(userData, clientHashed) {
+  const out = { ...(userData || {}) };
+  if (!clientHashed || typeof clientHashed !== 'object') return out;
+  for (const k of CLIENT_HASHED_KEYS) {
+    const v = clientHashed[k];
+    if (typeof v === 'string' && /^[0-9a-f]{64}$/.test(v) && !out[k]) out[k] = [v];
+  }
+  return out;
 }
 
 // ── Content / custom_data helpers ───────────────────────────────────────────
