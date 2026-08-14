@@ -3,7 +3,7 @@ import { useCart } from '@/contexts/CartContext';
 import { useLang } from '@/contexts/LanguageContext';
 import { useSiteSettings } from '@/hooks/useSiteSettings';
 import { base44 } from '@/api/base44Client';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { X, Minus, Plus, ShoppingBag, Truck } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { cmsImageSrc, handleImageError, normalizeImage } from '@/lib/imageFraming';
@@ -132,17 +132,11 @@ export default function CartDrawer() {
     return availableQty(product);
   };
 
-  const navigate = useNavigate();
-
   const handleAddRecommendation = (product) => {
-    // Variant products must be configured on the PDP — adding them here with no
-    // size/color lets a shopper check out a variant that was never chosen (and
-    // may be out of stock in every size they'd want). Route to the product page.
-    if (product.has_variants) {
-      setIsOpen(false);
-      navigate(`/product/${product.slug}`);
-      return;
-    }
+    // Only simple (non-variant) products are added directly — variant products
+    // render a "Choose" Link to the PDP instead (see below), so a shopper can
+    // never check out a variant they never picked.
+    if (product.has_variants) return;
     setJustAdded(product.id);
     // Pass the FULL product: the cart context clamps quantity against the
     // product's stock fields, which the old trimmed copy didn't carry — so the
@@ -259,13 +253,23 @@ export default function CartDrawer() {
                        <div className="p-2">
                          <p className="text-xs font-semibold text-foreground line-clamp-1">{name}</p>
                          <p className="text-xs font-bold text-primary mb-2">${(parseFloat(product.price_usd) || 0).toFixed(2)}</p>
-                         <button
-                           onClick={() => handleAddRecommendation(product)}
-                           disabled={!inStock}
-                           className={`w-full min-h-[44px] text-xs rounded-lg font-medium transition-colors ${inStock ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground cursor-not-allowed'}`}
-                         >
-                           {inStock ? t('Add', 'أضف') : t('Out', 'نفد')}
-                         </button>
+                         {product.has_variants ? (
+                           <Link
+                             to={`/product/${product.slug}`}
+                             onClick={() => setIsOpen(false)}
+                             className="block w-full min-h-[44px] leading-[44px] text-center text-xs rounded-lg font-medium bg-primary text-primary-foreground"
+                           >
+                             {t('Choose', 'اختاري')}
+                           </Link>
+                         ) : (
+                           <button
+                             onClick={() => handleAddRecommendation(product)}
+                             disabled={!inStock}
+                             className={`w-full min-h-[44px] text-xs rounded-lg font-medium transition-colors ${inStock ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground cursor-not-allowed'}`}
+                           >
+                             {inStock ? t('Add', 'أضف') : t('Out', 'نفد')}
+                           </button>
+                         )}
                        </div>
                      </div>
                    );
@@ -298,17 +302,27 @@ export default function CartDrawer() {
                        <div className="p-2">
                          <p className="text-xs font-semibold text-foreground line-clamp-2 h-8">{name}</p>
                          <p className="text-xs font-bold text-primary mb-2">${(parseFloat(product.price_usd) || 0).toFixed(2)}</p>
-                         <button
-                           onClick={() => handleAddRecommendation(product)}
-                           disabled={!inStock}
-                           className={`w-full text-xs py-1.5 rounded-lg font-medium transition-colors ${
-                             inStock
-                               ? 'bg-primary text-primary-foreground hover:bg-primary/90'
-                               : 'bg-muted text-muted-foreground cursor-not-allowed'
-                           }`}
-                         >
-                           {inStock ? t('Add', 'أضف') : t('Out', 'نفد')}
-                         </button>
+                         {product.has_variants ? (
+                           <Link
+                             to={`/product/${product.slug}`}
+                             onClick={() => setIsOpen(false)}
+                             className="block w-full text-center text-xs py-1.5 rounded-lg font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+                           >
+                             {t('Choose', 'اختاري')}
+                           </Link>
+                         ) : (
+                           <button
+                             onClick={() => handleAddRecommendation(product)}
+                             disabled={!inStock}
+                             className={`w-full text-xs py-1.5 rounded-lg font-medium transition-colors ${
+                               inStock
+                                 ? 'bg-primary text-primary-foreground hover:bg-primary/90'
+                                 : 'bg-muted text-muted-foreground cursor-not-allowed'
+                             }`}
+                           >
+                             {inStock ? t('Add', 'أضف') : t('Out', 'نفد')}
+                           </button>
+                         )}
                        </div>
                      </div>
                    );
