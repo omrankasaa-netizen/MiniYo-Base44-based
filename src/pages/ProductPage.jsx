@@ -124,7 +124,7 @@ export default function ProductPage() {
 
   const { data: variants = [] } = useQuery({
     queryKey: ['product-variants', product?.id],
-    queryFn: () => base44.entities.ProductVariant.filter({ product_id: product.id }, 'size', 50),
+    queryFn: () => base44.entities.ProductVariant.filter({ product_id: product.id }, 'size', 500),
     enabled: !!product?.id && product?.has_variants,
     initialData: preloaded?.variants,
     initialDataUpdatedAt: preloaded ? 0 : undefined,
@@ -449,7 +449,7 @@ export default function ProductPage() {
                     <Minus className="w-4 h-4" />
                   </button>
                   <span className="w-10 text-center text-sm font-semibold">{qty}</span>
-                  <button type="button" className="w-11 h-11 flex items-center justify-center" onClick={() => setQty((q) => Math.min(99, q + 1))}>
+                  <button type="button" className="w-11 h-11 flex items-center justify-center" onClick={() => setQty((q) => Math.min(stockQty > 0 ? stockQty : 1, 99, q + 1))}>
                     <Plus className="w-4 h-4" />
                   </button>
                 </div>
