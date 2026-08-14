@@ -254,13 +254,16 @@ export default function CartDrawer() {
                          <p className="text-xs font-semibold text-foreground line-clamp-1">{name}</p>
                          <p className="text-xs font-bold text-primary mb-2">${(parseFloat(product.price_usd) || 0).toFixed(2)}</p>
                          {product.has_variants ? (
-                           <Link
-                             to={`/product/${product.slug}`}
-                             onClick={() => setIsOpen(false)}
+                           // Plain anchor on purpose: SPA navigation initiated
+                           // from inside this drawer gets reverted by the router
+                           // (URL bounces back to the current page). A full
+                           // document navigation is bulletproof here.
+                           <a
+                             href={`/product/${product.slug}`}
                              className="block w-full min-h-[44px] leading-[44px] text-center text-xs rounded-lg font-medium bg-primary text-primary-foreground"
                            >
                              {t('Choose', 'اختاري')}
-                           </Link>
+                           </a>
                          ) : (
                            <button
                              onClick={() => handleAddRecommendation(product)}
@@ -303,13 +306,12 @@ export default function CartDrawer() {
                          <p className="text-xs font-semibold text-foreground line-clamp-2 h-8">{name}</p>
                          <p className="text-xs font-bold text-primary mb-2">${(parseFloat(product.price_usd) || 0).toFixed(2)}</p>
                          {product.has_variants ? (
-                           <Link
-                             to={`/product/${product.slug}`}
-                             onClick={() => setIsOpen(false)}
+                           <a
+                             href={`/product/${product.slug}`}
                              className="block w-full text-center text-xs py-1.5 rounded-lg font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
                            >
                              {t('Choose', 'اختاري')}
-                           </Link>
+                           </a>
                          ) : (
                            <button
                              onClick={() => handleAddRecommendation(product)}
