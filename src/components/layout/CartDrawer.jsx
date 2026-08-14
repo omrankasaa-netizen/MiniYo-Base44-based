@@ -3,7 +3,7 @@ import { useCart } from '@/contexts/CartContext';
 import { useLang } from '@/contexts/LanguageContext';
 import { useSiteSettings } from '@/hooks/useSiteSettings';
 import { base44 } from '@/api/base44Client';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { X, Minus, Plus, ShoppingBag, Truck } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { cmsImageSrc, handleImageError, normalizeImage } from '@/lib/imageFraming';
@@ -132,24 +132,22 @@ export default function CartDrawer() {
     return availableQty(product);
   };
 
+  const navigate = useNavigate();
+
   const handleAddRecommendation = (product) => {
+    // Variant products must be configured on the PDP — adding them here with no
+    // size/color lets a shopper check out a variant that was never chosen (and
+    // may be out of stock in every size they'd want). Route to the product page.
+    if (product.has_variants) {
+      setIsOpen(false);
+      navigate(`/product/${product.slug}`);
+      return;
+    }
     setJustAdded(product.id);
-    addItem(
-      {
-        id: product.id,
-        name: product.name,
-        name_ar: product.name_ar,
-        price_usd: product.price_usd,
-        compare_at_price_usd: product.compare_at_price_usd,
-        image_url: product.image_url,
-        sku: product.sku,
-        primaryImage: getPrimaryImage(product.id),
-        category_id: product.category_id,
-        has_variants: product.has_variants
-      },
-      null,
-      1
-    );
+    // Pass the FULL product: the cart context clamps quantity against the
+    // product's stock fields, which the old trimmed copy didn't carry — so the
+    // clamp read availability as 0 and silently refused every recommendation.
+    addItem({ ...product, primaryImage: getPrimaryImage(product.id) }, null, 1);
     setTimeout(() => setJustAdded(null), 1500);
   };
 
