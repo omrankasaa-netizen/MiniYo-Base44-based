@@ -16,7 +16,7 @@ import { updateAdvancedMatching } from '@/lib/pixel';
 import { ttInitiateCheckout, ttCompletePayment, ttNotifyPurchase } from '@/lib/tiktokPixel';
 import { ga4TrackBeginCheckout, ga4TrackPurchase } from '@/lib/ga4';
 import { readStoredUtmAttribution } from '@/lib/utmAttribution';
-import { DEFAULT_COUNTRY, findCountry, validateNationalNumber, toE164, stripTrunkZero } from '@/lib/countryCodes';
+import { DEFAULT_COUNTRY, findCountry, validateNationalNumber, validateLebaneseMobile, toE164, stripTrunkZero } from '@/lib/countryCodes';
 import CountryCodeSelect from '@/components/checkout/CountryCodeSelect';
 
 const ScrollToTop = ({ trigger }) => {
@@ -328,7 +328,7 @@ export default function CheckoutPage() {
   }
 
   function validateAltLebanese(phone) {
-    return /^\d{8}$/.test(stripTrunkZero(phone));
+    return validateLebaneseMobile(phone).ok;
   }
 
   function focusFieldIntoView(event) {
@@ -407,11 +407,18 @@ export default function CheckoutPage() {
 
     const phoneCheck = validateNationalNumber(activeCountry, form.customer_phone);
     if (!phoneCheck.ok) {
-      const lenMsg = phoneCheck.min === phoneCheck.max ? `${phoneCheck.min}` : `${phoneCheck.min}–${phoneCheck.max}`;
-      setPhoneError(t(
-        `Please enter a valid ${activeCountry.name} number (${lenMsg} digits after +${activeCountry.dial})`,
-        `يرجى إدخال رقم صحيح (${lenMsg} أرقام بعد +${activeCountry.dial})`
-      ));
+      if (activeCountry.iso === 'LB') {
+        setPhoneError(t(
+          'Please enter a valid Lebanese mobile number (03, 70, 71, 76, 78, 79 or 81 — e.g. 03123456 or 70123456).',
+          'يرجى إدخال رقم خليوي لبناني صحيح (03 أو 70 أو 71 أو 76 أو 78 أو 79 أو 81 — مثال: 03123456 أو 70123456).'
+        ));
+      } else {
+        const lenMsg = phoneCheck.min === phoneCheck.max ? `${phoneCheck.min}` : `${phoneCheck.min}–${phoneCheck.max}`;
+        setPhoneError(t(
+          `Please enter a valid ${activeCountry.name} number (${lenMsg} digits after +${activeCountry.dial})`,
+          `يرجى إدخال رقم صحيح (${lenMsg} أرقام بعد +${activeCountry.dial})`
+        ));
+      }
       setSubmitting(false);
       return;
     }
@@ -429,8 +436,8 @@ export default function CheckoutPage() {
     }
     if (altLebanesePhone.trim() && !validateAltLebanese(altLebanesePhone)) {
       setPhoneError(t(
-        'The Lebanese courier number must be 8 digits (e.g. 70123456).',
-        'الرقم اللبناني لشركة التوصيل يجب أن يتكون من 8 أرقام (مثال: 70123456).'
+        'The Lebanese courier number must be a valid mobile (03, 70, 71, 76, 78, 79 or 81).',
+        'رقم التوصيل اللبناني يجب أن يكون رقم خليوي صحيح (03 أو 70 أو 71 أو 76 أو 78 أو 79 أو 81).'
       ));
       setSubmitting(false);
       return;
@@ -865,7 +872,10 @@ export default function CheckoutPage() {
                         value={String(form[k] || '').replace(new RegExp(`^\\+?${activeCountry.dial}`), '')}
                         onFocus={focusFieldIntoView}
                         onChange={e => {
-                          const raw = stripTrunkZero(e.target.value).slice(0, activeCountry.len[1]);
+                          // Keep digits only — but NOT the trunk-zero strip, so a
+                          // Lebanese customer typing 03... sees their leading 0.
+                          // Validation/normalization strip it where appropriate.
+                          const raw = e.target.value.replace(/\D/g, '').slice(0, activeCountry.iso === 'LB' ? 9 : activeCountry.len[1]);
                           setF(k, raw);
                           setPhoneError('');
                         }}
@@ -919,7 +929,7 @@ export default function CheckoutPage() {
                         inputMode="tel"
                         dir="ltr"
                         value={altLebanesePhone}
-                        onChange={(e) => { setAltLebanesePhone(stripTrunkZero(e.target.value).slice(0, 8)); setPhoneError(''); }}
+                        onChange={(e) => { setAltLebanesePhone(e.target.value.replace(/\D/g, '').slice(0, 9)); setPhoneError(''); }}
                         onFocus={focusFieldIntoView}
                         placeholder="7x xxx xxx"
                         className="w-full px-3 py-2.5 bg-transparent text-sm min-h-[44px]"
