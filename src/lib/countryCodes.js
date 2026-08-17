@@ -244,8 +244,33 @@ export function stripTrunkZero(national) {
   return String(national || '').replace(/\D/g, '').replace(/^0+/, '');
 }
 
-// Validate the national part against the country's NSN length range.
+// Lebanese mobile rules (national significant number, trunk 0 removed):
+//   03 (Touch)            → NSN '3XXXXXX'  = 7 digits
+//   70/71/76/78/79 (Alfa) → NSN '7XXXXXXX' = 8 digits
+//   81 (Touch)            → NSN '81XXXXXX' = 8 digits
+// Anything else (e.g. 83, landline prefixes) is not a deliverable mobile.
+const LB_MOBILE_RULES = [
+  { prefix: '3', len: 7 },
+  { prefix: '70', len: 8 }, { prefix: '71', len: 8 }, { prefix: '76', len: 8 },
+  { prefix: '78', len: 8 }, { prefix: '79', len: 8 }, { prefix: '81', len: 8 },
+];
+
+// Validate a Lebanese mobile whether the customer types the trunk 0 or not
+// ('03123456' and '3123456' are the same number). Returns { ok, digits }.
+export function validateLebaneseMobile(national) {
+  const digits = stripTrunkZero(national);
+  const ok = LB_MOBILE_RULES.some((r) => digits.startsWith(r.prefix) && digits.length === r.len);
+  return { ok, digits };
+}
+
+// Validate the national part against the country's NSN rules. Lebanon checks
+// the mobile prefix whitelist (a bare length check let '83' through and
+// rejected valid 7-digit 03 numbers).
 export function validateNationalNumber(country, national) {
+  if (country?.iso === 'LB') {
+    const { ok, digits } = validateLebaneseMobile(national);
+    return { ok, digits, min: 7, max: 8, lebanese: true };
+  }
   const digits = stripTrunkZero(national);
   const [min, max] = country?.len || [4, 15];
   return { ok: digits.length >= min && digits.length <= max, digits, min, max };
