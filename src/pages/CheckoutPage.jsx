@@ -673,13 +673,14 @@ export default function CheckoutPage() {
         }
       }
 
-      // Update customer lifetime spend and check tier upgrades
+      // Update customer lifetime spend and check tier upgrades. The accrual is
+      // computed SERVER-SIDE (membershipEngine 'accrue_spend') — clients only
+      // report the order amount, so loyalty fields can no longer be forged.
       if (customer) {
-        const newSpend = (customer.lifetime_spend_usd || 0) + grandTotal;
-        await base44.entities.Customer.update(customer.id, {
-          lifetime_spend_usd: newSpend,
-          total_orders: (customer.total_orders || 0) + 1,
-          total_spent_usd: (customer.total_spent_usd || 0) + grandTotal
+        await base44.functions.invoke('membershipEngine', {
+          action: 'accrue_spend',
+          customer_id: customer.id,
+          amount_usd: grandTotal,
         });
 
         // Check for tier upgrades
