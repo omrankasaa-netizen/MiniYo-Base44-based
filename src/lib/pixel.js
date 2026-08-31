@@ -102,7 +102,7 @@ export function getStoredAdvancedMatching() {
     // Only keep well-formed SHA-256 hex values (64 chars) — anything else is
     // dropped rather than sent to Meta.
     const clean = {};
-    for (const k of ['em', 'ph', 'fn', 'ln', 'ct', 'st', 'zp', 'country']) {
+    for (const k of ['em', 'ph', 'fn', 'ln', 'ct', 'st', 'zp', 'country', 'external_id']) {
       if (typeof parsed[k] === 'string' && /^[0-9a-f]{64}$/.test(parsed[k])) clean[k] = parsed[k];
     }
     return Object.keys(clean).length ? clean : null;
@@ -139,13 +139,20 @@ export async function updateAdvancedMatching({ email, phone, firstName, lastName
     if (extId) userData.external_id = extId;
     if (Object.keys(userData).length === 0) return;
     window.fbq('init', META_PIXEL_ID, userData);
-    // Persist only the hashed identity (minus external_id, which comes from
-    // the visitor-id helper) for future sessions' init + CAPI track twins.
-    const { external_id, ...hashed } = userData;
-    if (Object.keys(hashed).length) {
-      try { safeLocalStorage.setItem(AM_KEY, JSON.stringify(hashed)); } catch { /* quota */ }
+    // Persist the hashed identity (INCLUDING external_id — it is the SHA-256 of
+    // the random anonymous visitor id, never raw PII) for future sessions'
+    // init + CAPI track twins.
+    if (Object.keys(userData).length) {
+      try { safeLocalStorage.setItem(AM_KEY, JSON.stringify(userData)); } catch { /* quota */ }
     }
   } catch { /* tracking must never break the UX */ }
+}
+
+// The persisted hashed external_id (SHA-256 of the anonymous visitor id), if
+// any. Passed to POST /api/meta/purchase so the server-side CAPI Purchase
+// carries the SAME external_id the Pixel events use (consistent-id dedup).
+export function getStoredExternalIdHash() {
+  return getStoredAdvancedMatching()?.external_id;
 }
 
 // Returns 'granted' | 'denied' | null (no choice stored yet).
@@ -367,11 +374,33 @@ export function trackTikTokPage() {
 // so this hook is the single source of page views and there is no double-count
 // on first load. track()/trackTikTokPage() gate on consent, so page views are
 // withheld until the visitor accepts. Both pixels fire from the same place.
+// Server-side CAPI twin of the browser PageView, sent with the SAME event_id
+// so Meta dedups the pair (recommended redundant Pixel + CAPI setup). Carries
+// the persisted hashed identity for EMQ credit. Fire-and-forget.
+function postPageViewCapi(eventId) {
+  if (!hasMarketingConsent()) return;
+  try {
+    fetch('/api/meta/track', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        event_name: 'PageView',
+        event_id: eventId,
+        event_source_url: typeof window !== 'undefined' ? window.location?.href : undefined,
+        user_data: getStoredAdvancedMatching() || undefined,
+      }),
+      keepalive: true,
+    }).catch(() => { /* tracking must never break the UX */ });
+  } catch { /* never throw into an effect */ }
+}
+
 export function usePageViewTracking() {
   const { pathname } = useLocation();
   useEffect(() => {
-    track('PageView');
+    const eventId = genEventId();
+    track('PageView', undefined, eventId);
     trackTikTokPage();
+    postPageViewCapi(eventId);
   }, [pathname]);
 }
 

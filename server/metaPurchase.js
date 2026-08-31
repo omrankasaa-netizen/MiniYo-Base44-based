@@ -5,6 +5,7 @@
 // calls sendCapiEvent with what buildPurchaseCustomData / buildPurchaseUserData
 // return.
 
+import * as metaCapi from './metaCapiClient.js';
 import { buildContents, buildUserData } from './metaCapiClient.js';
 
 // Deterministic event_id per order so Pixel/CAPI dedup works and CAPI retries
@@ -43,9 +44,9 @@ export function buildPurchaseCustomData(order, items = []) {
 // Adds first/last name (split from customer_name), city, district (Meta's `st`)
 // and the store's country so the Purchase event earns full EMQ credit. All of
 // these are normalized + SHA-256 hashed inside buildUserData.
-export function buildPurchaseUserData(order, req = {}) {
+export function buildPurchaseUserData(order, req = {}, { externalIdHash } = {}) {
   const nameParts = String(order?.customer_name || '').trim().split(/\s+/);
-  return buildUserData({
+  const data = buildUserData({
     email: order?.customer_email,
     phone: order?.customer_phone,
     firstName: nameParts[0],
@@ -60,6 +61,19 @@ export function buildPurchaseUserData(order, req = {}) {
     fbp: req.fbp,
     fbc: req.fbc,
   });
+  // Consistent external_id across Pixel + CAPI (Meta recommendation): prefer
+  // the browser's hashed visitor id (validated 64-hex upstream) so the CAPI
+  // Purchase stitches to the same profile as the pixel events; otherwise fall
+  // back to a stable server-side id (customer id, else the order email) so the
+  // event still carries a cross-session identifier.
+  const { sha256 } = metaCapi;
+  const ext = (typeof externalIdHash === 'string' && /^[0-9a-f]{64}$/.test(externalIdHash))
+    ? externalIdHash
+    : (order?.customer_id || order?.customer_email)
+      ? sha256(String(order.customer_id || order.customer_email).trim().toLowerCase())
+      : null;
+  if (ext) data.external_id = [ext];
+  return data;
 }
 
 // Marketing consent gate: fire only when the order did not explicitly record a

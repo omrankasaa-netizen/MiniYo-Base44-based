@@ -13,7 +13,9 @@ import { normalizeSku } from './metaFeed.js';
 
 // Events the /api/meta/track route will forward to CAPI. Purchase is excluded
 // on purpose so a spoofed client body can never mint a Purchase conversion.
-export const TRACK_EVENTS = new Set(['ViewContent', 'AddToCart', 'InitiateCheckout']);
+// PageView is included (Meta's recommended core event on every page) — it
+// carries no client-supplied custom_data, so a spoofed PageView is harmless.
+export const TRACK_EVENTS = new Set(['PageView', 'ViewContent', 'AddToCart', 'InitiateCheckout']);
 
 export function isTrackEvent(name) {
   return TRACK_EVENTS.has(name);

@@ -13,7 +13,7 @@ import {
 import {
   registerUser, authenticate, signToken, setSessionCookie, clearSessionCookie,
   getUserFromRequest, publicUser, findUserByEmail, setPassword, changePassword, updateUser,
-  issueOtp, verifyOtp as verifyOtpCode,
+  issueOtp, verifyOtp as verifyOtpCode, signResetToken, verifyResetToken,
 } from './auth.js';
 import { invokeFunction, invalidateDashboardCache } from './functions.js';
 import { sendEmail } from './email.js';
@@ -55,11 +55,25 @@ function otpEmailHtml(code) {
     </div></body></html>`;
 }
 
+// Build the password-reset email HTML. The link carries a short-lived,
+// single-purpose signed token (see auth.js signResetToken).
+function resetEmailHtml(resetUrl) {
+  return `<!doctype html><html><body style="margin:0;background:#faf7f2;font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;">
+    <div style="max-width:480px;margin:0 auto;padding:32px 24px;">
+      <h1 style="font-size:20px;color:#5a4a3f;margin:0 0 8px;">Reset your MiniYo password</h1>
+      <p style="color:#6b5d52;font-size:14px;line-height:1.6;margin:0 0 24px;">Tap the button below to choose a new password. The link expires in 1 hour.</p>
+      <p style="text-align:center;margin:0 0 24px;"><a href="${resetUrl}" style="display:inline-block;background:#3f342c;color:#fff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 28px;border-radius:12px;">Reset password</a></p>
+      <p style="color:#9a8d80;font-size:12px;margin:24px 0 0;">If you didn't request a password reset, you can safely ignore this email.</p>
+    </div></body></html>`;
+}
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
 const DIST = path.join(ROOT, 'dist');
 const UPLOAD_DIR = path.join(ROOT, 'uploads');
 const PORT = process.env.PORT || 4000;
+// Canonical public origin, used for email links + Meta/TikTok event URLs.
+const SITE_BASE = process.env.MINIYO_SITE_BASE || 'https://miniyokids.com';
 
 initSchema();
 runSeed();
@@ -86,6 +100,41 @@ if (!process.env.MINIYO_TIKTOK_ACCESS_TOKEN) {
 
 const app = express();
 app.disable('x-powered-by');
+// Behind Railway's edge proxy: trust the first proxy hop so req.ip is the real
+// client IP (rate limiting + Meta/TikTok client_ip_address depend on it).
+app.set('trust proxy', 1);
+
+// ─── Rate limiting (in-memory, per process) ─────────────────────────────────
+// Fixed-window buckets keyed on route bucket + client IP. Protects credential
+// endpoints (login/OTP/reset brute force) and the public tracking endpoints
+// (CAPI spam would otherwise burn the Meta/TikTok event quotas).
+const rateBuckets = new Map();
+function rateLimit(bucket, { windowMs, max }) {
+  return (req, res, next) => {
+    const now = Date.now();
+    const key = `${bucket}|${req.ip}`;
+    let entry = rateBuckets.get(key);
+    if (!entry || now > entry.reset) {
+      entry = { count: 0, reset: now + windowMs };
+      rateBuckets.set(key, entry);
+    }
+    entry.count += 1;
+    if (entry.count > max) {
+      res.set('Retry-After', String(Math.max(1, Math.ceil((entry.reset - now) / 1000))));
+      return res.status(429).json({ error: 'Too many requests. Please try again later.' });
+    }
+    next();
+  };
+}
+// Periodic sweep so the map doesn't grow unbounded.
+const rateSweep = setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of rateBuckets) if (now > v.reset) rateBuckets.delete(k);
+}, 60 * 1000);
+rateSweep.unref?.();
+
+const authRateLimit = rateLimit('auth', { windowMs: 10 * 60 * 1000, max: 30 });
+const trackRateLimit = rateLimit('track', { windowMs: 60 * 1000, max: 120 });
 
 // Baseline security headers. NOTE: a Content-Security-Policy is intentionally
 // NOT set yet — Meta/TikTok pixels and Google Fonts make a correct CSP risky;
@@ -143,7 +192,7 @@ app.get('/api/auth/me', (req, res) => {
   res.json(publicUser(user));
 });
 
-app.post('/api/auth/login', (req, res) => {
+app.post('/api/auth/login', authRateLimit, (req, res) => {
   try {
     const { email, password } = req.body || {};
     const user = authenticate(email, password);
@@ -153,7 +202,7 @@ app.post('/api/auth/login', (req, res) => {
   } catch (e) { handleError(res, e); }
 });
 
-app.post('/api/auth/register', (req, res) => {
+app.post('/api/auth/register', authRateLimit, (req, res) => {
   try {
     const { email, password, full_name, phone } = req.body || {};
     if (!email || !password) return res.status(400).json({ error: 'email and password required' });
@@ -175,7 +224,7 @@ app.post('/api/auth/register', (req, res) => {
 });
 
 // Verify the emailed OTP code. Only issues a session on a correct, unexpired code.
-app.post('/api/auth/verify-otp', (req, res) => {
+app.post('/api/auth/verify-otp', authRateLimit, (req, res) => {
   try {
     const { email, otpCode } = req.body || {};
     const user = findUserByEmail(email);
@@ -190,7 +239,7 @@ app.post('/api/auth/verify-otp', (req, res) => {
 });
 
 // Regenerate and re-email a verification code.
-app.post('/api/auth/resend-otp', (req, res) => {
+app.post('/api/auth/resend-otp', authRateLimit, (req, res) => {
   try {
     const { email } = req.body || {};
     const user = findUserByEmail(email);
@@ -238,22 +287,40 @@ app.post('/api/auth/change-password', (req, res) => {
   } catch (e) { handleError(res, e); }
 });
 
-app.post('/api/auth/reset-password-request', (req, res) => {
-  // No external mail dependency required; always succeed (token surfaced for self-host).
+app.post('/api/auth/reset-password-request', authRateLimit, (req, res) => {
+  // Always succeed — never reveal whether the account exists. CRITICAL: the
+  // reset token is a bearer credential and must ONLY travel over email. (The
+  // previous implementation returned it in the JSON response, which let anyone
+  // take over any account — including super_admin — knowing just its email.)
   try {
     const { email } = req.body || {};
-    const user = findUserByEmail(email);
-    res.json({ ok: true, reset_token: user ? signToken(user.id) : null });
+    const user = email ? findUserByEmail(email) : null;
+    if (user) {
+      const token = signResetToken(user.id);
+      const resetUrl = `${SITE_BASE}/reset-password?token=${encodeURIComponent(token)}`;
+      sendEmail({
+        to: user.email,
+        subject: 'Reset your MiniYo password',
+        html: resetEmailHtml(resetUrl),
+        email_type: 'password_reset',
+        customer_id: user.id,
+        trigger_event: 'reset_password',
+      }).catch(() => {});
+    }
+    res.json({ ok: true });
   } catch (e) { handleError(res, e); }
 });
 
-app.post('/api/auth/reset-password', (req, res) => {
+app.post('/api/auth/reset-password', authRateLimit, (req, res) => {
   try {
     const { resetToken, newPassword } = req.body || {};
-    const payload = resetToken
-      ? (() => { try { return JSON.parse(Buffer.from(resetToken.split('.')[1], 'base64').toString()); } catch { return null; } })()
-      : null;
+    // Verify the SIGNATURE and the single-purpose claim (the old code merely
+    // base64-decoded the payload, so a forged token could reset any account).
+    const payload = resetToken ? verifyResetToken(resetToken) : null;
     if (!payload?.sub) return res.status(400).json({ error: 'Invalid or expired reset token' });
+    if (!newPassword || String(newPassword).length < 8) {
+      return res.status(400).json({ error: 'New password must be at least 8 characters' });
+    }
     setPassword(payload.sub, newPassword);
     res.json({ ok: true });
   } catch (e) { handleError(res, e); }
@@ -347,26 +414,93 @@ function ensureEntity(req, res, next) {
 const isAdmin = (user) => !!user && ['super_admin', 'admin', 'staff'].includes(user.role);
 
 // Entity → operations that a non-admin (guest/customer) may perform.
+// Guest writes are limited to what checkout genuinely needs; everything
+// self-scoped (wishlist, addresses, profile) requires authentication and is
+// enforced per-record in authorizeWrite below.
 const PUBLIC_WRITES = {
   Order: ['create'],
   OrderItem: ['create'],
   OrderStatusHistory: ['create'],
-  Customer: ['create', 'update'],
-  CustomerAddress: ['create', 'update', 'delete'],
+  Customer: ['create'],
   Review: ['create'],
-  WishlistItem: ['create', 'delete'],
-  PromoCode: ['update'], // checkout increments times_used only
-  AuditLog: ['create'],
+  PromoCode: ['update'], // guests may ONLY increment times_used by 1 (see below)
 };
+
+// Fields a non-admin may never write on a Customer record (CRM/loyalty state).
+// Spend + tier accrual moved server-side to membershipEngine 'accrue_spend'.
+const CUSTOMER_WRITE_BLOCKLIST = new Set([
+  'is_blocked', 'tags', 'notes', 'current_tier', 'lifetime_spend_usd',
+  'total_orders', 'total_spent_usd', 'free_delivery_credits_remaining',
+  'silver_granted', 'gold_granted', 'user_id', 'role',
+]);
+
+// Ids of Customer records owned by this account (matched by account email).
+function customerIdsForUser(user) {
+  if (!user?.email) return new Set();
+  const email = String(user.email).toLowerCase();
+  return new Set(
+    queryRecords('Customer', { limit: 5000 })
+      .filter((c) => (c.email || '').toLowerCase() === email)
+      .map((c) => c.id),
+  );
+}
 
 function authorizeWrite(op) {
   return (req, res, next) => {
     const user = getUserFromRequest(req);
     if (isAdmin(user)) return next();
-    if (PUBLIC_WRITES[req.params.entity]?.includes(op)) return next();
-    return res.status(user ? 403 : 401).json({
+    const entity = req.params.entity;
+    const forbid = () => res.status(user ? 403 : 401).json({
       error: user ? 'Forbidden: admin access required' : 'Authentication required',
     });
+
+    // Self-scoped writes for authenticated customers.
+    if (user) {
+      const ownCustomers = customerIdsForUser(user);
+      if (entity === 'WishlistItem') {
+        if (op === 'create' && req.body?.user_id === user.id) return next();
+        if ((op === 'update' || op === 'delete')) {
+          const rec = getRecord('WishlistItem', req.params.id);
+          if (rec && rec.user_id === user.id) return next();
+        }
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+      if (entity === 'CustomerAddress') {
+        const ownsCustomer = (cid) => ownCustomers.has(cid);
+        if (op === 'create' && ownsCustomer(req.body?.customer_id)) return next();
+        if (op === 'update' || op === 'delete') {
+          const rec = getRecord('CustomerAddress', req.params.id);
+          if (rec && ownsCustomer(rec.customer_id)) return next();
+        }
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+      if (entity === 'Customer' && op === 'update') {
+        // Own record only, and never the CRM/loyalty blocklist fields.
+        if (ownCustomers.has(req.params.id)
+            && !Object.keys(req.body || {}).some((k) => CUSTOMER_WRITE_BLOCKLIST.has(k))) {
+          return next();
+        }
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+      if (entity === 'AuditLog' && op === 'create') return next();
+    }
+
+    if (PUBLIC_WRITES[entity]?.includes(op)) {
+      // Guest PromoCode update: allow ONLY a times_used increment of exactly 1
+      // (checkout's promo redemption counter). Previously a guest could rewrite
+      // ANY promo field — e.g. set a 100% discount or activate dead codes.
+      if (entity === 'PromoCode' && op === 'update' && !user) {
+        const rec = getRecord('PromoCode', req.params.id);
+        const keys = Object.keys(req.body || {});
+        const nextVal = Number(req.body?.times_used);
+        if (!rec || keys.length !== 1 || keys[0] !== 'times_used'
+            || nextVal !== (Number(rec.times_used) || 0) + 1) {
+          return res.status(403).json({ error: 'Forbidden' });
+        }
+      }
+      return next();
+    }
+    return forbid();
   };
 }
 
@@ -382,7 +516,7 @@ function maybeInvalidateDashboard(entity) {
 // Never expose User credential-bearing fields through generic CRUD.
 function sanitize(entity, record) {
   if (entity === 'User' && record) {
-    const { password_hash, ...rest } = record;
+    const { password_hash, otp_hash, otp_expires_at, otp_attempts, ...rest } = record;
     return rest;
   }
   return record;
@@ -404,11 +538,105 @@ const CACHEABLE_CONTENT_ENTITIES = new Set([
   'Discount', 'MembershipSettings', 'ShippingZone',
 ]);
 
-app.get('/api/entities/:entity', ensureEntity, (req, res) => {
+// ─── Read authorization for PII-bearing entities ────────────────────────────
+// The generic entity API used to be world-readable: anyone could GET
+// /api/entities/Order (or Customer / User / EmailLog ...) and dump every
+// customer's name, phone, address and order history. These entities now
+// require either an admin session or a strictly self-scoped customer query.
+const SENSITIVE_READ_ENTITIES = new Set([
+  'Order', 'OrderItem', 'OrderStatusHistory', 'Customer', 'CustomerAddress',
+  'User', 'EmailLog', 'AuditLog', 'WishlistItem',
+]);
+
+// Fields a GUEST may see when probing a Customer by exact email (checkout
+// prefill / tier display). Phone, notes, tags and CRM internals stay hidden.
+const GUEST_CUSTOMER_FIELDS = [
+  'id', 'email', 'name', 'full_name', 'current_tier',
+  'lifetime_spend_usd', 'free_delivery_credits_remaining',
+];
+function redactCustomer(record) {
+  if (!record) return record;
+  const out = {};
+  for (const k of GUEST_CUSTOMER_FIELDS) if (record[k] !== undefined) out[k] = record[k];
+  return out;
+}
+
+function authorizeRead(req, res, next) {
+  const entity = req.params.entity;
+  if (!SENSITIVE_READ_ENTITIES.has(entity)) return next();
+  const user = getUserFromRequest(req);
+  if (isAdmin(user)) return next();
+  const isList = !req.params.id;
+
+  if (!user) {
+    // Guests get exactly one read: a REDACTED customer-by-email probe used by
+    // checkout prefill / registration. (Guest order tracking goes through the
+    // dedicated phone-verified /api/orders/track endpoint instead.)
+    if (entity === 'Customer' && isList) {
+      const q = parseListParams(req).query;
+      if (q && typeof q.email === 'string' && q.email && Object.keys(q).length === 1) {
+        req.redactCustomer = true;
+        return next();
+      }
+    }
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+
+  // Authenticated customers: strictly self-scoped reads.
+  const email = String(user.email || '').toLowerCase();
+  const q = parseListParams(req).query || {};
+  const ownCustomers = customerIdsForUser(user);
+  const ownsOrder = (orderId) => {
+    const o = getRecord('Order', orderId);
+    if (!o) return false;
+    return (o.customer_email || '').toLowerCase() === email
+      || o.customer_id === user.id
+      || ownCustomers.has(o.customer_id);
+  };
+
+  let ok = false;
+  switch (entity) {
+    case 'User':
+      ok = !isList && req.params.id === user.id;
+      break;
+    case 'Customer':
+      ok = isList
+        ? (String(q.email || '').toLowerCase() === email || q.user_id === user.id)
+        : ownCustomers.has(req.params.id);
+      break;
+    case 'CustomerAddress':
+      ok = isList
+        ? ownCustomers.has(q.customer_id)
+        : ownCustomers.has(getRecord('CustomerAddress', req.params.id)?.customer_id);
+      break;
+    case 'Order':
+      ok = isList
+        ? (String(q.customer_email || '').toLowerCase() === email
+          || q.customer_id === user.id || ownCustomers.has(q.customer_id))
+        : ownsOrder(req.params.id);
+      break;
+    case 'OrderItem':
+    case 'OrderStatusHistory':
+      ok = isList && !!q.order_id && ownsOrder(q.order_id);
+      break;
+    case 'WishlistItem':
+      ok = isList
+        ? q.user_id === user.id
+        : getRecord('WishlistItem', req.params.id)?.user_id === user.id;
+      break;
+    default:
+      ok = false; // EmailLog / AuditLog are admin-only
+  }
+  if (!ok) return res.status(403).json({ error: 'Forbidden' });
+  next();
+}
+
+app.get('/api/entities/:entity', ensureEntity, authorizeRead, (req, res) => {
   try {
     const { query, sort, limit } = parseListParams(req);
-    const records = queryRecords(req.params.entity, { query, sort, limit })
+    let records = queryRecords(req.params.entity, { query, sort, limit })
       .map((r) => sanitize(req.params.entity, r));
+    if (req.redactCustomer) records = records.map(redactCustomer);
     const user = getUserFromRequest(req);
     // Admin reads must never be edge-cached; otherwise recently-saved settings
     // (e.g. ShippingZone/SiteSetting) can appear "not persisted" for minutes.
@@ -421,7 +649,7 @@ app.get('/api/entities/:entity', ensureEntity, (req, res) => {
   } catch (e) { handleError(res, e); }
 });
 
-app.get('/api/entities/:entity/:id', ensureEntity, (req, res) => {
+app.get('/api/entities/:entity/:id', ensureEntity, authorizeRead, (req, res) => {
   try {
     const record = getRecord(req.params.entity, req.params.id);
     if (!record) return res.status(404).json({ error: 'Not found' });
@@ -483,7 +711,6 @@ app.delete('/api/entities/:entity/:id', ensureEntity, authorizeWrite('delete'), 
 // Meta-supported CSV product feed. `id` == Product.sku so catalog entries match
 // content_ids in Pixel/CAPI events + product:retailer_item_id in the JSON-LD.
 // Cached so Meta's scheduled fetch is cheap; regenerated at most hourly.
-const SITE_BASE = process.env.MINIYO_SITE_BASE || 'https://miniyokids.com';
 app.get('/meta-feed.csv', (req, res) => {
   try {
     const products = queryRecords('Product', { limit: 100000 });
@@ -589,6 +816,49 @@ app.get('/sitemap.xml', (req, res) => {
   }
 });
 
+// ─── Guest order tracking (phone-verified) ──────────────────────────────────
+// Replaces the old flow where the browser filtered the PUBLIC Order entity by
+// order_number and compared the phone client-side — which exposed every order's
+// full PII to anyone. Now the server verifies order number + phone and returns
+// only the fields the tracking UI needs.
+app.post('/api/orders/track', trackRateLimit, (req, res) => {
+  try {
+    const orderNumber = String(req.body?.order_number || '').trim().toUpperCase();
+    const phoneRaw = String(req.body?.phone || '');
+    if (!orderNumber || !phoneRaw) {
+      return res.status(400).json({ error: 'order_number and phone required' });
+    }
+    const order = queryRecords('Order', { query: { order_number: orderNumber }, limit: 1 })[0];
+    const digits = (v) => String(v || '').replace(/\D/g, '');
+    const orderPhone = digits(order?.customer_phone);
+    const givenPhone = digits(phoneRaw);
+    // Match on the trailing 8 digits (local LB subscriber number) so country
+    // code / leading-zero formatting differences don't lock out real customers.
+    const matches = order && orderPhone && givenPhone
+      && orderPhone.slice(-8) === givenPhone.slice(-8);
+    if (!matches) return res.status(404).json({ error: 'Order not found' });
+
+    const items = queryRecords('OrderItem', { query: { order_id: order.id }, limit: 200 })
+      .map((i) => ({
+        id: i.id,
+        product_name: i.product_name,
+        quantity: i.quantity,
+        line_total_usd: i.line_total_usd,
+      }));
+    res.json({
+      order: {
+        id: order.id,
+        order_number: order.order_number,
+        order_status: order.order_status,
+        order_date: order.order_date,
+        customer_name: order.customer_name,
+        grand_total_usd: order.grand_total_usd,
+      },
+      items,
+    });
+  } catch (e) { handleError(res, e); }
+});
+
 // ─── Meta Conversions API: Purchase ─────────────────────────────────────────
 // Fires the server-side Purchase event from TRUSTED order data. The client only
 // passes an order_id; all money/contact values are read from the DB (never from
@@ -603,7 +873,7 @@ function metaClientSignals(req) {
   };
 }
 
-app.post('/api/meta/purchase', async (req, res) => {
+app.post('/api/meta/purchase', trackRateLimit, async (req, res) => {
   try {
     const orderId = req.body?.order_id;
     if (!orderId) return res.status(400).json({ error: 'order_id required' });
@@ -622,7 +892,13 @@ app.post('/api/meta/purchase', async (req, res) => {
     // Only send for a real sale (value > 0).
     if (!isSendableValue(value)) return res.json({ ok: true, skipped: 'invalid_value' });
 
-    const userData = buildPurchaseUserData(order, metaClientSignals(req));
+    // The browser may pass its hashed (SHA-256) external_id — the anonymous
+    // visitor id it already sends to the Pixel — so the CAPI Purchase carries
+    // the SAME external_id and Meta can stitch the two. Validated 64-hex only.
+    const clientExtId = /^[0-9a-f]{64}$/.test(String(req.body?.external_id || ''))
+      ? String(req.body.external_id)
+      : undefined;
+    const userData = buildPurchaseUserData(order, metaClientSignals(req), { externalIdHash: clientExtId });
     const eventId = derivePurchaseEventId(order);
 
     // Build event_time from the order's creation timestamp.
@@ -687,7 +963,7 @@ app.post('/api/meta/purchase', async (req, res) => {
 // and ip/ua/fbp/fbc are always derived server-side. Purchase is NOT accepted
 // here — it fires only from the trusted order flow above. Fire-and-forget: the
 // response never waits on Meta and tracking can never break a page load.
-app.post('/api/meta/track', (req, res) => {
+app.post('/api/meta/track', trackRateLimit, (req, res) => {
   try {
     const body = req.body || {};
     const eventName = body.event_name;
@@ -736,7 +1012,7 @@ function tiktokClientSignals(req) {
   };
 }
 
-app.post('/api/tiktok/purchase', async (req, res) => {
+app.post('/api/tiktok/purchase', trackRateLimit, async (req, res) => {
   try {
     const orderId = req.body?.order_id;
     if (!orderId) return res.status(400).json({ error: 'order_id required' });
@@ -790,7 +1066,7 @@ app.post('/api/tiktok/purchase', async (req, res) => {
 // user (ip/ua/ttp/ttclid) is derived server-side. CompletePayment is NOT accepted
 // here — it fires only from the trusted order flow above. Fire-and-forget: the
 // response never waits on TikTok and tracking can never break a page load.
-app.post('/api/tiktok/track', (req, res) => {
+app.post('/api/tiktok/track', trackRateLimit, (req, res) => {
   try {
     const body = req.body || {};
     const eventName = body.event_name;

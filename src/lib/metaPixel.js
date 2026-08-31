@@ -9,7 +9,7 @@
 // shared event_id so Meta deduplicates the pair. Server-side CAPI still reads
 // trusted order totals/line-items from the database.
 
-import { track, genEventId, hasMarketingConsent, getStoredAdvancedMatching } from '@/lib/pixel';
+import { track, genEventId, hasMarketingConsent, getStoredAdvancedMatching, getStoredExternalIdHash } from '@/lib/pixel';
 import {
   contentId,
   buildAddToWishlistParams,
@@ -196,7 +196,12 @@ export async function notifyPurchase(orderId) {
     await fetch('/api/meta/purchase', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ order_id: orderId }),
+      body: JSON.stringify({
+        order_id: orderId,
+        // Hashed anonymous visitor id so the CAPI Purchase shares the Pixel's
+        // external_id (consistent cross-channel identity). 64-hex or omitted.
+        external_id: getStoredExternalIdHash() || undefined,
+      }),
       keepalive: true,
     });
   } catch {

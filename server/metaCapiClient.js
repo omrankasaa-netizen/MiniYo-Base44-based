@@ -114,7 +114,7 @@ export function buildUserData({ email, phone, firstName, lastName, city, state, 
 // persisted from a previous checkout (raw PII is never accepted from the
 // client). Only well-formed 64-char lowercase-hex values under an allowlist of
 // keys are merged, as single-element arrays like buildUserData produces.
-const CLIENT_HASHED_KEYS = ['em', 'ph', 'fn', 'ln', 'ct', 'st', 'zp', 'country', 'ge', 'db'];
+const CLIENT_HASHED_KEYS = ['em', 'ph', 'fn', 'ln', 'ct', 'st', 'zp', 'country', 'ge', 'db', 'external_id'];
 export function mergeClientHashedUserData(userData, clientHashed) {
   const out = { ...(userData || {}) };
   if (!clientHashed || typeof clientHashed !== 'object') return out;

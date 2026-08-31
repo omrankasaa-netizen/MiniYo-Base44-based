@@ -601,6 +601,26 @@ function membershipEngine(body) {
     return { success: true, creditsGranted: bronzeCredits };
   }
 
+  if (action === 'accrue_spend') {
+    // Server-side lifetime-spend accrual after checkout. Previously the client
+    // PUT the new totals directly onto the Customer record, which let ANY
+    // guest overwrite spend/tier fields on ANY customer (inflating their own
+    // lifetime spend unlocks free-delivery credits). Now the client reports
+    // only the order amount and the server performs the monotonic increment.
+    const customer = getRecord('Customer', customer_id);
+    if (!customer) return { _status: 404, error: 'Customer not found' };
+    const amount = Number(body.amount_usd);
+    if (!Number.isFinite(amount) || amount <= 0 || amount > 100000) {
+      return { _status: 400, error: 'invalid amount_usd' };
+    }
+    updateRecord('Customer', customer_id, {
+      lifetime_spend_usd: (customer.lifetime_spend_usd || 0) + amount,
+      total_orders: (customer.total_orders || 0) + 1,
+      total_spent_usd: (customer.total_spent_usd || 0) + amount,
+    });
+    return { success: true };
+  }
+
   if (action === 'check_tier_upgrade') {
     const customer = getRecord('Customer', customer_id);
     if (!customer) return { _status: 404, error: 'Customer not found' };
