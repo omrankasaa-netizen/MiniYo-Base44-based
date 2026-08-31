@@ -4,9 +4,13 @@ import { useLang } from '@/contexts/LanguageContext';
 import { getConsentChoice, grantConsent, denyConsent, applyStoredConsent } from '@/lib/pixel';
 
 // Bottom-anchored, RTL-aware cookie-consent banner. Shown only on first visit
-// (no stored choice). Gates the Meta Pixel via Consent Mode: Accept grants,
-// Decline keeps the default revoked state set in index.html. The choice is
-// persisted in localStorage 'miniyo-consent' so the banner does not reappear.
+// (no stored choice). IMPLIED CONSENT MODEL (see src/lib/metaConsent.js):
+// Meta/TikTok tracking is already active by the time this banner renders —
+// Accept just persists an explicit record and re-affirms Meta/TikTok's own
+// consent-mode flags, while Decline is the only action that actually stops
+// tracking (via denyConsent()'s fbq('consent','revoke') / ttq.revokeConsent()).
+// The choice is persisted in localStorage 'miniyo-consent' so the banner does
+// not reappear.
 export default function ConsentBanner() {
   const { t } = useLang();
   const [visible, setVisible] = useState(false);

@@ -8,8 +8,11 @@
 
 export const CONSENT_KEY = 'miniyo-consent';
 
-// Normalize whatever is stored into an object with a boolean `marketing` field,
-// or null when no valid choice has been recorded yet.
+// Normalize whatever is stored into an object, or null when no valid choice
+// has been recorded yet. `marketing` is left as `true` / `false` / `undefined`
+// (NOT coerced to a boolean) so callers can distinguish an explicit decline
+// from a JSON object that simply doesn't mention `marketing` yet — under the
+// implied-consent model, only an explicit `false` should block tracking.
 export function parseStoredConsent(raw) {
   if (raw == null || raw === '') return null;
   if (raw === 'granted') return { marketing: true };
@@ -17,7 +20,7 @@ export function parseStoredConsent(raw) {
   try {
     const parsed = JSON.parse(raw);
     if (parsed && typeof parsed === 'object') {
-      return { ...parsed, marketing: parsed.marketing === true };
+      return { ...parsed };
     }
   } catch {
     // Not JSON and not a known literal → treat as no valid choice.
@@ -25,8 +28,17 @@ export function parseStoredConsent(raw) {
   return null;
 }
 
-// True only when the visitor has explicitly granted marketing consent.
+// IMPLIED consent model: tracking is allowed by default (no choice yet counts
+// as consent) and only an EXPLICIT decline blocks it. Lebanon/MENA e-commerce
+// is not under GDPR's strict prior-opt-in requirement, and gating every event
+// (including the very first PageView) behind a clicked "Accept" was silently
+// dropping most real traffic from Meta/TikTok — visitors who bounced, ignored
+// the banner, or never interacted with it were invisible to those platforms
+// even though GA4 (which has no such gate) counted them normally. This is the
+// only place that decision is made, so both metaPixel and tiktokPixel inherit
+// it automatically via hasMarketingConsent()/hasMarketingConsentValue().
 export function hasMarketingConsentValue(raw) {
   const consent = parseStoredConsent(raw);
-  return !!consent && consent.marketing === true;
+  if (!consent) return true; // no stored choice yet -> implied consent
+  return consent.marketing !== false; // only an explicit decline blocks tracking
 }

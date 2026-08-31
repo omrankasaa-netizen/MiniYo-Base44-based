@@ -273,10 +273,14 @@ function setFbqConsent(granted) {
   window.fbq('consent', granted ? 'grant' : 'revoke');
 }
 
-// Re-apply a previously stored choice on app load. If previously granted, lazy
-// bootstrap pixels and grant consent immediately so first route PageView is kept.
+// Re-apply the visitor's choice on app load. Under implied consent, anyone who
+// has NOT explicitly declined is bootstrapped and granted immediately — the
+// only visitors skipped here are ones who clicked Decline in a past session.
+// (New/no-choice visitors also get tracked via track()'s own lazy bootstrap on
+// the first PageView, but doing it here too means fbq/ttq consent-mode flags
+// are set correctly from the very first paint instead of the first event.)
 export function applyStoredConsent() {
-  if (!hasConsent()) return;
+  if (getConsentChoice() === 'denied') return;
   ensureMarketingPixels();
   setFbqConsent(true);
   if (typeof window !== 'undefined' && typeof window.ttq?.grantConsent === 'function') {
@@ -291,10 +295,11 @@ export function grantConsent() {
   if (typeof window !== 'undefined' && typeof window.ttq?.grantConsent === 'function') {
     window.ttq.grantConsent();
   }
-  // Count the page the visitor accepted on (the initial page view was withheld
-  // while consent was still revoked) — for both the Meta and TikTok pixels.
-  track('PageView');
-  trackTikTokPage();
+  // NOTE: under the implied-consent model (metaConsent.js), tracking already
+  // started on the visitor's very first PageView before this banner was even
+  // clicked — clicking Accept just persists an explicit record and re-affirms
+  // Meta/TikTok's own consent-mode flags. Do NOT re-fire PageView here; that
+  // would double-count every visitor who explicitly accepts.
 }
 
 export function denyConsent() {
@@ -305,10 +310,10 @@ export function denyConsent() {
   }
 }
 
-// No-ops unless the visitor has granted marketing consent, so no events fire
-// (and Meta's Consent Mode prevents cookies) until then. When an `eventID` is
-// passed it is forwarded to fbq so Meta can dedup this browser event against the
-// matching server-side (CAPI) event.
+// IMPLIED CONSENT: fires by default. No-ops only once the visitor has
+// EXPLICITLY declined via the cookie banner (see metaConsent.js). When an
+// `eventID` is passed it is forwarded to fbq so Meta can dedup this browser
+// event against the matching server-side (CAPI) event.
 export function track(event, params, eventID) {
   if (!hasMarketingConsent()) return;
   ensureMarketingPixels();

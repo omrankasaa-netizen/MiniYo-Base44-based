@@ -99,9 +99,11 @@
     <meta name="robots" content="index, follow" />
     <meta name="theme-color" content="#FAF7F2" />
 
-    <!-- Meta + TikTok pixels are lazily initialized from src/lib/pixel.js only
-         after marketing consent is granted. This keeps third-party JS/network off
-         the first-paint path and avoids in-app browser storage edge-case crashes. -->
+    <!-- Meta + TikTok pixels are lazily initialized from src/lib/pixel.js on the
+         first PageView (implied consent — see src/lib/metaConsent.js), unless the
+         visitor has explicitly declined via the cookie banner. Lazy-loading still
+         keeps third-party JS off the very first paint and avoids in-app browser
+         storage edge-case crashes. -->
   </head>
   <body>
     <div id="root">
