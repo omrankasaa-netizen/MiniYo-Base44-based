@@ -9,7 +9,10 @@ import assert from 'node:assert/strict';
 import { isTrackEvent, sanitizeContents, buildTrackCustomData } from '../server/metaTrack.js';
 import { normalizeSku } from '../server/metaFeed.js';
 
-test('isTrackEvent allows the three browser commerce events', () => {
+test('isTrackEvent allows PageView plus the three browser commerce events', () => {
+  // PageView joined the allowlist so the browser PageView gets a deduplicated
+  // server-side CAPI twin (Meta's recommended redundant setup for core events).
+  assert.equal(isTrackEvent('PageView'), true);
   assert.equal(isTrackEvent('ViewContent'), true);
   assert.equal(isTrackEvent('AddToCart'), true);
   assert.equal(isTrackEvent('InitiateCheckout'), true);
@@ -17,7 +20,6 @@ test('isTrackEvent allows the three browser commerce events', () => {
 
 test('isTrackEvent rejects Purchase (server order flow only) and unknowns', () => {
   assert.equal(isTrackEvent('Purchase'), false);
-  assert.equal(isTrackEvent('PageView'), false);
   assert.equal(isTrackEvent(''), false);
   assert.equal(isTrackEvent(undefined), false);
 });

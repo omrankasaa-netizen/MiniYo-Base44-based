@@ -38,6 +38,26 @@ export function signToken(userId) {
   return jwt.sign({ sub: userId }, JWT_SECRET, { expiresIn: TOKEN_TTL });
 }
 
+// Password-reset tokens are short-lived, single-purpose JWTs. The `purpose`
+// claim keeps them from being confused with (or replayed as) a session token,
+// and verification ALWAYS checks the signature — the previous implementation
+// base64-decoded the payload without verifying it, which let anyone forge a
+// reset token for any account.
+const RESET_TOKEN_TTL = '1h';
+export function signResetToken(userId) {
+  return jwt.sign({ sub: userId, purpose: 'password_reset' }, JWT_SECRET, { expiresIn: RESET_TOKEN_TTL });
+}
+
+export function verifyResetToken(token) {
+  try {
+    const payload = jwt.verify(String(token || ''), JWT_SECRET);
+    if (payload?.purpose !== 'password_reset' || !payload?.sub) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
 export function verifyToken(token) {
   try {
     return jwt.verify(token, JWT_SECRET);
