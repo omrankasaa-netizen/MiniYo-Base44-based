@@ -36,15 +36,21 @@ export default function TrackOrderPage() {
     setError('');
     setOrder(null);
     try {
-      const results = await base44.entities.Order.filter({ order_number: orderNum.trim().toUpperCase() }, '-created_date', 1);
-      if (results.length === 0 || results[0].customer_phone !== phone.trim()) {
+      // Phone-verified server-side lookup: the server checks order number +
+      // phone and returns only the fields this page needs. (The old flow read
+      // the full public Order entity and compared the phone client-side.)
+      const res = await fetch('/api/orders/track', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order_number: orderNum.trim().toUpperCase(), phone: phone.trim() }),
+      });
+      if (!res.ok) {
         setError(t('Order not found. Please check the order number and phone.', 'لم يُعثر على الطلب. تحقق من رقم الطلب والهاتف.'));
         return;
       }
-      const found = results[0];
-      setOrder(found);
-      const orderItems = await base44.entities.OrderItem.filter({ order_id: found.id }, 'product_name', 20);
-      setItems(orderItems);
+      const data = await res.json();
+      setOrder(data.order);
+      setItems(data.items || []);
     } catch {
       setError(t('Something went wrong.', 'حدث خطأ ما.'));
     } finally {
