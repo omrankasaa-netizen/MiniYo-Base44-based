@@ -21,8 +21,9 @@ import {
   GENDER_LABELS_AR,
 } from '@/lib/filterNormalize';
 import { SlidersHorizontal, X, Search, ChevronDown, ChevronUp } from 'lucide-react';
+import { productMatchesTags, isNewSeasonItem, tagLabel } from '@/lib/shopFilters';
 
-const BASE_QUICK_RESET = { category: '', sub: '', gender: '', age: '', collection: '', sizes: '', mat: '', sale: '', stock: '', pmin: '', pmax: '' };
+const BASE_QUICK_RESET = { category: '', sub: '', gender: '', age: '', collection: '', sizes: '', mat: '', sale: '', stock: '', pmin: '', pmax: '', tag: '', view: '' };
 const QUICK_SHOP_LINKS = [
   { key: 'newborn', en: 'Newborn', ar: 'حديثو الولادة', query: { ...BASE_QUICK_RESET, age: 'Newborn' } },
   { key: 'baby-girl', en: 'Baby Girl', ar: 'بنات بيبي', query: { ...BASE_QUICK_RESET, age: 'Baby', gender: 'Girls' } },
@@ -120,6 +121,8 @@ export default function ShopPage() {
   const filterSizes = getArr('sizes');
   const filterCollection = get('collection');
   const filterMaterials = getArr('mat');
+  const filterTags = getArr('tag');
+  const filterView = get('view');
   const filterOnSale = get('sale') === '1';
   const filterInStock = get('stock') === '1';
   const filterSort = get('sort', 'new');
@@ -278,6 +281,9 @@ export default function ShopPage() {
         const tags = String(p.tags || '').toLowerCase();
         if (!filterMaterials.some((m) => tags.includes(m))) return false;
       }
+      // Merchandising views from the home promo cards.
+      if (filterView === 'new-season' && !isNewSeasonItem(p, isOnSale)) return false;
+      if (filterTags.length > 0 && !productMatchesTags(p, filterTags)) return false;
       if (filterOnSale && !isOnSale(p)) return false;
       if (filterInStock && p.availableStock <= 0) return false;
       const effectivePrice = getDiscountedPrice(p);
@@ -293,7 +299,7 @@ export default function ShopPage() {
       default: list = [...list].sort((a, b) => new Date(b.created_date) - new Date(a.created_date)); break;
     }
     return list;
-  }, [enriched, search, filterCategory, filterSubcategory, filterGender, filterAge, filterCollection, filterSizes, filterMaterials, filterOnSale, filterInStock, filterPriceMin, filterPriceMax, filterSort, liveDiscounts]);
+  }, [enriched, search, filterCategory, filterSubcategory, filterGender, filterAge, filterCollection, filterSizes, filterMaterials, filterTags, filterView, filterOnSale, filterInStock, filterPriceMin, filterPriceMax, filterSort, liveDiscounts]);
 
   // Meta Pixel Search — fire when a search term settles (debounced so we don't
   // emit an event on every keystroke). Reports the matched result skus.
@@ -332,13 +338,15 @@ export default function ShopPage() {
     filterMaterials.forEach((m) => chips.push({ label: `${t('Fabric', 'الخامة')}: ${m}`, key: 'mat', val: m, isArr: true }));
     if (filterOnSale) chips.push({ label: t('On Sale', 'تخفيضات'), key: 'sale' });
     if (filterInStock) chips.push({ label: t('In Stock', 'متوفر'), key: 'stock' });
+    if (filterView === 'new-season') chips.push({ label: t('New Season Collection', 'مجموعة الموسم الجديد'), key: 'view' });
+    filterTags.forEach((tg) => chips.push({ label: tagLabel(tg, lang), key: 'tag', val: tg, isArr: true }));
     if (filterPriceMin > 0 || filterPriceMax < maxPrice) chips.push({ label: `$${filterPriceMin}–$${filterPriceMax}`, key: 'price' });
     return chips;
-  }, [search, filterCategory, filterSubcategory, filterGender, filterAge, filterCollection, filterSizes, filterMaterials, filterOnSale, filterInStock, filterPriceMin, filterPriceMax, maxPrice, catMap, collectionMap, lang]);
+  }, [search, filterCategory, filterSubcategory, filterGender, filterAge, filterCollection, filterSizes, filterMaterials, filterTags, filterView, filterOnSale, filterInStock, filterPriceMin, filterPriceMax, maxPrice, catMap, collectionMap, lang]);
 
   function removeChip(chip) {
     if (chip.isArr) {
-      const arr = chip.key === 'mat' ? filterMaterials : filterSizes;
+      const arr = chip.key === 'mat' ? filterMaterials : chip.key === 'tag' ? filterTags : filterSizes;
       set({ [chip.key]: arr.filter(v => v !== chip.val) });
     } else if (chip.key === 'price') {
       set({ pmin: '', pmax: '' });
@@ -456,7 +464,7 @@ export default function ShopPage() {
             </button>
             {collections.map(col => (
               <button key={col.id} onClick={() => set({ collection: filterCollection === col.id ? '' : col.id })}
-                className={`w-full text-left text-sm px-2 py-1 rounded-lg transition-colors ${filterCollection === col.id ? 'text-primary font-semibold bg-primary/5' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}`}>
+                className={`w-full text-left text-sm px-2 py-1 rounded-lg transition-colors ${filterCollection === col.id ? 'text-primary font-semibold bg-primary/5' : 'text-foreground hover:bg-muted'}`}>
                 {lang === 'ar' ? (col.name_ar || col.name) : col.name}
               </button>
             ))}
@@ -487,6 +495,10 @@ export default function ShopPage() {
   const activeCatName = filterCategory && catMap[filterCategory]
     ? (lang === 'ar' ? (catMap[filterCategory].name_ar || catMap[filterCategory].name) : catMap[filterCategory].name)
     : null;
+  // Promo-card landings get a merchandising title instead of a bare "Shop".
+  const viewTitle = filterView === 'new-season'
+    ? t('New Season Collection', 'مجموعة الموسم الجديد')
+    : (filterTags.length === 1 ? tagLabel(filterTags[0], lang) : null);
 
   return (
     <div className="min-h-screen bg-background pb-24 lg:pb-0">
@@ -514,7 +526,7 @@ export default function ShopPage() {
         {/* Page header */}
         <div className="mb-5">
           <h1 className="text-2xl font-heading font-bold text-foreground">
-            {activeCatName || t('Shop', 'المتجر')}
+            {activeCatName || viewTitle || t('Shop', 'المتجر')}
           </h1>
         </div>
 
