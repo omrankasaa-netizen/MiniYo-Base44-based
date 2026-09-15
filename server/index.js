@@ -25,6 +25,7 @@ import { optimizeAndStore, bufferFromBase64 } from './imageOptimize.js';
 import { getProductPagePayloadBySlug, injectProductMeta } from './productMeta.js';
 import { buildFeedCsv } from './metaFeed.js';
 import { buildTiktokFeedCsv } from './tiktokFeed.js';
+import { aiProductDraft } from './aiDraft.js';
 import { sendCapiEvent, buildUserData, mergeClientHashedUserData } from './metaCapiClient.js';
 import {
   derivePurchaseEventId, buildPurchaseCustomData, buildPurchaseUserData,
@@ -352,6 +353,27 @@ app.post('/api/users/invite', (req, res) => {
 });
 
 // ─── Functions ────────────────────────────────────────────────────────────────
+// Dedicated route for the AI product-draft endpoint, registered BEFORE the
+// generic dispatcher so it wins. (Registered here rather than in functions.js
+// only to keep the change surgical; the guard mirrors GUARDS 'admin' —
+// admin/super_admin — and the response shape mirrors the generic route.)
+app.post('/api/functions/aiProductDraft', async (req, res) => {
+  try {
+    const user = getUserFromRequest(req);
+    if (!user || !['admin', 'super_admin'].includes(user.role)) {
+      return res.status(user ? 403 : 401).json({
+        error: user ? 'Forbidden: admin access required' : 'Authentication required',
+      });
+    }
+    const result = await aiProductDraft(req.body || {});
+    if (result && typeof result === 'object' && result._status) {
+      const { _status, ...rest } = result;
+      return res.status(_status).json({ data: rest });
+    }
+    res.json({ data: result });
+  } catch (e) { handleError(res, e); }
+});
+
 app.post('/api/functions/:name', async (req, res) => {
   try {
     const user = getUserFromRequest(req);
