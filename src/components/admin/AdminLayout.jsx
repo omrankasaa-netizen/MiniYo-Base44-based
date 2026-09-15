@@ -6,7 +6,7 @@ import {
   LayoutDashboard, Package, ShoppingBag, BarChart2, Tag, Settings,
   Users, FileText, LogOut, Menu, X, ChevronRight, ChevronDown,
   Warehouse, Languages, ExternalLink, Percent, Megaphone, FolderTree, User, Crown, Mail, Truck,
-  FileSpreadsheet, SlidersHorizontal, Star,
+  FileSpreadsheet, SlidersHorizontal, Star, Sparkles,
 } from 'lucide-react';
 
 // Flat, top-level nav entries (rendered above the Settings group).
@@ -25,6 +25,7 @@ const navItems = [
   { label: 'Discounts',   icon: Percent,       path: '/admin/discounts',    permission: 'manage_discounts' },
   { label: 'Campaigns',   icon: Megaphone,     path: '/admin/campaigns',    permission: 'manage_discounts' },
   { label: 'Bulk Import', icon: FileSpreadsheet, path: '/admin/bulk-import', permission: 'edit_products' },
+  { label: 'Add by Photos', icon: Sparkles,      path: '/admin/add-by-photos', permission: 'edit_products' },
   { label: 'Team',        icon: Users,         path: '/admin/team',         permission: 'manage_team' },
 ];
 
