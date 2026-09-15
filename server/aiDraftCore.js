@@ -15,15 +15,18 @@ export const VALID_AGES = ['Newborn', 'Baby', 'Toddler', 'Kids'];
 // The prompt is built per-request with the store's ACTUAL category list and
 // tag vocabulary so the model reuses existing taxonomy instead of inventing
 // near-duplicates ("Romper" vs "Rompers").
-export function buildDraftPrompt({ categories = [], tagVocabulary = [] } = {}) {
+export function buildDraftPrompt({ categories = [], tagVocabulary = [], photoCount = 1 } = {}) {
   const catList = categories.length
     ? categories.map((c) => `- ${c.name}${c.name_ar && c.name_ar !== c.name ? ` (${c.name_ar})` : ''}`).join('\n')
     : '(no categories exist yet)';
   const tagList = tagVocabulary.length ? tagVocabulary.join(', ') : '(none yet)';
+  const photoLine = photoCount > 1
+    ? `The ${photoCount} attached photos all show the SAME product — different angles, detail close-ups, maybe a label. Draft ONE catalog entry for the whole set.`
+    : 'Look at this product photo and draft the catalog entry as JSON.';
 
   return `You are the product-catalog assistant for MiniYo (miniyokids.com), a Lebanese baby & kids clothing store (cash on delivery, bilingual English + Lebanese Arabic).
 
-Look at this product photo and draft the catalog entry as JSON.
+${photoLine}
 
 Rules:
 - name: concise English product name (e.g. "Baby Girls Floral Romper — Dusty Pink"). Include color if it distinguishes the item.

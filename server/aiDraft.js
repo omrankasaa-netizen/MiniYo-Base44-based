@@ -1,17 +1,21 @@
 // Network + handler half of the "Add by Photos" feature. The pure prompt /
 // normalization / SKU logic lives in server/aiDraftCore.js (unit-tested).
 //
-//   POST /api/functions/aiProductDraft   (admin-gated via GUARDS in functions.js)
-//   body: { images: [{ data: <base64>, mime_type: 'image/jpeg' }, …] }  (max 8)
-//   → { drafts: [{ index, draft, issues } | { index, error }] }
+//   POST /api/functions/aiProductDraft   (admin-gated dedicated route in index.js)
+//   body: { items: [{ images: [{ data: <base64>, mime_type: 'image/jpeg' }, …] }, …] }
+//     — one item = ONE product; its 1–4 photos (different angles/details of the
+//       SAME item) are analyzed together in a single Gemini call.
+//   Legacy shape { images: [...] } is still accepted: each image becomes its
+//   own single-photo item (one draft per photo).
+//   → { drafts: [{ index, draft, issues } | { index, error }] }  (aligned to items)
 //
 // The endpoint NEVER writes to the catalog — it only returns drafts. Products
 // are created later, one by one, after the operator reviews/edits each card
 // and fills price/cost/stock. Created products are always status 'Hidden'.
 //
 // Security/cost notes:
-// - Admin-gated (GUARDS registry) so the Gemini quota cannot be burned by the
-//   public. Batch-capped at MAX_IMAGES_PER_CALL.
+// - Admin-gated (dedicated route in index.js) so the Gemini quota cannot be
+//   burned by the public. Capped at MAX_ITEMS_PER_CALL / MAX_IMAGES_PER_CALL.
 // - The API key is read from env at call time and NEVER logged or returned.
 // - Gemini errors are mapped to safe, operator-readable messages.
 
@@ -22,7 +26,9 @@ import {
 } from './aiDraftCore.js';
 
 const MODEL = () => process.env.GEMINI_MODEL || 'gemini-3.5-flash';
-const MAX_IMAGES_PER_CALL = 8;
+const MAX_IMAGES_PER_ITEM = 4; // photos of ONE product per draft
+const MAX_ITEMS_PER_CALL = 6; // products per request
+const MAX_IMAGES_PER_CALL = 8; // total photos per request (cost cap)
 const GEMINI_TIMEOUT_MS = 45000;
 
 // ─── Live catalog context for the prompt ────────────────────────────────────
@@ -51,7 +57,9 @@ function catalogContext() {
 }
 
 // ─── Gemini call ────────────────────────────────────────────────────────────
-async function callGemini({ imageBase64, mimeType, prompt, apiKey }) {
+// `images`: all photos of ONE product — sent as multiple inlineData parts so
+// the model sees every angle before drafting a single entry.
+async function callGemini({ images, prompt, apiKey }) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL()}:generateContent`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
@@ -67,7 +75,9 @@ async function callGemini({ imageBase64, mimeType, prompt, apiKey }) {
         contents: [{
           role: 'user',
           parts: [
-            { inlineData: { mimeType: mimeType || 'image/jpeg', data: imageBase64 } },
+            ...images.map((img) => ({
+              inlineData: { mimeType: img.mimeType || img.mime_type || 'image/jpeg', data: img.data },
+            })),
             { text: prompt },
           ],
         }],
@@ -97,41 +107,62 @@ async function callGemini({ imageBase64, mimeType, prompt, apiKey }) {
 }
 
 // ─── Handler ────────────────────────────────────────────────────────────────
-// Registered in functions.js REGISTRY + GUARDS ('admin').
+// Registered as a dedicated admin-gated route in server/index.js.
 export async function aiProductDraft(body = {}) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     return { _status: 503, error: 'AI drafting is not configured yet (missing GEMINI_API_KEY on the server).' };
   }
-  const images = Array.isArray(body.images) ? body.images : [];
-  if (images.length === 0) return { _status: 400, error: 'No images provided.' };
-  if (images.length > MAX_IMAGES_PER_CALL) {
-    return { _status: 400, error: `Too many images in one batch — max ${MAX_IMAGES_PER_CALL}.` };
+
+  // Normalize to items (one item = one product). Legacy {images:[...]} callers
+  // get one single-photo item per image.
+  let items;
+  if (Array.isArray(body.items)) items = body.items;
+  else if (Array.isArray(body.images)) items = body.images.map((img) => ({ images: [img] }));
+  else items = [];
+  items = items.map((it) => ({ images: Array.isArray(it?.images) ? it.images : [] }));
+
+  if (items.length === 0) return { _status: 400, error: 'No images provided.' };
+  if (items.length > MAX_ITEMS_PER_CALL) {
+    return { _status: 400, error: `Too many products in one batch — max ${MAX_ITEMS_PER_CALL}.` };
   }
-  for (const img of images) {
-    if (!img?.data || typeof img.data !== 'string') {
-      return { _status: 400, error: 'Each image needs a base64 `data` string.' };
+  const totalImages = items.reduce((n, it) => n + it.images.length, 0);
+  if (totalImages === 0) return { _status: 400, error: 'No images provided.' };
+  if (totalImages > MAX_IMAGES_PER_CALL) {
+    return { _status: 400, error: `Too many photos in one batch — max ${MAX_IMAGES_PER_CALL} total.` };
+  }
+  for (const it of items) {
+    if (it.images.length === 0) {
+      return { _status: 400, error: 'Each product needs at least one photo.' };
+    }
+    if (it.images.length > MAX_IMAGES_PER_ITEM) {
+      return { _status: 400, error: `Too many photos for one product — max ${MAX_IMAGES_PER_ITEM}.` };
+    }
+    for (const img of it.images) {
+      if (!img?.data || typeof img.data !== 'string') {
+        return { _status: 400, error: 'Each image needs a base64 `data` string.' };
+      }
     }
   }
 
   const { categories, tagVocabulary, takenSkus } = catalogContext();
-  const prompt = buildDraftPrompt({ categories, tagVocabulary });
 
   // Small concurrency pool (3) — fast enough for a batch, gentle on rate limits.
-  const results = new Array(images.length);
+  const results = new Array(items.length);
   let cursor = 0;
   async function worker() {
-    while (cursor < images.length) {
+    while (cursor < items.length) {
       const i = cursor++;
-      const img = images[i];
+      const item = items[i];
       try {
-        const text = await callGemini({
-          imageBase64: img.data, mimeType: img.mime_type, prompt, apiKey,
+        const prompt = buildDraftPrompt({
+          categories, tagVocabulary, photoCount: item.images.length,
         });
+        const text = await callGemini({ images: item.images, prompt, apiKey });
         const raw = extractJson(text);
         const { draft, issues } = normalizeDraft(raw, { categories, tagVocabulary });
         if (!draft) {
-          results[i] = { index: i, error: 'AI returned an unreadable draft — please retry this photo.' };
+          results[i] = { index: i, error: 'AI returned an unreadable draft — please retry these photos.' };
           continue;
         }
         // SKU: sanitize the hint, guarantee uniqueness across the catalog AND
@@ -148,10 +179,10 @@ export async function aiProductDraft(body = {}) {
       } catch (e) {
         const status = e.geminiStatus;
         const msg = e.name === 'AbortError'
-          ? 'AI timed out on this photo — retry it.'
+          ? 'AI timed out on these photos — retry them.'
           : status === 429
             ? 'AI rate limit reached — wait a minute and retry.'
-            : 'AI analysis failed for this photo — retry or fill the fields manually.';
+            : 'AI analysis failed for these photos — retry or fill the fields manually.';
         console.error('[aiDraft] Gemini call failed (status %s): %s', status || 'n/a', e.message);
         results[i] = { index: i, error: msg };
       }
