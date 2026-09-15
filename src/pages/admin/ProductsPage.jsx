@@ -6,9 +6,10 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { logAction } from '@/lib/auditLog';
 import AccessDenied from './AccessDenied';
 import ProductForm from '@/components/admin/ProductForm';
-import { Plus, Search, Pencil, Copy, Trash2, Eye, EyeOff, Star, Download, Printer } from 'lucide-react';
+import { Plus, Search, Pencil, Copy, Trash2, Eye, EyeOff, Star, Download, Printer, SlidersHorizontal } from 'lucide-react';
 import { stockStatus } from '@/lib/inventory';
 import { downloadCsv, printTable } from '@/lib/adminExport';
+import { buildBulkUpdate } from '@/lib/bulkEdit';
 
 const STATUS_COLORS = { Active: 'bg-green-50 text-green-700', Hidden: 'bg-muted text-muted-foreground' };
 
@@ -29,6 +30,12 @@ export default function ProductsPage() {
   const [showForm, setShowForm] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportErr, setExportErr] = useState('');
+  // Bulk edit panel state. '' means "no change" for every field.
+  const EMPTY_BULK_FORM = { category_id: '', gender: '', age_group: '', is_new: '', is_featured: '', add_tag: '', remove_tag: '' };
+  const [showBulkEdit, setShowBulkEdit] = useState(false);
+  const [bulkForm, setBulkForm] = useState(EMPTY_BULK_FORM);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkMsg, setBulkMsg] = useState('');
 
   const { data: products = [], isLoading } = useQuery({
     queryKey: ['admin-products'],
@@ -123,6 +130,43 @@ export default function ProductsPage() {
     qc.invalidateQueries({ queryKey: ['admin-products'] });
     setSelected(new Set());
     setConfirmDelete(null);
+  }
+
+  // Apply the bulk-edit form to every selected product. Only fields the operator
+  // actually chose are written; products where nothing would change are skipped.
+  async function applyBulkEdit() {
+    const ids = [...selected];
+    setBulkBusy(true);
+    setBulkMsg('');
+    let updated = 0, skipped = 0, failed = 0;
+    try {
+      for (const id of ids) {
+        const product = products.find(p => p.id === id);
+        const update = buildBulkUpdate(bulkForm, product);
+        if (!update) { skipped++; continue; }
+        try {
+          await base44.entities.Product.update(id, update);
+          updated++;
+        } catch { failed++; }
+      }
+      await logAction({
+        action: `bulk_edit (${updated} updated)`,
+        entity: 'Product',
+        entityId: ids.join(','),
+        userName: currentUser?.email,
+      });
+      await qc.invalidateQueries({ queryKey: ['admin-products'] });
+      setBulkMsg(`Updated ${updated} product${updated === 1 ? '' : 's'}`
+        + (skipped ? `, ${skipped} already up to date` : '')
+        + (failed ? `, ${failed} FAILED` : ''));
+      if (!failed) {
+        setShowBulkEdit(false);
+        setBulkForm(EMPTY_BULK_FORM);
+        setSelected(new Set());
+      }
+    } finally {
+      setBulkBusy(false);
+    }
   }
 
   // Open the editor pre-filled with a deep copy of the source product as a NEW
@@ -251,21 +295,83 @@ export default function ProductsPage() {
 
         {/* Bulk actions */}
         {selected.size > 0 && canAccess('edit_products') && (
-          <div className="flex items-center gap-2 bg-primary/5 border border-primary/20 rounded-xl px-4 py-2.5">
-            <span className="text-sm font-medium text-foreground">{selected.size} selected</span>
-            <div className="flex gap-1.5 ml-2">
-              {[
-                { action: 'show', icon: Eye, label: 'Show' },
-                { action: 'hide', icon: EyeOff, label: 'Hide' },
-                { action: 'featured', icon: Star, label: 'Featured' },
-                { action: 'delete', icon: Trash2, label: 'Delete', red: true },
-              ].map(({ action, icon: Icon, label, red }) => (
-                <button key={action} onClick={() => bulkAction(action)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${red ? 'text-destructive hover:bg-destructive/10' : 'text-foreground hover:bg-muted'}`}>
-                  <Icon className="w-3.5 h-3.5" /> {label}
+          <div className="bg-primary/5 border border-primary/20 rounded-xl px-4 py-2.5 space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm font-medium text-foreground">{selected.size} selected</span>
+              <div className="flex flex-wrap gap-1.5 ml-2">
+                {[
+                  { action: 'show', icon: Eye, label: 'Show' },
+                  { action: 'hide', icon: EyeOff, label: 'Hide' },
+                  { action: 'featured', icon: Star, label: 'Featured' },
+                  { action: 'delete', icon: Trash2, label: 'Delete', red: true },
+                ].map(({ action, icon: Icon, label, red }) => (
+                  <button key={action} onClick={() => bulkAction(action)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${red ? 'text-destructive hover:bg-destructive/10' : 'text-foreground hover:bg-muted'}`}>
+                    <Icon className="w-3.5 h-3.5" /> {label}
+                  </button>
+                ))}
+                <button onClick={() => { setShowBulkEdit(v => !v); setBulkMsg(''); }}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${showBulkEdit ? 'bg-primary text-primary-foreground' : 'text-foreground hover:bg-muted'}`}>
+                  <SlidersHorizontal className="w-3.5 h-3.5" /> Bulk edit
                 </button>
-              ))}
+              </div>
             </div>
+
+            {/* Bulk edit panel — '' everywhere means "no change" */}
+            {showBulkEdit && (
+              <div className="bg-card border border-border rounded-xl p-4 space-y-3">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+                  <select value={bulkForm.category_id} onChange={e => setBulkForm(f => ({ ...f, category_id: e.target.value }))}
+                    className="bg-muted rounded-xl px-3 py-2 text-sm text-foreground outline-none border-0 cursor-pointer">
+                    <option value="">Category: no change</option>
+                    {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                  <select value={bulkForm.gender} onChange={e => setBulkForm(f => ({ ...f, gender: e.target.value }))}
+                    className="bg-muted rounded-xl px-3 py-2 text-sm text-foreground outline-none border-0 cursor-pointer">
+                    <option value="">Gender: no change</option>
+                    {['Girls', 'Boys', 'Unisex'].map(v => <option key={v} value={v}>{v}</option>)}
+                  </select>
+                  <select value={bulkForm.age_group} onChange={e => setBulkForm(f => ({ ...f, age_group: e.target.value }))}
+                    className="bg-muted rounded-xl px-3 py-2 text-sm text-foreground outline-none border-0 cursor-pointer">
+                    <option value="">Age: no change</option>
+                    {['Newborn', 'Baby', 'Toddler', 'Kids'].map(v => <option key={v} value={v}>{v}</option>)}
+                  </select>
+                  <select value={bulkForm.is_new} onChange={e => setBulkForm(f => ({ ...f, is_new: e.target.value }))}
+                    className="bg-muted rounded-xl px-3 py-2 text-sm text-foreground outline-none border-0 cursor-pointer">
+                    <option value="">New badge: no change</option>
+                    <option value="yes">Mark as New</option>
+                    <option value="no">Remove New badge</option>
+                  </select>
+                  <select value={bulkForm.is_featured} onChange={e => setBulkForm(f => ({ ...f, is_featured: e.target.value }))}
+                    className="bg-muted rounded-xl px-3 py-2 text-sm text-foreground outline-none border-0 cursor-pointer">
+                    <option value="">Featured: no change</option>
+                    <option value="yes">Mark Featured</option>
+                    <option value="no">Remove Featured</option>
+                  </select>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <input value={bulkForm.add_tag} onChange={e => setBulkForm(f => ({ ...f, add_tag: e.target.value }))}
+                    placeholder="Add tag to all (e.g. summer)…"
+                    className="bg-muted rounded-xl px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground" />
+                  <input value={bulkForm.remove_tag} onChange={e => setBulkForm(f => ({ ...f, remove_tag: e.target.value }))}
+                    placeholder="Remove tag from all (e.g. winter)…"
+                    className="bg-muted rounded-xl px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground" />
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button onClick={applyBulkEdit} disabled={bulkBusy}
+                    className="bg-primary text-primary-foreground px-4 py-2 rounded-xl text-sm font-semibold shadow-sm hover:bg-primary/90 transition-colors disabled:opacity-50">
+                    {bulkBusy ? 'Applying…' : `Apply to ${selected.size} product${selected.size === 1 ? '' : 's'}`}
+                  </button>
+                  <button onClick={() => { setShowBulkEdit(false); setBulkForm(EMPTY_BULK_FORM); setBulkMsg(''); }}
+                    className="px-4 py-2 rounded-xl border border-border text-sm hover:bg-muted">
+                    Close
+                  </button>
+                  {bulkMsg && (
+                    <span className={`text-sm ${bulkMsg.includes('FAILED') ? 'text-destructive' : 'text-muted-foreground'}`}>{bulkMsg}</span>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
