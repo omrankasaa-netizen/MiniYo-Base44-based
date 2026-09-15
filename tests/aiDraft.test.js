@@ -33,6 +33,17 @@ test('buildDraftPrompt: embeds existing categories and tag vocabulary', () => {
   assert.match(p, /organic cotton/i);
 });
 
+test('buildDraftPrompt: multi-photo sets are drafted as ONE product', () => {
+  const single = buildDraftPrompt({ categories: CATS, tagVocabulary: VOCAB, photoCount: 1 });
+  assert.match(single, /Look at this product photo/);
+  const multi = buildDraftPrompt({ categories: CATS, tagVocabulary: VOCAB, photoCount: 4 });
+  assert.match(multi, /4 attached photos/);
+  assert.match(multi, /SAME product/);
+  assert.match(multi, /ONE catalog entry/);
+  // Single-photo prompt must NOT claim multiple photos.
+  assert.doesNotMatch(single, /SAME product/);
+});
+
 test('DRAFT_RESPONSE_SCHEMA: required fields match normalizeDraft expectations', () => {
   for (const f of ['name', 'name_ar', 'category', 'gender', 'age_group', 'tags']) {
     assert.ok(DRAFT_RESPONSE_SCHEMA.required.includes(f), `schema must require ${f}`);
