@@ -81,7 +81,7 @@ export function buildProductType({ category, subcategory }) {
 
 // Build a single TikTok feed row object (unescaped values) for a product.
 // `categoriesById` is a Map of Category.id → Category record for name resolution.
-export function buildTiktokFeedRow(product, categoriesById = new Map()) {
+export function buildTiktokFeedRow(product, categoriesById = new Map(), variants) {
   const sku = product.sku;
   const slug = product.slug || product.id;
   const price = Number(product.price_usd);
@@ -98,7 +98,7 @@ export function buildTiktokFeedRow(product, categoriesById = new Map()) {
     sku_id: normalizeSku(sku),
     title: name,
     description: stripHtml(product.description || product.short_description || name),
-    availability: mapAvailability(product),
+    availability: mapAvailability(product, variants),
     condition: 'new',
     price: hasRealDiscount ? formatPrice(compareAt) : formatPrice(price),
     sale_price: hasRealDiscount ? formatPrice(price) : '',
@@ -114,12 +114,14 @@ export function buildTiktokFeedRow(product, categoriesById = new Map()) {
 // Build the full CSV string from a list of product records. Products without a
 // sku are skipped (the sku is the required catalog id and event key), matching
 // the Meta feed. `categoriesById` maps Category.id → Category record.
-export function buildTiktokFeedCsv(products = [], categoriesById = new Map()) {
+// `variantsByProduct` (optional Map: product_id → variant rows) enables real
+// availability for variant products.
+export function buildTiktokFeedCsv(products = [], categoriesById = new Map(), variantsByProduct = new Map()) {
   const header = TIKTOK_FEED_COLUMNS.join(',');
   const rows = [header];
   for (const product of products) {
     if (!product?.sku) continue;
-    const row = buildTiktokFeedRow(product, categoriesById);
+    const row = buildTiktokFeedRow(product, categoriesById, variantsByProduct.get(product.id));
     rows.push(TIKTOK_FEED_COLUMNS.map((col) => csvEscape(row[col])).join(','));
   }
   return `${rows.join('\r\n')}\r\n`;

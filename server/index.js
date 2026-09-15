@@ -707,17 +707,31 @@ app.delete('/api/entities/:entity/:id', ensureEntity, authorizeWrite('delete'), 
   } catch (e) { handleError(res, e); }
 });
 
+// Variant rows grouped by product_id, for real feed availability (a variant
+// product is out of stock only when ALL its variants are unavailable).
+function variantsByProductId() {
+  const map = new Map();
+  for (const v of queryRecords('ProductVariant', { limit: 100000 })) {
+    if (!map.has(v.product_id)) map.set(v.product_id, []);
+    map.get(v.product_id).push(v);
+  }
+  return map;
+}
+
 // ─── Meta catalog feed ────────────────────────────────────────────────────────
 // Meta-supported CSV product feed. `id` == Product.sku so catalog entries match
 // content_ids in Pixel/CAPI events + product:retailer_item_id in the JSON-LD.
-// Cached so Meta's scheduled fetch is cheap; regenerated at most hourly.
+// Generated fresh from SQLite on EVERY request (cheap queries) — no-store so
+// Cloudflare can never serve Meta a stale cached copy (a 4h edge cache here
+// previously kept sold-out products "in stock" in the catalog).
 app.get('/meta-feed.csv', (req, res) => {
   try {
     const products = queryRecords('Product', { limit: 100000 });
-    const csv = buildFeedCsv(products);
+    const csv = buildFeedCsv(products, variantsByProductId());
     res.set('Content-Type', 'text/csv; charset=utf-8');
     res.set('Content-Disposition', 'inline; filename="meta-feed.csv"');
-    res.set('Cache-Control', 'public, max-age=3600');
+    res.set('Cache-Control', 'private, no-cache, no-store, must-revalidate');
+    res.set('CDN-Cache-Control', 'no-store');
     res.send(csv);
   } catch (e) {
     console.error('[metaFeed] generation failed:', e?.message);
@@ -730,17 +744,18 @@ app.get('/meta-feed.csv', (req, res) => {
 // price/availability logic, image URL, and CSV escaping) but uses TikTok's column
 // names and populates google_product_category/product_type from the DB category.
 // `sku_id` == Product.sku so catalog entries match the same identifier used
-// everywhere else. Cached so TikTok's scheduled fetch is cheap.
+// everywhere else. Generated fresh per request; no-store (see Meta feed above).
 app.get('/tiktok-feed.csv', (req, res) => {
   try {
     const products = queryRecords('Product', { limit: 100000 });
     const categoriesById = new Map(
       queryRecords('Category', { limit: 100000 }).map((c) => [c.id, c]),
     );
-    const csv = buildTiktokFeedCsv(products, categoriesById);
+    const csv = buildTiktokFeedCsv(products, categoriesById, variantsByProductId());
     res.set('Content-Type', 'text/csv; charset=utf-8');
     res.set('Content-Disposition', 'inline; filename="tiktok-feed.csv"');
-    res.set('Cache-Control', 'public, max-age=3600');
+    res.set('Cache-Control', 'private, no-cache, no-store, must-revalidate');
+    res.set('CDN-Cache-Control', 'no-store');
     res.send(csv);
   } catch (e) {
     console.error('[tiktokFeed] generation failed:', e?.message);

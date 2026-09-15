@@ -42,11 +42,42 @@ test('feed row id equals the sku', () => {
   assert.equal(row.id, 'TONGS-5456-MULTI');
 });
 
-test('availability: Active in stock; variant-parent in stock; archived out', () => {
+test('availability: Active in stock; zero-stock out; archived out', () => {
   assert.equal(mapAvailability({ status: 'Active', stock_quantity: 5 }), 'in stock');
-  assert.equal(mapAvailability({ status: 'Active', has_variants: true, stock_quantity: 0 }), 'in stock');
   assert.equal(mapAvailability({ status: 'Active', stock_quantity: 0 }), 'out of stock');
   assert.equal(mapAvailability({ status: 'Archived', stock_quantity: 9 }), 'out of stock');
+});
+
+test('availability: reserved units are not orderable (on-hand minus qty_reserved)', () => {
+  assert.equal(mapAvailability({ status: 'Active', stock_quantity: 3, qty_reserved: 3 }), 'out of stock');
+  assert.equal(mapAvailability({ status: 'Active', stock_quantity: 3, qty_reserved: 2 }), 'in stock');
+});
+
+test('availability: variant product reflects VARIANT stock, not the old always-in-stock shortcut', () => {
+  // Regression: the old "has_variants → in stock" shortcut kept 11 sold-out
+  // variant products "in stock" in Meta's catalog while the storefront showed
+  // Sold out.
+  const allGone = [{ qty_on_hand: 0 }, { qty_on_hand: 0, qty_reserved: 0 }];
+  const oneLeft = [{ qty_on_hand: 0 }, { qty_on_hand: 2, qty_reserved: 1 }];
+  assert.equal(mapAvailability({ status: 'Active', has_variants: true, stock_quantity: 0 }, allGone), 'out of stock');
+  assert.equal(mapAvailability({ status: 'Active', has_variants: true, stock_quantity: 0 }, oneLeft), 'in stock');
+  // No variant rows known → storefront fallback: the product's own stock.
+  assert.equal(mapAvailability({ status: 'Active', has_variants: true, stock_quantity: 0 }), 'out of stock');
+  assert.equal(mapAvailability({ status: 'Active', has_variants: true, stock_quantity: 4 }), 'in stock');
+});
+
+test('buildFeedCsv: variant availability comes from the variantsByProduct map', () => {
+  const products = [
+    { id: 'p1', sku: 'SOLD-OUT-1', name: 'Gone', price_usd: 10, status: 'Active', has_variants: true, stock_quantity: 0, slug: 'gone' },
+    { id: 'p2', sku: 'IN-STOCK-1', name: 'Here', price_usd: 10, status: 'Active', has_variants: true, stock_quantity: 0, slug: 'here' },
+  ];
+  const variantsByProduct = new Map([
+    ['p1', [{ qty_on_hand: 0 }, { qty_on_hand: 0 }]],
+    ['p2', [{ qty_on_hand: 0 }, { qty_on_hand: 5, qty_reserved: 1 }]],
+  ]);
+  const csv = buildFeedCsv(products, variantsByProduct);
+  assert.match(csv, /SOLD-OUT-1,[^,]*,[^,]*,out of stock,/);
+  assert.match(csv, /IN-STOCK-1,[^,]*,[^,]*,in stock,/);
 });
 
 test('sale_price only set on a genuine discount (compare_at > price)', () => {

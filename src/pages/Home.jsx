@@ -243,12 +243,6 @@ function MobileStickyShopCta() {
 }
 
 export default function Home() {
-  const { section: featuredProductsSection } = useCmsSection('featured_products');
-  const featuredProductIds = React.useMemo(() => {
-    const parsed = parseListJson(featuredProductsSection?.body);
-    return (parsed || []).map((id) => String(id)).filter(Boolean);
-  }, [featuredProductsSection?.body]);
-
   return (
     <div className="flex flex-col pb-24 sm:pb-0">
       <AnnouncementBar />
@@ -256,13 +250,6 @@ export default function Home() {
       <TrustStrip />
       <SeasonalDuo />
       <CategoryRail />
-      <ProductRow
-        title="Bestsellers"
-        titleAr="الأكثر مبيعاً"
-        filter={{ is_featured: true, status: 'Active' }}
-        viewAllLink="/shop?featured=true"
-        productIds={featuredProductIds}
-      />
       <SaleCampaignBanner />
       <ProductRow
         title="New Arrivals"
