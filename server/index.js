@@ -790,8 +790,8 @@ const SITEMAP_STATIC_PAGES = [
   { loc: '/legal/contact', priority: '0.5' },
   { loc: '/legal/shipping', priority: '0.5' },
   { loc: '/legal/returns', priority: '0.5' },
-  { loc: '/legal/privacy', priority: '' },
-  { loc: '/legal/terms', priority: '' },
+  { loc: '/legal/privacy', priority: '0.5' },
+  { loc: '/legal/terms', priority: '0.5' },
 ];
 
 function isoDate(v) {
