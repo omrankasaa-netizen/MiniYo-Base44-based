@@ -69,6 +69,7 @@ const ProductsPage = lazy(() => import('@/pages/admin/ProductsPage'));
 const OrdersPage = lazy(() => import('@/pages/admin/OrdersPage'));
 const FinancesPage = lazy(() => import('@/pages/admin/FinancesPage'));
 const BulkImportPage = lazy(() => import('@/pages/admin/BulkImportPage'));
+const AddByPhotosPage = lazy(() => import('@/pages/admin/AddByPhotosPage'));
 const CmsPage = lazy(() => import('@/pages/admin/CmsPage'));
 const SiteSettingsPage = lazy(() => import('@/pages/admin/SiteSettingsPage'));
 const PromoCodesPage = lazy(() => import('@/pages/admin/PromoCodesPage'));
@@ -159,6 +160,7 @@ const AuthenticatedApp = () => {
       <Route path="/admin/orders" element={<AdminGuard><OrdersPage /></AdminGuard>} />
       <Route path="/admin/finances" element={<AdminGuard><FinancesPage /></AdminGuard>} />
       <Route path="/admin/bulk-import" element={<AdminGuard><BulkImportPage /></AdminGuard>} />
+      <Route path="/admin/add-by-photos" element={<AdminGuard><AddByPhotosPage /></AdminGuard>} />
       <Route path="/admin/cms" element={<AdminGuard><CmsPage /></AdminGuard>} />
       <Route path="/admin/site-settings" element={<AdminGuard><SiteSettingsPage /></AdminGuard>} />
       <Route path="/admin/promo-codes" element={<AdminGuard><PromoCodesPage /></AdminGuard>} />
