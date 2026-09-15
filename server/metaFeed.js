@@ -25,7 +25,7 @@ export function normalizeSku(sku) {
 export const FEED_COLUMNS = [
   'id', 'title', 'description', 'availability', 'condition', 'price', 'sale_price',
   'link', 'image_link', 'brand', 'google_product_category', 'product_type',
-  'gender', 'age_group', 'size', 'color',
+  'gender', 'age_group', 'size', 'color', 'custom_label_0',
 ];
 
 // RFC-4180 CSV field escaping: wrap in quotes and double internal quotes when
@@ -134,6 +134,9 @@ export function buildFeedRow(product, variants) {
     age_group: mapAgeGroup(product.age_group),
     size: firstToken(product.sizes),
     color: firstToken(product.colors),
+    // Product tags (e.g. "winter, caramell, romper") — the lever for building
+    // product sets in Commerce Manager (filter: custom_label_0 contains …).
+    custom_label_0: String(product.tags || '').trim(),
   };
 }
 

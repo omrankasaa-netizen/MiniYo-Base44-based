@@ -118,3 +118,17 @@ test('buildFeedCsv: header, one row per product, skips sku-less, escapes', () =>
   assert.ok(row.includes('toddler'));          // age mapped
   assert.ok(row.includes(',6-9M,'));           // first size token
 });
+
+test('custom_label_0 carries product tags so Meta sets can filter (e.g. winter)', () => {
+  // Regression guard for the winter-collection workflow: Commerce Manager
+  // product sets filter on custom_label_0, which must mirror Product.tags.
+  const row = buildFeedRow({ sku: 'CRM-X-001', name: 'X', price_usd: 10, status: 'Active', slug: 'x', tags: 'winter, caramell, romper' });
+  assert.equal(row.custom_label_0, 'winter, caramell, romper');
+  // No tags → empty label, never undefined.
+  const bare = buildFeedRow({ sku: 'CRM-X-002', name: 'Y', price_usd: 10, status: 'Active', slug: 'y' });
+  assert.equal(bare.custom_label_0, '');
+  // And it survives CSV escaping (commas inside the tag list get quoted).
+  const csv = buildFeedCsv([{ sku: 'CRM-X-001', name: 'X', price_usd: 10, status: 'Active', slug: 'x', tags: 'winter, caramell' }]);
+  assert.ok(csv.includes('"winter, caramell"'));
+  assert.ok(csv.split('\r\n')[0].endsWith('custom_label_0'));
+});
