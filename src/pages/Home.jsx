@@ -8,7 +8,8 @@ import { useCmsSection } from '@/hooks/useCmsSection';
 import AnnouncementBar from '@/components/home/AnnouncementBar';
 import HeroSection from '@/components/home/HeroSection';
 import TrustStrip from '@/components/home/TrustStrip';
-import FeaturedCategories from '@/components/home/FeaturedCategories';
+import SeasonalDuo from '@/components/home/SeasonalDuo';
+import CategoryRail from '@/components/home/CategoryRail';
 import ProductRow from '@/components/home/ProductRow';
 import PromoStripBanner from '@/components/home/PromoStripBanner';
 import DualBanners from '@/components/home/DualBanners';
@@ -253,6 +254,8 @@ export default function Home() {
       <AnnouncementBar />
       <HeroSection />
       <TrustStrip />
+      <SeasonalDuo />
+      <CategoryRail />
       <ProductRow
         title="Bestsellers"
         titleAr="الأكثر مبيعاً"
@@ -267,7 +270,6 @@ export default function Home() {
         filter={{ is_new: true, status: 'Active' }}
         viewAllLink="/shop?sort=new"
       />
-      <FeaturedCategories />
       <ReviewsCarousel />
       <HomeFaq />
       <InstagramStrip />
