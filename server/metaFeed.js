@@ -53,14 +53,27 @@ function formatPrice(value) {
   return Number.isFinite(n) ? `${n.toFixed(2)} USD` : '';
 }
 
-// Availability: Active status → in stock. Variant-parent products (has_variants)
-// keep product-level stock_quantity at 0 while real stock lives on variants, so
-// an Active variant-parent is treated as in stock (matches the storefront's own
-// behavior). Documented in docs/META_TRACKING.md.
-export function mapAvailability(product) {
+// KEEP IN SYNC with availableQty in src/lib/availableQty.js — identical logic
+// (frontend ESM/Vite bundle and Node backend can't easily share one module).
+// Units a new customer can actually order: on-hand minus qty_reserved.
+function feedAvailableQty(productOrVariant) {
+  if (!productOrVariant) return 0;
+  const onHand = productOrVariant.qty_on_hand ?? productOrVariant.stock_quantity ?? 0;
+  const reserved = productOrVariant.qty_reserved ?? 0;
+  return Math.max(0, onHand - reserved);
+}
+
+// Availability mirrors the storefront exactly (productAvailableQty): a variant
+// product is in stock only while at least ONE of its variants has orderable
+// units; without variant rows it falls back to the product's own stock. The old
+// shortcut ("has_variants → always in stock") kept sold-out variant products
+// purchasable in Meta ads — 11 of 91 feed rows were wrong when this was fixed.
+export function mapAvailability(product, variants) {
   if (product.status !== 'Active') return 'out of stock';
-  if (product.has_variants) return 'in stock';
-  return Number(product.stock_quantity) > 0 ? 'in stock' : 'out of stock';
+  if (product.has_variants && Array.isArray(variants) && variants.length > 0) {
+    return variants.some((v) => feedAvailableQty(v) > 0) ? 'in stock' : 'out of stock';
+  }
+  return feedAvailableQty(product) > 0 ? 'in stock' : 'out of stock';
 }
 
 // Conservative gender mapping. Only the unambiguous cases are mapped; anything
@@ -93,7 +106,8 @@ function firstToken(piped) {
 }
 
 // Build a single feed row object (unescaped values) for a product.
-export function buildFeedRow(product) {
+// `variants` = the product's ProductVariant rows (for real availability).
+export function buildFeedRow(product, variants) {
   const sku = product.sku;
   const slug = product.slug || product.id;
   const price = Number(product.price_usd);
@@ -107,7 +121,7 @@ export function buildFeedRow(product) {
     id: normalizeSku(sku),
     title: product.name || '',
     description: stripHtml(product.description || product.short_description || product.name || ''),
-    availability: mapAvailability(product),
+    availability: mapAvailability(product, variants),
     condition: 'new',
     price: hasRealDiscount ? formatPrice(compareAt) : formatPrice(price),
     sale_price: hasRealDiscount ? formatPrice(price) : '',
@@ -125,12 +139,14 @@ export function buildFeedRow(product) {
 
 // Build the full CSV string from a list of product records. Products without a
 // sku are skipped (the sku is the required catalog id and event key).
-export function buildFeedCsv(products = []) {
+// `variantsByProduct` (optional Map: product_id → variant rows) enables real
+// availability for variant products.
+export function buildFeedCsv(products = [], variantsByProduct = new Map()) {
   const header = FEED_COLUMNS.join(',');
   const rows = [header];
   for (const product of products) {
     if (!product?.sku) continue;
-    const row = buildFeedRow(product);
+    const row = buildFeedRow(product, variantsByProduct.get(product.id));
     rows.push(FEED_COLUMNS.map((col) => csvEscape(row[col])).join(','));
   }
   return `${rows.join('\r\n')}\r\n`;
