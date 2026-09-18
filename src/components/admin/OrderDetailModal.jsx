@@ -29,6 +29,7 @@ const STATUS_COLORS = {
   Packed: 'bg-violet-50 text-violet-700',
   'Out for Delivery': 'bg-amber-50 text-amber-700',
   Delivered: 'bg-green-50 text-green-700',
+  Returned: 'bg-orange-50 text-orange-700',
   Cancelled: 'bg-destructive/10 text-destructive',
 };
 
@@ -250,6 +251,21 @@ export default function OrderDetailModal({ order, onClose, onUpdated, currentUse
         await releaseStock({ orderId: order.id, items });
       }
 
+      // Returned: the dedicated server flow restocks every line (or drops
+      // holds) atomically and sets the status itself — no separate Order.update.
+      if (newStatus === 'Returned') {
+        await base44.functions.invoke('returnOrder', { order_id: order.id });
+        await base44.entities.OrderStatusHistory.create({
+          order_id: order.id,
+          status: 'Returned',
+          changed_by: currentUser?.email || 'admin',
+          changed_at: new Date().toISOString(),
+        });
+        await logAction({ action: 'status_changed', entity: 'Order', entityId: order.id, details: '→ Returned', userName: currentUser?.email });
+        onUpdated({ ...order, order_status: 'Returned', stock_committed: false, stock_reserved: false });
+        return;
+      }
+
       // Delivery triggers the consolidated backend handler (commit stock if
       // needed + recompute membership tier + customer email). Other statuses
       // update the order then notify the customer.
@@ -282,7 +298,17 @@ export default function OrderDetailModal({ order, onClose, onUpdated, currentUse
       await logAction({ action: 'status_changed', entity: 'Order', entityId: order.id, details: `→ ${newStatus}`, userName: currentUser?.email });
       onUpdated({ ...order, order_status: newStatus, stock_committed: newStatus === 'Confirmed' || newStatus === 'Delivered' ? true : (newStatus === 'Cancelled' ? false : order.stock_committed) });
     } catch (e) {
-      setErr(e.message);
+      // Surface actionable detail instead of a bare "Request failed": stock
+      // shortages (409 from commit/release) come back as data.shortages.
+      const data = e?.data?.data || e?.data || {};
+      const shortages = Array.isArray(data.shortages) ? data.shortages : [];
+      if (shortages.length) {
+        setErr('Not enough stock: ' + shortages
+          .map((s) => `${s.name} — available ${s.available}, needed ${s.needed}${s.reason ? ` (${s.reason})` : ''}`)
+          .join(' · '));
+      } else {
+        setErr(data.error || e.message);
+      }
     } finally {
       setUpdating(false);
     }
@@ -415,7 +441,13 @@ export default function OrderDetailModal({ order, onClose, onUpdated, currentUse
                   {updating ? '…' : `Mark as ${nextStatus}`}
                 </button>
               )}
-              {order.order_status !== 'Cancelled' && order.order_status !== 'Delivered' && (
+              {['Out for Delivery', 'Delivered'].includes(order.order_status) && (
+                <button onClick={() => changeStatus('Returned')} disabled={updating || editing}
+                  className="px-4 py-2 rounded-xl border border-orange-300 text-orange-700 text-sm font-medium disabled:opacity-50 hover:bg-orange-50">
+                  {updating ? '…' : 'Mark as Returned'}
+                </button>
+              )}
+              {order.order_status !== 'Cancelled' && order.order_status !== 'Delivered' && order.order_status !== 'Returned' && (
                 <button onClick={() => changeStatus('Cancelled')} disabled={updating || editing}
                   className="px-4 py-2 rounded-xl border border-destructive text-destructive text-sm font-medium disabled:opacity-50 hover:bg-destructive/10">
                   Cancel Order
