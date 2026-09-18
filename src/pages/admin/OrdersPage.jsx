@@ -46,6 +46,7 @@ const STATUS_COLORS = {
   Packed: 'bg-violet-50 text-violet-700',
   'Out for Delivery': 'bg-amber-50 text-amber-700',
   Delivered: 'bg-green-50 text-green-700',
+  Returned: 'bg-orange-50 text-orange-700',
   Cancelled: 'bg-destructive/10 text-destructive',
 };
 
@@ -144,7 +145,7 @@ export default function OrdersPage() {
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
     return orders.filter(o => {
-      if (activeOnly && !filterStatus && (o.order_status === 'Cancelled' || o.order_status === 'Delivered')) return false;
+      if (activeOnly && !filterStatus && (o.order_status === 'Cancelled' || o.order_status === 'Delivered' || o.order_status === 'Returned')) return false;
       if (q && !o.customer_name?.toLowerCase().includes(q) && !o.customer_phone?.includes(q) && !o.order_number?.toLowerCase().includes(q)) return false;
       if (filterStatus && o.order_status !== filterStatus) return false;
       if (filterChannel && o.channel !== filterChannel) return false;
@@ -217,12 +218,12 @@ export default function OrdersPage() {
               className="bg-transparent text-sm flex-1 min-w-0 outline-none text-foreground placeholder:text-muted-foreground" />
           </div>
           <button onClick={() => setActiveOnly(v => !v)}
-            title="Hide Cancelled and Delivered orders"
+            title="Hide Cancelled, Delivered and Returned orders"
             className={`text-xs font-medium px-3 py-2 rounded-xl border transition-colors ${activeOnly ? 'bg-primary/10 border-primary/30 text-primary' : 'bg-card border-border text-muted-foreground hover:bg-muted'}`}>
             {activeOnly ? 'Active only ✓' : 'All orders'}
           </button>
           {[
-            { value: filterStatus, setter: setFilterStatus, label: 'Status', options: ['New','Confirmed','Packed','Out for Delivery','Delivered','Cancelled'] },
+            { value: filterStatus, setter: setFilterStatus, label: 'Status', options: ['New','Confirmed','Packed','Out for Delivery','Delivered','Returned','Cancelled'] },
             { value: filterChannel, setter: setFilterChannel, label: 'Channel', options: ['Website','Instagram','Facebook','WhatsApp','Other'] },
             { value: filterZone, setter: setFilterZone, label: 'Zone', options: ['Inside Tripoli','Outside Tripoli'] },
           ].map(({ value, setter, label, options }) => (
