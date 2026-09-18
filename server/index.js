@@ -26,6 +26,7 @@ import { getProductPagePayloadBySlug, injectProductMeta } from './productMeta.js
 import { buildFeedCsv } from './metaFeed.js';
 import { buildTiktokFeedCsv } from './tiktokFeed.js';
 import { aiProductDraft } from './aiDraft.js';
+import { returnOrder } from './orderReturns.js';
 import { sendCapiEvent, buildUserData, mergeClientHashedUserData } from './metaCapiClient.js';
 import {
   derivePurchaseEventId, buildPurchaseCustomData, buildPurchaseUserData,
@@ -366,6 +367,26 @@ app.post('/api/functions/aiProductDraft', async (req, res) => {
       });
     }
     const result = await aiProductDraft(req.body || {});
+    if (result && typeof result === 'object' && result._status) {
+      const { _status, ...rest } = result;
+      return res.status(_status).json({ data: rest });
+    }
+    res.json({ data: result });
+  } catch (e) { handleError(res, e); }
+});
+
+// Dedicated route for the order-return endpoint, registered BEFORE the generic
+// dispatcher so it wins (same pattern as aiProductDraft above; the guard mirrors
+// inventoryEngine's internal admin check — admin/super_admin).
+app.post('/api/functions/returnOrder', async (req, res) => {
+  try {
+    const user = getUserFromRequest(req);
+    if (!user || !['admin', 'super_admin'].includes(user.role)) {
+      return res.status(user ? 403 : 401).json({
+        error: user ? 'Forbidden: admin access required' : 'Authentication required',
+      });
+    }
+    const result = await returnOrder(req.body || {}, user);
     if (result && typeof result === 'object' && result._status) {
       const { _status, ...rest } = result;
       return res.status(_status).json({ data: rest });

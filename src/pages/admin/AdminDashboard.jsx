@@ -18,6 +18,7 @@ const STATUS_COLORS = {
   Packed:             'bg-violet-50 text-violet-700',
   'Out for Delivery': 'bg-amber-50 text-amber-700',
   Delivered:          'bg-green-50 text-green-700',
+  Returned:           'bg-orange-50 text-orange-700',
   Cancelled:          'bg-destructive/10 text-destructive',
 };
 

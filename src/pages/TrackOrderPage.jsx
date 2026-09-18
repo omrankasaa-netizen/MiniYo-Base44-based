@@ -9,9 +9,9 @@ const STATUS_STEPS = ['New', 'Confirmed', 'Packed', 'Out for Delivery', 'Deliver
 const STATUS_COLORS = {
   New: 'bg-blue-50 text-blue-700', Confirmed: 'bg-indigo-50 text-indigo-700',
   Packed: 'bg-amber-50 text-amber-700', 'Out for Delivery': 'bg-orange-50 text-orange-700',
-  Delivered: 'bg-green-50 text-green-700', Cancelled: 'bg-red-50 text-red-700',
+  Delivered: 'bg-green-50 text-green-700', Returned: 'bg-orange-50 text-orange-700', Cancelled: 'bg-red-50 text-red-700',
 };
-const STATUS_AR = { New: 'جديد', Confirmed: 'مؤكد', Packed: 'معبأ', 'Out for Delivery': 'في الطريق', Delivered: 'تم التسليم', Cancelled: 'ملغى' };
+const STATUS_AR = { New: 'جديد', Confirmed: 'مؤكد', Packed: 'معبأ', 'Out for Delivery': 'في الطريق', Delivered: 'تم التسليم', Returned: 'مرتجع', Cancelled: 'ملغى' };
 
 export default function TrackOrderPage() {
   const { t, lang } = useLang();
@@ -141,7 +141,7 @@ export default function TrackOrderPage() {
             </div>
 
             {/* Progress stepper */}
-            {order.order_status !== 'Cancelled' && (
+            {order.order_status !== 'Cancelled' && order.order_status !== 'Returned' && (
               <div className="flex items-center gap-1">
                 {STATUS_STEPS.map((step, i) => {
                   const done = i <= currentStepIdx;
