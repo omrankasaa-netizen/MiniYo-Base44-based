@@ -18,6 +18,7 @@ const STATUS_COLORS = {
   Packed:             'bg-violet-50 text-violet-700',
   'Out for Delivery': 'bg-amber-50 text-amber-700',
   Delivered:          'bg-green-50 text-green-700',
+  Returned:           'bg-orange-50 text-orange-700',
   Cancelled:          'bg-destructive/10 text-destructive',
 };
 
@@ -430,7 +431,7 @@ export default function AdminDashboard() {
               <div className="flex items-center justify-between px-5 py-4 border-b border-border">
                 <h2 className="font-heading font-semibold text-foreground">Recent Orders</h2>
                 <Link to="/admin/orders" className="text-xs text-primary hover:underline flex items-center gap-1">
-                  View all <ArrowRight className="w-3 h-3" />
+                  View all <ArrowRight className="w-4 h-4" />
                 </Link>
               </div>
               <div className="divide-y divide-border">
@@ -461,7 +462,7 @@ export default function AdminDashboard() {
               <div className="flex items-center justify-between px-5 py-4 border-b border-border">
                 <h2 className="font-heading font-semibold text-foreground">Low-Stock Alerts</h2>
                 <Link to="/admin/inventory" className="text-xs text-primary hover:underline flex items-center gap-1">
-                  Inventory <ArrowRight className="w-3 h-3" />
+                  Inventory <ArrowRight className="w-4 h-4" />
                 </Link>
               </div>
               <div className="divide-y divide-border">
