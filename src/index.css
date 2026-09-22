@@ -165,7 +165,10 @@
   .mobile-rail {
     -webkit-overflow-scrolling: touch;
     scroll-snap-type: x mandatory;
-    touch-action: pan-y;
+    /* Must allow horizontal panning: pan-y alone blocks the horizontal drag
+       gesture entirely on touch devices, freezing every rail (categories,
+       new arrivals, cart upsells) at scrollLeft 0. */
+    touch-action: pan-x pan-y;
   }
 
   .safe-bottom {
