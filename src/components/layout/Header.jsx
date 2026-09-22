@@ -36,8 +36,20 @@ export default function Header() {
   { to: '/gifts', label: t('Gift Sets', 'هدايا جاهزة') },
   { to: '/track', label: t('Track Order', 'تتبع طلبك') }];
 
+  // "Shop by" shortcuts for the mobile drawer. Size/gender combos mirror the
+  // shop filters so each link lands on a pre-filtered catalog. The '+' in the
+  // 2Y-5Y+ bucket must stay URL-encoded (%2B) or it decodes as a space.
+  const shopByLinks = [
+  { to: '/shop?sizes=0-3M', label: t('NB (0-3M)', 'حديث الولادة (0-3 شهور)') },
+  { to: '/shop?gender=Boys&sizes=3-6M,6-9M,9-12M,12-18M,18-24M', label: t('Baby Boy (3-24M)', 'بيبي صبي (3-24 شهر)') },
+  { to: '/shop?gender=Girls&sizes=3-6M,6-9M,9-12M,12-18M,18-24M', label: t('Baby Girl (3-24M)', 'بيبي بنت (3-24 شهر)') },
+  { to: '/shop?gender=Boys&sizes=2Y-5Y%2B', label: t('Boy (2-5Y+)', 'صبي (2-5+ سنين)') },
+  { to: '/shop?gender=Girls&sizes=2Y-5Y%2B', label: t('Girl (2-5Y+)', 'بنت (2-5+ سنين)') },
+  { to: '/shop?tag=accessories', label: t('Accessories', 'أكسسوارات') },
+  { to: '/shop?tag=socks', label: t('Socks', 'جوارب') }];
 
-  return (
+
+  const headerEl = (
     <header className={`sticky top-0 z-50 border-b border-border/50 transition-transform duration-300 ${hidden ? '-translate-y-full' : 'translate-y-0'} ${scrolled ? 'bg-card shadow-sm' : 'bg-card/95'}`}>
       <div className="bg-primary text-primary-foreground">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 min-h-[30px] text-[11px] sm:text-xs flex items-center justify-center gap-3 sm:gap-5">
@@ -129,18 +141,51 @@ export default function Header() {
           </div>
         </div>
 
-        {/* Mobile nav */}
-        {mobileOpen &&
-        <div className="md:hidden border-t border-border pb-3 pt-2 space-y-0.5">
+      </div>
+    </header>
+  );
+
+  // Mobile side drawer: nav + "Shop by" shortcuts. Slides from the leading
+  // edge (left in EN, right in AR). Rendered OUTSIDE <header>: the header
+  // always carries a Tailwind transform (hide-on-scroll), and a transformed
+  // ancestor breaks position:fixed for anything inside it.
+  const drawer = mobileOpen &&
+    <div className="md:hidden fixed inset-0 z-[60]">
+      <div className="absolute inset-0 bg-black/40" onClick={() => setMobileOpen(false)} />
+      <div className={`absolute inset-y-0 ${lang === 'ar' ? 'right-0' : 'left-0'} w-72 max-w-[85vw] bg-card shadow-2xl flex flex-col`}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
+          <span className="font-heading font-semibold text-foreground">{t('Menu', 'القائمة')}</span>
+          <button onClick={() => setMobileOpen(false)} aria-label={t('Close menu', 'إغلاق القائمة')}
+            className="flex items-center justify-center w-10 h-10 rounded-full hover:bg-muted">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <nav className="flex-1 overflow-y-auto px-3 py-3">
+          <div className="space-y-0.5">
             {navLinks.map(({ to, label }) =>
-          <Link key={to} to={to} onClick={() => setMobileOpen(false)}
-          className="block px-3 py-2.5 rounded-xl text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
+            <Link key={to} to={to} onClick={() => setMobileOpen(false)}
+              className="block px-3 py-2.5 rounded-xl text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
                 {label}
               </Link>
-          )}
+            )}
           </div>
-        }
+          <div className="mt-4 pt-4 border-t border-border">
+            <p className="px-3 pb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              {t('Shop by', 'تسوّق حسب')}
+            </p>
+            <div className="space-y-0.5">
+              {shopByLinks.map(({ to, label }) =>
+              <Link key={to} to={to} onClick={() => setMobileOpen(false)}
+                className="block px-3 py-2.5 rounded-xl text-sm font-medium text-foreground hover:bg-primary/5 hover:text-primary transition-colors">
+                  {label}
+                </Link>
+              )}
+            </div>
+          </div>
+        </nav>
       </div>
-    </header>);
+    </div>;
+
+  return (<>{headerEl}{drawer}</>);
 
 }

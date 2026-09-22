@@ -10,7 +10,7 @@ import ProductCard from '@/components/storefront/ProductCard';
 import { buildImagesByProduct, normalizeImage } from '@/lib/imageFraming';
 import { productAvailableQty } from '@/lib/inventory';
 import {
-  productSizeBuckets,
+  productSizeBucketsWithVariants,
   normalizeAge,
   genderMatchBuckets,
   availableSizeBuckets,
@@ -176,7 +176,12 @@ export default function ShopPage() {
 
   const { data: categories = [] } = useQuery({
     queryKey: ['categories'],
-    queryFn: () => base44.entities.Category.filter({ is_active: true }, 'sort_order', 100),
+    // Fetch ALL categories, not just is_active: 25 of 31 categories are
+    // currently flagged inactive in the DB (data issue, not merchandising
+    // intent), and filtering here hides real departments (Bodysuits, Rompers,
+    // Pyjama sets…) from the facet. The facet only lists categories that
+    // actually hold products anyway.
+    queryFn: () => base44.entities.Category.filter({}, 'sort_order', 100),
   });
 
   const { data: collections = [] } = useQuery({
@@ -206,13 +211,24 @@ export default function ShopPage() {
   const catMap = useMemo(() => Object.fromEntries(categories.map(c => [c.id, c])), [categories]);
   const collectionMap = useMemo(() => Object.fromEntries(collections.map(c => [c.id, c])), [collections]);
 
-  // Category tree
-  const categoryTree = useMemo(() => {
-    const parents = categories.filter(c => !c.parent_id);
-    const childrenMap = {};
-    for (const c of categories) { if (c.parent_id) { if (!childrenMap[c.parent_id]) childrenMap[c.parent_id] = []; childrenMap[c.parent_id].push(c); } }
-    return parents.map(p => ({ ...p, children: childrenMap[p.id] || [] }));
-  }, [categories]);
+  // Category facet: flat list of categories that actually have products.
+  // The parent category rows no longer exist in the DB, so a parent/child tree
+  // renders nothing (children were orphaned under missing parents). Products
+  // point subcategory_id at the leaf categories, so match on either field and
+  // count per category.
+  const categoryFacet = useMemo(() => {
+    const counts = {};
+    for (const p of products) {
+      if (p.category_id) counts[p.category_id] = (counts[p.category_id] || 0) + 1;
+      if (p.subcategory_id && p.subcategory_id !== p.category_id) {
+        counts[p.subcategory_id] = (counts[p.subcategory_id] || 0) + 1;
+      }
+    }
+    return categories
+      .map(c => ({ ...c, count: counts[c.id] || 0 }))
+      .filter(c => c.count > 0)
+      .sort((a, b) => (a.sort_order ?? 999) - (b.sort_order ?? 999) || a.name.localeCompare(b.name));
+  }, [products, categories]);
 
   // Determine max price for slider
   const maxPrice = useMemo(() => {
@@ -221,8 +237,9 @@ export default function ShopPage() {
   }, [products]);
 
   // Derive available filter options from NORMALIZED buckets (fixed logical
-  // order, no ghost/empty buckets). Color facet intentionally removed.
-  const availableSizes = useMemo(() => availableSizeBuckets(products), [products]);
+  // order, no ghost/empty buckets). Sizes are variant-aware: 8 winter products
+  // have no `sizes` string and all purchasable sizes live on variant rows.
+  const availableSizes = useMemo(() => availableSizeBuckets(products, variantsByProduct), [products, variantsByProduct]);
   const availableAges = useMemo(() => availableAgeBuckets(products), [products]);
   const availableGenders = useMemo(() => availableGenderBuckets(products), [products]);
   const availableMaterials = useMemo(() => {
@@ -273,8 +290,9 @@ export default function ShopPage() {
         if (!ids.includes(filterCollection) && p.collection_id !== filterCollection) return false;
       }
       if (filterSizes.length > 0) {
-        // A product matches if ANY of its size tokens maps to a selected bucket.
-        const pBuckets = productSizeBuckets(p.sizes);
+        // A product matches if ANY of its size tokens (product-level string OR
+        // its variant rows) maps to a selected bucket.
+        const pBuckets = productSizeBucketsWithVariants(p, variantsByProduct[p.id] || []);
         if (!filterSizes.some(s => pBuckets.includes(s))) return false;
       }
       if (filterMaterials.length > 0) {
@@ -299,7 +317,7 @@ export default function ShopPage() {
       default: list = [...list].sort((a, b) => new Date(b.created_date) - new Date(a.created_date)); break;
     }
     return list;
-  }, [enriched, search, filterCategory, filterSubcategory, filterGender, filterAge, filterCollection, filterSizes, filterMaterials, filterTags, filterView, filterOnSale, filterInStock, filterPriceMin, filterPriceMax, filterSort, liveDiscounts]);
+  }, [enriched, search, filterCategory, filterSubcategory, filterGender, filterAge, filterCollection, filterSizes, filterMaterials, filterTags, filterView, filterOnSale, filterInStock, filterPriceMin, filterPriceMax, filterSort, liveDiscounts, variantsByProduct]);
 
   // Meta Pixel Search — fire when a search term settles (debounced so we don't
   // emit an event on every keystroke). Reports the matched result skus.
@@ -359,32 +377,21 @@ export default function ShopPage() {
   function FilterPanel() {
     return (
       <div className="space-y-0">
-        {/* Category */}
+        {/* Category — flat list of categories that actually hold products
+            (parent rows are gone from the DB, so a tree renders nothing) */}
         <FilterSection title={t('Category', 'الفئة')}>
           <div className="space-y-1">
             <button onClick={() => set({ category: '', sub: '' })}
               className={`w-full text-left text-sm px-2 py-1 rounded-lg transition-colors ${!filterCategory ? 'text-primary font-semibold' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}`}>
               {t('All Categories', 'جميع الفئات')}
             </button>
-            {categoryTree.map(parent => (
-              <div key={parent.id}>
-                <button onClick={() => set({ category: parent.id, sub: '' })}
-                  className={`w-full text-left text-sm px-2 py-1 rounded-lg transition-colors ${filterCategory === parent.id ? 'text-primary font-semibold bg-primary/5' : 'text-foreground hover:bg-muted'}`}>
-                  {lang === 'ar' ? (parent.name_ar || parent.name) : parent.name}
-                </button>
-                {(filterCategory === parent.id) && parent.children.length > 0 && (
-                  <div className="ml-3 mt-0.5 space-y-0.5">
-                    {parent.children.map(child => (
-                      <button key={child.id} onClick={() => set({ sub: child.id })}
-                        className={`w-full text-left text-xs px-2 py-1 rounded-lg transition-colors flex items-center gap-1.5
-                          ${filterSubcategory === child.id ? 'text-primary font-semibold bg-primary/5' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}`}>
-                        <span className="w-1 h-1 rounded-full bg-current opacity-50 shrink-0" />
-                        {lang === 'ar' ? (child.name_ar || child.name) : child.name}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
+            {categoryFacet.map(cat => (
+              <button key={cat.id} onClick={() => set({ category: filterCategory === cat.id ? '' : cat.id, sub: '' })}
+                className={`w-full text-left text-sm px-2 py-1 rounded-lg transition-colors flex items-center justify-between gap-2
+                  ${filterCategory === cat.id ? 'text-primary font-semibold bg-primary/5' : 'text-foreground hover:bg-muted'}`}>
+                <span className="min-w-0 truncate">{lang === 'ar' ? (cat.name_ar || cat.name) : cat.name}</span>
+                <span className="text-xs text-muted-foreground shrink-0">{cat.count}</span>
+              </button>
             ))}
           </div>
         </FilterSection>
@@ -422,7 +429,7 @@ export default function ShopPage() {
           </FilterSection>
         )}
 
-        {/* Age (Newborn / Toddler only) */}
+        {/* Age (Newborn / Baby / Toddler — honest mapping of catalog values) */}
         {availableAges.length > 0 && (
           <FilterSection title={t('Age Group', 'الفئة العمرية')}>
             {availableAges.map(a => (

@@ -63,7 +63,7 @@ export default function NewsletterStrip() {
                 value={email}
                 onChange={e => setEmail(e.target.value)}
                 placeholder={t('Your email address', 'بريدك الإلكتروني')}
-                className="flex-1 px-4 py-3 rounded-full border border-input bg-card text-sm outline-none focus:ring-2 focus:ring-ring"
+                className="flex-1 min-w-0 px-4 py-3 rounded-full border border-input bg-card text-sm outline-none focus:ring-2 focus:ring-ring"
                 required
               />
               <button type="submit"
