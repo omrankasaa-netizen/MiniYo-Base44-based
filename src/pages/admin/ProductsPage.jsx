@@ -31,7 +31,7 @@ export default function ProductsPage() {
   const [exporting, setExporting] = useState(false);
   const [exportErr, setExportErr] = useState('');
   // Bulk edit panel state. '' means "no change" for every field.
-  const EMPTY_BULK_FORM = { category_id: '', gender: '', age_group: '', is_new: '', is_featured: '', add_tag: '', remove_tag: '' };
+  const EMPTY_BULK_FORM = { category_id: '', gender: '', age_group: '', is_new: '', is_featured: '', add_tag: '', remove_tag: '', size_guide_mode: '', size_guide: '' };
   const [showBulkEdit, setShowBulkEdit] = useState(false);
   const [bulkForm, setBulkForm] = useState(EMPTY_BULK_FORM);
   const [bulkBusy, setBulkBusy] = useState(false);
@@ -356,6 +356,21 @@ export default function ProductsPage() {
                   <input value={bulkForm.remove_tag} onChange={e => setBulkForm(f => ({ ...f, remove_tag: e.target.value }))}
                     placeholder="Remove tag from all (e.g. winter)…"
                     className="bg-muted rounded-xl px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground" />
+                </div>
+                {/* Batch size guide — same guide written to every selected product */}
+                <div className="space-y-2">
+                  <select value={bulkForm.size_guide_mode} onChange={e => setBulkForm(f => ({ ...f, size_guide_mode: e.target.value }))}
+                    className="bg-muted rounded-xl px-3 py-2 text-sm text-foreground outline-none border-0 cursor-pointer">
+                    <option value="">Size guide: no change</option>
+                    <option value="set">Set size guide for all selected…</option>
+                    <option value="clear">Clear size guide (use store default)</option>
+                  </select>
+                  {bulkForm.size_guide_mode === 'set' && (
+                    <textarea value={bulkForm.size_guide} onChange={e => setBulkForm(f => ({ ...f, size_guide: e.target.value }))}
+                      rows={4}
+                      placeholder="Size guide text applied to every selected product (e.g. 0-3M: 50-56cm…)"
+                      className="w-full bg-muted rounded-xl px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground" />
+                  )}
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <button onClick={applyBulkEdit} disabled={bulkBusy}
