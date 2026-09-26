@@ -73,7 +73,6 @@ export default function ProductPage() {
   const [shakeSelector, setShakeSelector] = useState(false);
   const [showStickyBuy, setShowStickyBuy] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const [sizeGuideOpen, setSizeGuideOpen] = useState(false);
   const [careOpen, setCareOpen] = useState(false);
   const buyZoneRef = useRef(null);
   const touchStartX = useRef(null);
@@ -179,6 +178,8 @@ export default function ProductPage() {
 
   const name = lang === 'ar' ? (product.name_ar || product.name) : product.name;
   const desc = lang === 'ar' ? (product.description_ar || product.description) : product.description;
+  // Per-product size guide wins; fall back to the shared CMS default section.
+  const sizeGuideContent = product.size_guide || sizeGuideSection?.body || t('Size information will be provided soon.', 'سيتم توفير معلومات المقاسات قريباً.');
   const hasCompareDiscount = product.compare_at_price_usd > product.price_usd;
   const autoDiscount = getProductDiscount(product);
   const discountedPrice = autoDiscount ? getDiscountedPrice(product) : null;
@@ -439,6 +440,17 @@ export default function ProductPage() {
                   </div>
                 </div>
               )}
+              {/* Size guide — always open and pinned right under the size pills so
+                  shoppers see it WHILE picking a size. Per-product guides differ
+                  (product.size_guide wins), falling back to the CMS default. */}
+              <div className="rounded-2xl border border-border bg-card overflow-hidden">
+                <div className="px-4 py-3 bg-muted/40 border-b border-border">
+                  <span className="text-sm font-semibold text-foreground">{t('Size guide', 'دليل المقاسات')}</span>
+                </div>
+                <div className="px-4 py-3 text-sm text-muted-foreground leading-[1.7] whitespace-pre-line max-h-64 overflow-y-auto">
+                  {sizeGuideContent}
+                </div>
+              </div>
               {selectorError && <p className="text-xs text-destructive mt-1">{selectorError}</p>}
             </div>
 
@@ -529,9 +541,6 @@ export default function ProductPage() {
         <section className="mt-8 space-y-2">
           <AccordionRow title={t('Details', 'التفاصيل')} open={detailsOpen} onToggle={() => setDetailsOpen((v) => !v)}>
             {desc || t('No details yet.', 'لا توجد تفاصيل بعد.')}
-          </AccordionRow>
-          <AccordionRow title={t('Size guide', 'دليل المقاسات')} open={sizeGuideOpen} onToggle={() => setSizeGuideOpen((v) => !v)}>
-            {product.size_guide || sizeGuideSection?.body || t('Size information will be provided soon.', 'سيتم توفير معلومات المقاسات قريباً.')}
           </AccordionRow>
           <AccordionRow title={t('Care', 'العناية')} open={careOpen} onToggle={() => setCareOpen((v) => !v)}>
             {product.care_instructions || careSection?.body || t('Machine wash cold. Dry flat.', 'غسيل بارد في الغسالة. تجفيف بشكل مسطح.')}

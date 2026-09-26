@@ -58,6 +58,8 @@ const NO_CHANGE = '';
 //     is_featured: '' | 'yes' | 'no',
 //     add_tag:     string,           // optional tag to add
 //     remove_tag:  string,           // optional tag to remove
+//     size_guide_mode: '' | 'set' | 'clear', // '' = no change
+//     size_guide:  string,           // guide text used when mode = 'set'
 //   }
 //
 // Returns the update object, or null when the form changes NOTHING for this
@@ -72,6 +74,18 @@ export function buildBulkUpdate(form, product) {
   if (form.is_new === 'no') update.is_new = false;
   if (form.is_featured === 'yes') update.is_featured = true;
   if (form.is_featured === 'no') update.is_featured = false;
+
+  // Batch size guide: 'set' writes the guide text to every selected product,
+  // 'clear' removes the per-product guide so the storefront falls back to the
+  // shared CMS default. Skipped when it would not actually change anything.
+  if (form.size_guide_mode === 'set') {
+    const guide = String(form.size_guide || '').trim();
+    if (guide && guide !== String(product?.size_guide || '').trim()) {
+      update.size_guide = guide;
+    }
+  } else if (form.size_guide_mode === 'clear') {
+    if (product?.size_guide) update.size_guide = '';
+  }
 
   const add = String(form.add_tag || '').trim();
   const remove = String(form.remove_tag || '').trim();

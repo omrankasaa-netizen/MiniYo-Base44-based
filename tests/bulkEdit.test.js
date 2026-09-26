@@ -75,3 +75,31 @@ test('buildBulkUpdate: add + remove same tag → remove wins, no change → null
   // …but on a product missing the tag, it ends up added.
   assert.deepEqual(buildBulkUpdate(form, { tags: 'gift' }), { tags: 'gift, summer' });
 });
+
+test('buildBulkUpdate: size guide set writes trimmed text to every selected product', () => {
+  const form = { category_id: '', gender: '', age_group: '', is_new: '', is_featured: '', add_tag: '', remove_tag: '', size_guide_mode: 'set', size_guide: '  0-3M: 50-56cm\n3-6M: 56-62cm  ' };
+  assert.deepEqual(buildBulkUpdate(form, {}), { size_guide: '0-3M: 50-56cm\n3-6M: 56-62cm' });
+  assert.deepEqual(buildBulkUpdate(form, { size_guide: 'old guide' }), { size_guide: '0-3M: 50-56cm\n3-6M: 56-62cm' });
+});
+
+test('buildBulkUpdate: size guide set with same text → null (skip useless write)', () => {
+  const form = { category_id: '', gender: '', age_group: '', is_new: '', is_featured: '', add_tag: '', remove_tag: '', size_guide_mode: 'set', size_guide: 'same guide' };
+  assert.equal(buildBulkUpdate(form, { size_guide: 'same guide' }), null);
+});
+
+test('buildBulkUpdate: size guide set with empty text → no write', () => {
+  const form = { category_id: '', gender: '', age_group: '', is_new: '', is_featured: '', add_tag: '', remove_tag: '', size_guide_mode: 'set', size_guide: '   ' };
+  assert.equal(buildBulkUpdate(form, {}), null);
+});
+
+test('buildBulkUpdate: size guide clear removes per-product guide', () => {
+  const form = { category_id: '', gender: '', age_group: '', is_new: '', is_featured: '', add_tag: '', remove_tag: '', size_guide_mode: 'clear', size_guide: '' };
+  assert.deepEqual(buildBulkUpdate(form, { size_guide: 'custom' }), { size_guide: '' });
+  // Already empty → nothing to change.
+  assert.equal(buildBulkUpdate(form, {}), null);
+});
+
+test('buildBulkUpdate: size guide no-change mode never touches the field', () => {
+  const form = { category_id: '', gender: '', age_group: '', is_new: '', is_featured: '', add_tag: '', remove_tag: '', size_guide_mode: '', size_guide: 'ignored' };
+  assert.equal(buildBulkUpdate(form, { size_guide: 'keep me' }), null);
+});
