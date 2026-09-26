@@ -119,6 +119,7 @@ export default function ProductForm({ product, categories, onClose, onSaved, clo
     slug: '', sku: '', name: '', name_ar: '',
     short_description: '', short_description_ar: '',
     description: '', description_ar: '',
+    size_guide: '',
     category_id: '', subcategory_id: '', collection_ids: '', collection_id: '', gender: '', age_group: '',
     price_usd: '', compare_at_price_usd: '', cost_usd: '',
     tags: '', is_new: false, is_featured: false, status: 'Active',
@@ -497,6 +498,10 @@ export default function ProductForm({ product, categories, onClose, onSaved, clo
                   <Textarea value={form.description_ar} onChange={e => set('description_ar', e.target.value)} rows={4} dir="rtl" />
                 </Field>
               </div>
+              <Field label="Size Guide (optional — shown always-open on the product page; leave empty to use the store default)">
+                <Textarea value={form.size_guide} onChange={e => set('size_guide', e.target.value)} rows={4}
+                  placeholder="e.g. 0-3M: 50-56cm&#10;3-6M: 56-62cm&#10;6-9M: 62-68cm" />
+              </Field>
               <div className="grid grid-cols-2 gap-4">
                 <Field label="Category">
                   <Select value={form.category_id} onChange={e => { set('category_id', e.target.value); set('subcategory_id', ''); }}>
