@@ -137,16 +137,37 @@ rateSweep.unref?.();
 
 const authRateLimit = rateLimit('auth', { windowMs: 10 * 60 * 1000, max: 30 });
 const trackRateLimit = rateLimit('track', { windowMs: 60 * 1000, max: 120 });
+// Entity writes: generous enough for admin bulk edits (~1 request per product)
+// and checkout bursts, tight enough to blunt origin-bypass write floods that
+// slip past the Cloudflare edge. Reads stay unlimited (public catalog).
+const writeRateLimit = rateLimit('write', { windowMs: 60 * 1000, max: 300 });
+const reportRateLimit = rateLimit('report', { windowMs: 60 * 1000, max: 30 });
 
-// Baseline security headers. NOTE: a Content-Security-Policy is intentionally
-// NOT set yet — Meta/TikTok pixels and Google Fonts make a correct CSP risky;
-// TODO: introduce one in report-only mode first (Content-Security-Policy-Report-Only)
-// and tighten from observed violations.
+// Baseline security headers. The CSP runs in REPORT-ONLY mode: the storefront
+// loads Meta/TikTok pixels and Google Fonts, so an enforced CSP risks breaking
+// tracking. Reports flow to /api/security/csp-report; tighten to an enforced
+// policy only after the observed violations look clean.
+const CSP_REPORT_ONLY = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline' https://connect.facebook.net https://analytics.tiktok.com https://www.googletagmanager.com https://www.google-analytics.com",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "font-src 'self' https://fonts.gstatic.com data:",
+  "img-src 'self' data: blob: https:",
+  "connect-src 'self' https://www.facebook.com https://graph.facebook.com https://analytics.tiktok.com https://www.google-analytics.com https://*.analytics.google.com https://stats.g.doubleclick.net",
+  "frame-ancestors 'self'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "report-uri /api/security/csp-report",
+].join('; ');
 app.use((req, res, next) => {
   res.set('X-Content-Type-Options', 'nosniff');
   res.set('X-Frame-Options', 'SAMEORIGIN');
   res.set('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  // HTTPS is terminated at Cloudflare (full-strict); tell browsers to never
+  // retry plain HTTP for the next ~6 months.
+  res.set('Strict-Transport-Security', 'max-age=15552000; includeSubDomains');
+  res.set('Content-Security-Policy-Report-Only', CSP_REPORT_ONLY);
   next();
 });
 // Limit is generous so the bulk-import endpoint can accept a base64 spreadsheet
@@ -154,6 +175,21 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: '150mb' }));
 app.use(express.urlencoded({ extended: true, limit: '150mb' }));
 app.use(cookieParser());
+
+// CSP violation reports (report-only policy above). Browsers POST these as
+// application/csp-report which the global JSON parser ignores, so parse the
+// body here with a tiny limit. Never log the raw report — only the directive
+// and the HOST of the blocked URI, both length-capped (log-injection safe).
+app.post('/api/security/csp-report', reportRateLimit, express.json({ type: ['application/csp-report', 'application/reports+json'], limit: '8kb' }), (req, res) => {
+  try {
+    const report = req.body?.['csp-report'] || {};
+    let host = '';
+    try { host = new URL(String(report['blocked-uri'] || '')).host.slice(0, 100); } catch { /* not a URL */ }
+    const directive = String(report['violated-directive'] || '').slice(0, 80).replace(/[\r\n]/g, ' ');
+    console.log(`[csp-report] directive=${directive} blocked_host=${host}`);
+  } catch { /* malformed report — ignore */ }
+  res.status(204).end();
+});
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 function asInt(v) {
@@ -723,7 +759,7 @@ function blockedCustomerFor(body) {
   return null;
 }
 
-app.post('/api/entities/:entity', ensureEntity, authorizeWrite('create'), (req, res) => {
+app.post('/api/entities/:entity', ensureEntity, writeRateLimit, authorizeWrite('create'), (req, res) => {
   try {
     if (req.params.entity === 'Order' && blockedCustomerFor(req.body || {})) {
       return res.status(403).json({ error: 'This account is blocked from placing orders. Please contact support.' });
@@ -734,7 +770,7 @@ app.post('/api/entities/:entity', ensureEntity, authorizeWrite('create'), (req, 
   } catch (e) { handleError(res, e); }
 });
 
-app.put('/api/entities/:entity/:id', ensureEntity, authorizeWrite('update'), (req, res) => {
+app.put('/api/entities/:entity/:id', ensureEntity, writeRateLimit, authorizeWrite('update'), (req, res) => {
   try {
     const record = updateRecord(req.params.entity, req.params.id, req.body || {});
     maybeInvalidateDashboard(req.params.entity);
@@ -742,7 +778,7 @@ app.put('/api/entities/:entity/:id', ensureEntity, authorizeWrite('update'), (re
   } catch (e) { handleError(res, e); }
 });
 
-app.delete('/api/entities/:entity/:id', ensureEntity, authorizeWrite('delete'), (req, res) => {
+app.delete('/api/entities/:entity/:id', ensureEntity, writeRateLimit, authorizeWrite('delete'), (req, res) => {
   try {
     const result = deleteRecord(req.params.entity, req.params.id);
     maybeInvalidateDashboard(req.params.entity);
