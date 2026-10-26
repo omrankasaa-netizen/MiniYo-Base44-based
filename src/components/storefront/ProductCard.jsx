@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { ShoppingBag, Star, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useLang } from '@/contexts/LanguageContext';
 import { useCart } from '@/contexts/CartContext';
@@ -98,7 +98,9 @@ export default function ProductCard({ product, rating }) {
   const { t, lang, isRTL } = useLang();
   const { addItem, setIsOpen } = useCart();
   const { getProductDiscount, getDiscountedPrice } = useDiscounts();
+  const navigate = useNavigate();
   const [added, setAdded] = useState(false);
+  const [selectedSwatchKey, setSelectedSwatchKey] = useState(null);
 
   const name = lang === 'ar' ? (product.name_ar || product.name) : product.name;
   // A product is unavailable if it's been deactivated (status set to anything
@@ -134,6 +136,26 @@ export default function ProductCard({ product, rating }) {
     : (product.primaryImage ? [product.primaryImage] : [product.image_url]);
   const cardImages = normalizeImages(rawImages);
 
+  // Tapped color dot: when the catalog has a per-color photo (variant
+  // image_url), preview it as the first carousel slide; the key remount resets
+  // the carousel to that slide. Dots without a photo deep-link to the product
+  // page with the color preselected instead (see handleSwatch).
+  const activeSwatch = (Array.isArray(product.colorSwatches) ? product.colorSwatches : [])
+    .find((sw) => sw.key === selectedSwatchKey) || null;
+  const displayImages = activeSwatch?.image
+    ? normalizeImages([activeSwatch.image, ...cardImages.filter((im) => im.url !== activeSwatch.image)])
+    : cardImages;
+
+  function handleSwatch(e, sw) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (sw.image && selectedSwatchKey !== sw.key) {
+      setSelectedSwatchKey(sw.key);
+      return;
+    }
+    navigate(`/product/${product.slug}?color=${encodeURIComponent(sw.label)}`);
+  }
+
   function handleAdd(e) {
     e.preventDefault();
     if (isOutOfStock || product.has_variants) return;
@@ -148,8 +170,8 @@ export default function ProductCard({ product, rating }) {
       <Link to={`/product/${product.slug}`} className="block">
         <div className="bg-card rounded-3xl overflow-hidden shadow-sm hover:shadow-md transition-shadow border border-border/60">
           <div className="relative aspect-[3/4] bg-muted overflow-hidden">
-            {cardImages.length > 0
-              ? <ProductCardImage images={cardImages} name={name} isRTL={isRTL} />
+            {displayImages.length > 0
+              ? <ProductCardImage key={activeSwatch?.image ? activeSwatch.key : 'gallery'} images={displayImages} name={name} isRTL={isRTL} />
               : <div className="w-full h-full flex items-center justify-center bg-accent/20"><ShoppingBag className="w-12 h-12 text-accent" /></div>}
             {/* Badges */}
             <div className="absolute top-2.5 left-2.5 flex flex-col gap-1.5">
@@ -176,15 +198,22 @@ export default function ProductCard({ product, rating }) {
                 (see @/lib/colorSwatches) from the product's variant rows.
                 Shown only when there are 2+ distinct colors: a lone dot adds
                 noise without signaling choice. Sold-out colors render dimmed.
-                Multi-tone labels ("White&Navy") render a two-half circle. */}
+                Multi-tone labels ("White&Navy") render a two-half circle.
+                Dots are tappable: with a per-color photo the first tap previews
+                it on the card (second tap opens the product); without one the
+                tap opens the product page with that color preselected. */}
             {Array.isArray(product.colorSwatches) && product.colorSwatches.length > 1 && (
-              <div className="flex items-center gap-1.5 mb-1.5" role="img"
+              <div className="flex items-center gap-1.5 mb-1.5" role="group"
                 aria-label={t('Available colors', 'الألوان المتوفرة')}>
                 {product.colorSwatches.slice(0, 6).map((s) => (
-                  <span
+                  <button
                     key={s.key}
+                    type="button"
                     title={s.label}
-                    className={`w-3.5 h-3.5 rounded-full border border-black/15 shadow-sm shrink-0 ${s.inStock ? '' : 'opacity-30'}`}
+                    aria-label={`${t('Color', 'اللون')}: ${s.label}`}
+                    aria-pressed={selectedSwatchKey === s.key}
+                    onClick={(e) => handleSwatch(e, s)}
+                    className={`w-3.5 h-3.5 rounded-full border shadow-sm shrink-0 cursor-pointer ${selectedSwatchKey === s.key ? 'border-primary ring-2 ring-primary/40' : 'border-black/15'} ${s.inStock ? '' : 'opacity-30'}`}
                     style={{
                       background: s.hexes.length > 1
                         ? `linear-gradient(135deg, ${s.hexes[0]} 50%, ${s.hexes[1]} 50%)`
