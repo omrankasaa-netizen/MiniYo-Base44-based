@@ -431,7 +431,7 @@ export default function ShopPage() {
           </FilterSection>
         )}
 
-        {/* Age (Newborn / Toddler only) */}
+        {/* Age (Newborn / Baby / Toddler — honest mapping of catalog values) */}
         {availableAges.length > 0 && (
           <FilterSection title={t('Age Group', 'الفئة العمرية')}>
             {availableAges.map(a => (
@@ -473,7 +473,7 @@ export default function ShopPage() {
             </button>
             {collections.map(col => (
               <button key={col.id} onClick={() => set({ collection: filterCollection === col.id ? '' : col.id })}
-                className={`w-full text-left text-sm px-2 py-1 rounded-lg transition-colors ${filterCollection === col.id ? 'text-primary font-semibold bg-primary/5' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}`}>
+                className={`w-full text-left text-sm px-2 py-1 rounded-lg transition-colors ${filterCollection === col.id ? 'text-primary font-semibold bg-primary/5' : 'text-foreground hover:bg-muted'}`}>
                 {lang === 'ar' ? (col.name_ar || col.name) : col.name}
               </button>
             ))}
