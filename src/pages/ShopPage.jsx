@@ -136,11 +136,17 @@ export default function ShopPage() {
     queryFn: () => base44.entities.Product.filter({ status: 'Active' }, '-created_date', 500),
   });
 
+  const productIds = useMemo(() => products.map(p => p.id), [products]);
+
   const { data: images = [] } = useQuery({
-    queryKey: ['shop-product-images'],
-    // Load only primary images (one per product) instead of all images.
-    // Full image galleries are loaded on demand in ProductPage.
-    queryFn: () => base44.entities.ProductImage.filter({ is_primary: true }, 'sort_order', 600),
+    queryKey: ['shop-product-images', productIds.join(',')],
+    // Full galleries (same pattern as GiftGuidePage), not just primary images:
+    // the in-card photo carousel (arrows/swipe) needs every gallery image on
+    // the shop grid, exactly like the home rails. imgMap below still derives
+    // the primary image, so nothing else changes.
+    queryFn: () => productIds.length === 0
+      ? []
+      : base44.entities.ProductImage.filter({ product_id: productIds }, 'sort_order'),
     enabled: products.length > 0,
     staleTime: 60_000,
   });
