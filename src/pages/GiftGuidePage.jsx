@@ -6,6 +6,7 @@ import { Gift, Filter } from 'lucide-react';
 import ProductCard from '@/components/storefront/ProductCard';
 import { buildImagesByProduct } from '@/lib/imageFraming';
 import { productAvailableQty } from '@/lib/inventory';
+import { buildColorSwatches } from '@/lib/colorSwatches';
 
 const GIFT_CATEGORIES = [
   { slug: 'newborn-essentials', name: 'Newborn Essentials', nameAr: 'ضروريات المواليد', ageGroup: 'Newborn' },
@@ -58,11 +59,13 @@ export default function GiftGuidePage() {
   const imagesByProduct = React.useMemo(() => buildImagesByProduct(images), [images]);
   const products = React.useMemo(() => rawProducts.map(p => {
     const imgs = imagesByProduct[p.id] || [];
+    const pvs = variantsByProduct[p.id] || [];
     return {
       ...p,
       images: imgs,
       primaryImage: imgs[0]?.url || null,
-      availableStock: productAvailableQty(p, variantsByProduct[p.id] || []),
+      availableStock: productAvailableQty(p, pvs),
+      colorSwatches: buildColorSwatches(p, pvs),
     };
   }), [rawProducts, imagesByProduct, variantsByProduct]);
 

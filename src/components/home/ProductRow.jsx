@@ -7,6 +7,7 @@ import { useQuery } from '@tanstack/react-query';
 import ProductCard from '@/components/storefront/ProductCard';
 import { buildImagesByProduct } from '@/lib/imageFraming';
 import { productAvailableQty } from '@/lib/inventory';
+import { buildColorSwatches } from '@/lib/colorSwatches';
 import { ChevronRight, ChevronLeft } from 'lucide-react';
 
 export default function ProductRow({ title, titleAr, filter, viewAllLink, productIds = [] }) {
@@ -79,11 +80,13 @@ export default function ProductRow({ title, titleAr, filter, viewAllLink, produc
   const imagesByProduct = buildImagesByProduct(allImages);
   const products = rawProducts.map(p => {
     const imgs = imagesByProduct[p.id] || [];
+    const pvs = variantsByProduct[p.id] || [];
     return {
       ...p,
       images: imgs,
       primaryImage: imgs[0]?.url || null,
-      availableStock: productAvailableQty(p, variantsByProduct[p.id] || []),
+      availableStock: productAvailableQty(p, pvs),
+      colorSwatches: buildColorSwatches(p, pvs),
     };
   });
 

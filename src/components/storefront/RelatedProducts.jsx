@@ -5,6 +5,7 @@ import { useLang } from '@/contexts/LanguageContext';
 import ProductCard from '@/components/storefront/ProductCard';
 import { buildImagesByProduct } from '@/lib/imageFraming';
 import { productAvailableQty } from '@/lib/inventory';
+import { buildColorSwatches } from '@/lib/colorSwatches';
 
 /**
  * "You might also like" — recommended products shown under a product card.
@@ -98,11 +99,12 @@ export default function RelatedProducts({ product, limit = 4, title, titleAr }) 
   const recommended = useMemo(() => {
     // Enrich exactly like ShopPage so ProductCard gets per-product images + stock.
     // availableStock subtracts qty_reserved (via availableQty) so a fully-reserved
-    // recommendation renders as sold out.
+    // recommendation renders as sold out. colorSwatches feeds the card's
+    // color-dot row.
     return picked.map(p => {
       const pvs = variantsByProduct[p.id] || [];
       const availableStock = productAvailableQty(p, pvs);
-      return { ...p, primaryImage: imgMap[p.id] || null, images: imagesByProduct[p.id] || [], availableStock };
+      return { ...p, primaryImage: imgMap[p.id] || null, images: imagesByProduct[p.id] || [], availableStock, colorSwatches: buildColorSwatches(p, pvs) };
     });
   }, [picked, imgMap, imagesByProduct, variantsByProduct]);
 
