@@ -171,6 +171,34 @@ export default function ProductCard({ product, rating }) {
           <div className="p-3.5">
             <p className="font-heading font-semibold text-foreground text-sm leading-tight line-clamp-2 mb-1.5">{name}</p>
             {rating?.count > 0 && <RatingStars avg={rating.avg} count={rating.count} className="mb-1" />}
+            {/* Color swatches — shoppers see the available colorways before
+                opening the product. Parents enrich `product.colorSwatches`
+                (see @/lib/colorSwatches) from the product's variant rows.
+                Shown only when there are 2+ distinct colors: a lone dot adds
+                noise without signaling choice. Sold-out colors render dimmed.
+                Multi-tone labels ("White&Navy") render a two-half circle. */}
+            {Array.isArray(product.colorSwatches) && product.colorSwatches.length > 1 && (
+              <div className="flex items-center gap-1.5 mb-1.5" role="img"
+                aria-label={t('Available colors', 'الألوان المتوفرة')}>
+                {product.colorSwatches.slice(0, 6).map((s) => (
+                  <span
+                    key={s.key}
+                    title={s.label}
+                    className={`w-3.5 h-3.5 rounded-full border border-black/15 shadow-sm shrink-0 ${s.inStock ? '' : 'opacity-30'}`}
+                    style={{
+                      background: s.hexes.length > 1
+                        ? `linear-gradient(135deg, ${s.hexes[0]} 50%, ${s.hexes[1]} 50%)`
+                        : (s.hexes[0] || '#d8d2c9'),
+                    }}
+                  />
+                ))}
+                {product.colorSwatches.length > 6 && (
+                  <span className="text-[10px] leading-none text-muted-foreground font-medium" dir="ltr">
+                    +{product.colorSwatches.length - 6}
+                  </span>
+                )}
+              </div>
+            )}
             {/* Price row. whitespace-nowrap on both prices + dir="ltr" on the row:
                 the global `overflow-wrap: anywhere` on spans lets text break
                 between ANY characters, and when this row got squeezed (the old
