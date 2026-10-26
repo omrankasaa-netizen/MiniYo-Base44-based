@@ -9,6 +9,7 @@ import { useQuery } from '@tanstack/react-query';
 import ProductCard from '@/components/storefront/ProductCard';
 import { buildImagesByProduct, normalizeImage } from '@/lib/imageFraming';
 import { productAvailableQty } from '@/lib/inventory';
+import { buildColorSwatches } from '@/lib/colorSwatches';
 import {
   productSizeBucketsWithVariants,
   normalizeAge,
@@ -256,10 +257,11 @@ export default function ShopPage() {
   // Enrich products with images and availability. availableStock subtracts
   // qty_reserved (via availableQty) so out-of-stock / in-stock filtering and the
   // ProductCard reflect what a new shopper can actually order, not raw on-hand.
+  // colorSwatches feeds the card's color-dot row (2+ distinct colors only).
   const enriched = useMemo(() => products.map(p => {
     const pvs = variantsByProduct[p.id] || [];
     const availableStock = productAvailableQty(p, pvs);
-    return { ...p, primaryImage: imgMap[p.id] || null, images: imagesByProduct[p.id] || [], availableStock };
+    return { ...p, primaryImage: imgMap[p.id] || null, images: imagesByProduct[p.id] || [], availableStock, colorSwatches: buildColorSwatches(p, pvs) };
   }), [products, imgMap, imagesByProduct, variantsByProduct]);
 
   // Check if product is on sale
@@ -429,7 +431,7 @@ export default function ShopPage() {
           </FilterSection>
         )}
 
-        {/* Age (Newborn / Baby / Toddler — honest mapping of catalog values) */}
+        {/* Age (Newborn / Toddler only) */}
         {availableAges.length > 0 && (
           <FilterSection title={t('Age Group', 'الفئة العمرية')}>
             {availableAges.map(a => (
@@ -471,7 +473,7 @@ export default function ShopPage() {
             </button>
             {collections.map(col => (
               <button key={col.id} onClick={() => set({ collection: filterCollection === col.id ? '' : col.id })}
-                className={`w-full text-left text-sm px-2 py-1 rounded-lg transition-colors ${filterCollection === col.id ? 'text-primary font-semibold bg-primary/5' : 'text-foreground hover:bg-muted'}`}>
+                className={`w-full text-left text-sm px-2 py-1 rounded-lg transition-colors ${filterCollection === col.id ? 'text-primary font-semibold bg-primary/5' : 'text-muted-foreground hover:text-foreground hover:bg-muted'}`}>
                 {lang === 'ar' ? (col.name_ar || col.name) : col.name}
               </button>
             ))}
