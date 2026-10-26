@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useLang } from '@/contexts/LanguageContext';
 import { useCart } from '@/contexts/CartContext';
 import { useDiscounts } from '@/contexts/DiscountContext';
@@ -54,6 +54,7 @@ function AccordionRow({ title, open, onToggle, children }) {
 
 export default function ProductPage() {
   const { slug } = useParams();
+  const [searchParams] = useSearchParams();
   const { t, lang, isRTL } = useLang();
   const { addItem, setIsOpen } = useCart();
   const navigate = useNavigate();
@@ -76,6 +77,7 @@ export default function ProductPage() {
   const [careOpen, setCareOpen] = useState(false);
   const buyZoneRef = useRef(null);
   const touchStartX = useRef(null);
+  const deepColorRef = useRef('');
 
   useEffect(() => {
     setImgIdx(0);
@@ -167,6 +169,24 @@ export default function ProductPage() {
     ttViewContent(product);
     ga4TrackViewItem(product);
   }, [product?.id]);
+
+  // Card color dots deep-link here as /product/:slug?color=<label>. Preselect
+  // that exact color once the options are known. This hook must stay ABOVE the
+  // `if (!product)` early return (hooks order). The ref token makes it a
+  // one-shot per slug+color so it never overrides a manual selection, and the
+  // slug-reset effect above still clears state between products.
+  useEffect(() => {
+    const want = searchParams.get('color') || '';
+    const token = `${slug}:${want}`;
+    if (!want || deepColorRef.current === token || !product) return;
+    const variantColorOptions = [...new Set(variants.map((v) => v.color).filter(Boolean))];
+    const stringColorOptions = product.colors ? product.colors.split('|').map((c) => c.trim()).filter(Boolean) : [];
+    const options = variantColorOptions.length > 0 ? variantColorOptions : stringColorOptions;
+    if (options.includes(want)) {
+      setSelectedColor(want);
+      deepColorRef.current = token;
+    }
+  }, [slug, searchParams, variants, product]);
 
   if (!product) {
     return (
