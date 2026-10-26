@@ -108,3 +108,33 @@ test('buildColorSwatches: empty inputs yield no swatches', () => {
   assert.deepEqual(buildColorSwatches({ colors: '' }, []), []);
   assert.deepEqual(buildColorSwatches({ has_variants: true }, [{ color: '  ' }]), []);
 });
+
+test('buildColorSwatches carries the first variant image_url per color', () => {
+  const product = { id: 'p1', has_variants: true };
+  const variants = [
+    { color: 'Pink', size: '0-3M', qty_on_hand: 2, qty_reserved: 0 },
+    { color: 'Pink', size: '3-6M', qty_on_hand: 1, qty_reserved: 0, image_url: 'https://img/pink.webp' },
+    { color: 'Pink', size: '6-9M', qty_on_hand: 1, qty_reserved: 0, image_url: 'https://img/pink-2.webp' },
+    { color: 'Navy', size: '0-3M', qty_on_hand: 1, qty_reserved: 0, image_url: '  ' },
+  ];
+  const swatches = buildColorSwatches(product, variants);
+  assert.equal(swatches[0].image, 'https://img/pink.webp'); // first non-empty wins
+  assert.equal(swatches[1].image, null); // blank/whitespace URLs are ignored
+});
+
+test('buildColorSwatches image dedupe: color variants with codes share the image', () => {
+  const product = { id: 'p1', has_variants: true };
+  const variants = [
+    { color: 'Beige (MND1842)', qty_on_hand: 0, qty_reserved: 0 },
+    { color: 'Beige', qty_on_hand: 3, qty_reserved: 0, image_url: '/uploads/beige.webp' },
+  ];
+  const swatches = buildColorSwatches(product, variants);
+  assert.equal(swatches.length, 1);
+  assert.equal(swatches[0].image, '/uploads/beige.webp');
+  assert.equal(swatches[0].inStock, true);
+});
+
+test('buildColorSwatches pipe-string fallback has no image', () => {
+  const swatches = buildColorSwatches({ colors: 'Red|Blue' }, []);
+  assert.deepEqual(swatches.map((s) => s.image), [null, null]);
+});
