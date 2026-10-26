@@ -135,33 +135,39 @@ export function tonesForLabel(label) {
 // Build the card swatch list for a product.
 //   product  — product record (uses .colors pipe-string only when no variants)
 //   variants — the product's ProductVariant rows (optional)
-// Returns ordered, deduped [{ key, label, hexes, inStock }]:
+// Returns ordered, deduped [{ key, label, hexes, inStock, image }]:
 //   key      — normalized dedupe key
 //   label    — first-seen original label (for title/aria)
 //   hexes    — up to two tones ([] → caller renders a neutral fallback dot)
 //   inStock  — any variant of this color has orderable stock
+//   image    — first variant image_url for this color (null when the catalog
+//              has no per-color photo; the card then deep-links instead)
 export function buildColorSwatches(product, variants) {
   if (!product) return [];
   const out = [];
   const byKey = new Map();
 
-  const add = (rawLabel, qty) => {
+  const add = (rawLabel, qty, image) => {
     const label = String(rawLabel || '').trim();
     if (!label) return;
     const key = normalizeColorLabel(label) || label.toLowerCase();
     let entry = byKey.get(key);
     if (!entry) {
-      entry = { key, label, hexes: tonesForLabel(label), inStock: false };
+      entry = { key, label, hexes: tonesForLabel(label), inStock: false, image: null };
       byKey.set(key, entry);
       out.push(entry);
     }
     if (qty > 0) entry.inStock = true;
+    if (!entry.image && image) entry.image = image;
   };
 
   const rows = Array.isArray(variants) ? variants : [];
   const variantColors = rows.filter((v) => v && String(v.color || '').trim());
   if (variantColors.length > 0) {
-    for (const v of variantColors) add(v.color, availableQty(v));
+    for (const v of variantColors) {
+      const img = typeof v.image_url === 'string' && v.image_url.trim() ? v.image_url.trim() : null;
+      add(v.color, availableQty(v), img);
+    }
   } else if (product.colors) {
     for (const c of String(product.colors).split('|')) add(c, 1);
   }
