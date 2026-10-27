@@ -20,6 +20,7 @@
 // - Gemini errors are mapped to safe, operator-readable messages.
 
 import { queryRecords } from './db.js';
+import { photoColorAssign } from './photoColorAssign.js';
 import {
   buildDraftPrompt, DRAFT_RESPONSE_SCHEMA, extractJson, normalizeDraft,
   sanitizeSku, ensureUniqueSku,
@@ -109,6 +110,13 @@ async function callGemini({ images, prompt, apiKey }) {
 // ─── Handler ────────────────────────────────────────────────────────────────
 // Registered as a dedicated admin-gated route in server/index.js.
 export async function aiProductDraft(body = {}) {
+  // The dedicated route in index.js already authenticates admin/super_admin.
+  // Reuse that protected AI gateway for photo-color analysis and reviewed writes.
+  if (body.action === 'photoColorAssign') {
+    const { action: _action, ...payload } = body;
+    return photoColorAssign(payload);
+  }
+
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     return { _status: 503, error: 'AI drafting is not configured yet (missing GEMINI_API_KEY on the server).' };
