@@ -37,6 +37,7 @@ const TONES = {
   cherry: '#b23a52',
   berry: '#a34a66',
   burgundy: '#6f2e37',
+  burgandy: '#6f2e37', // common supplier spelling used by live variants
   red: '#cf4545',
   rosewood: '#a06a60',
   rose: '#e5b0b0',

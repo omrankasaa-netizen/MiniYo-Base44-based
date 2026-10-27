@@ -203,7 +203,7 @@ export default function ProductCard({ product, rating }) {
                 it on the card (second tap opens the product); without one the
                 tap opens the product page with that color preselected. */}
             {Array.isArray(product.colorSwatches) && product.colorSwatches.length > 1 && (
-              <div className="flex items-center gap-1.5 mb-1.5" role="group"
+              <div className="flex flex-wrap items-center gap-0.5 mb-1.5" role="group"
                 aria-label={t('Available colors', 'الألوان المتوفرة')}>
                 {product.colorSwatches.slice(0, 6).map((s) => (
                   <button
@@ -213,13 +213,17 @@ export default function ProductCard({ product, rating }) {
                     aria-label={`${t('Color', 'اللون')}: ${s.label}`}
                     aria-pressed={selectedSwatchKey === s.key}
                     onClick={(e) => handleSwatch(e, s)}
-                    className={`w-3.5 h-3.5 rounded-full border shadow-sm shrink-0 cursor-pointer ${selectedSwatchKey === s.key ? 'border-primary ring-2 ring-primary/40' : 'border-black/15'} ${s.inStock ? '' : 'opacity-30'}`}
-                    style={{
-                      background: s.hexes.length > 1
-                        ? `linear-gradient(135deg, ${s.hexes[0]} 50%, ${s.hexes[1]} 50%)`
-                        : (s.hexes[0] || '#d8d2c9'),
-                    }}
-                  />
+                    className="w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center shrink-0 cursor-pointer"
+                  >
+                    <span
+                      className={`w-5 h-5 sm:w-[22px] sm:h-[22px] rounded-full border shadow-sm ${selectedSwatchKey === s.key ? 'border-primary ring-2 ring-primary/40' : 'border-black/15'} ${s.inStock ? '' : 'opacity-30'}`}
+                      style={{
+                        background: s.hexes.length > 1
+                          ? `linear-gradient(135deg, ${s.hexes[0]} 50%, ${s.hexes[1]} 50%)`
+                          : (s.hexes[0] || '#d8d2c9'),
+                      }}
+                    />
+                  </button>
                 ))}
                 {product.colorSwatches.length > 6 && (
                   <span className="text-[10px] leading-none text-muted-foreground font-medium" dir="ltr">
