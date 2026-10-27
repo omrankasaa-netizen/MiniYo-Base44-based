@@ -58,6 +58,11 @@ test('tonesForLabel: multi-word tones beat single-word matches', () => {
   assert.deepEqual(tonesForLabel('Grey Melange (MND2764)'), ['#a9a9a9']);
 });
 
+test('tonesForLabel: supplier Burgandy spelling resolves to burgundy', () => {
+  assert.deepEqual(tonesForLabel('Burgandy'), tonesForLabel('Burgundy'));
+  assert.deepEqual(tonesForLabel('Burgandy'), ['#6f2e37']);
+});
+
 test('tonesForLabel: pure print names return no tones', () => {
   assert.deepEqual(tonesForLabel('Dino'), []);
   assert.deepEqual(tonesForLabel('Giraffe Set'), []);
