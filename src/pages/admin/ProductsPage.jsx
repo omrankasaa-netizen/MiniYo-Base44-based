@@ -6,7 +6,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { logAction } from '@/lib/auditLog';
 import AccessDenied from './AccessDenied';
 import ProductForm from '@/components/admin/ProductForm';
-import { Plus, Search, Pencil, Copy, Trash2, Eye, EyeOff, Star, Download, Printer, SlidersHorizontal } from 'lucide-react';
+import PhotoColorAssignModal from '@/components/admin/PhotoColorAssignModal';
+import { Plus, Search, Pencil, Copy, Trash2, Eye, EyeOff, Star, Download, Printer, SlidersHorizontal, Sparkles } from 'lucide-react';
 import { stockStatus } from '@/lib/inventory';
 import { downloadCsv, printTable } from '@/lib/adminExport';
 import { buildBulkUpdate } from '@/lib/bulkEdit';
@@ -28,6 +29,7 @@ export default function ProductsPage() {
   const [editProduct, setEditProduct] = useState(null); // null=closed, {} = new, product=edit
   const [cloneSourceId, setCloneSourceId] = useState(null); // when set, the form seeds variants/images from this product
   const [showForm, setShowForm] = useState(false);
+  const [showPhotoColor, setShowPhotoColor] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportErr, setExportErr] = useState('');
   // Bulk edit panel state. '' means "no change" for every field.
@@ -245,7 +247,7 @@ export default function ProductsPage() {
             <h1 className="text-2xl font-heading font-bold text-foreground">Products</h1>
             <p className="text-sm text-muted-foreground">{products.length} total</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button onClick={handleExport} disabled={exporting}
               className="flex items-center gap-2 border border-border text-foreground px-4 py-2.5 rounded-xl text-sm font-semibold hover:bg-muted transition-colors disabled:opacity-50">
               <Download className="w-4 h-4" /> {exporting ? 'Exporting…' : 'Export CSV'}
@@ -254,6 +256,12 @@ export default function ProductsPage() {
               className="flex items-center gap-2 border border-border text-foreground px-4 py-2.5 rounded-xl text-sm font-semibold hover:bg-muted transition-colors">
               <Printer className="w-4 h-4" /> Print
             </button>
+            {canAccess('edit_products') && (
+              <button onClick={() => setShowPhotoColor(true)} title="Auto-assign photo colors"
+                className="flex items-center gap-2 border border-border text-foreground px-4 py-2.5 rounded-xl text-sm font-semibold hover:bg-muted transition-colors">
+                <Sparkles className="w-4 h-4" /> Auto colors
+              </button>
+            )}
             {canAccess('edit_products') && (
               <button
                 onClick={() => { setEditProduct({}); setShowForm(true); }}
@@ -483,6 +491,22 @@ export default function ProductsPage() {
           </div>
         </div>
       </div>
+
+      {showPhotoColor && (
+        <PhotoColorAssignModal
+          currentUser={currentUser}
+          onClose={() => setShowPhotoColor(false)}
+          onApplied={() => {
+            qc.invalidateQueries({ queryKey: ['admin-variants-all'] });
+            qc.invalidateQueries({ queryKey: ['form-variants'] });
+            qc.invalidateQueries({ queryKey: ['shop-variants'] });
+            qc.invalidateQueries({ queryKey: ['product-variants'] });
+            qc.invalidateQueries({ queryKey: ['rail-variants'] });
+            qc.invalidateQueries({ queryKey: ['gift-guide-variants'] });
+            qc.invalidateQueries({ queryKey: ['related-variants'] });
+          }}
+        />
+      )}
 
       {/* Product Form Modal */}
       {showForm && (
