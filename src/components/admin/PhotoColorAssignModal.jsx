@@ -1,16 +1,19 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, Check, RefreshCw, Sparkles, X } from 'lucide-react';
+import { AlertTriangle, Check, Images, RefreshCw, Sparkles, X } from 'lucide-react';
 import { analyzePhotoColors, applyPhotoColors } from '@/lib/photoColorClient';
 import { logAction } from '@/lib/auditLog';
+import ManualPhotoColorEditor from '@/components/admin/ManualPhotoColorEditor';
 
 function assignmentId(a) {
   return `${a.productId}|${a.colorKey}`;
 }
 
 export default function PhotoColorAssignModal({ onClose, onApplied, currentUser }) {
+  const [mode, setMode] = useState('manual');
+  const [aiStarted, setAiStarted] = useState(false);
   const [report, setReport] = useState(null);
   const [selected, setSelected] = useState(new Set());
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState('');
   const [result, setResult] = useState(null);
@@ -37,7 +40,13 @@ export default function PhotoColorAssignModal({ onClose, onApplied, currentUser 
     }
   }, []);
 
-  useEffect(() => { runDryRun(); }, [runDryRun]);
+  function openAi() {
+    setMode('ai');
+    if (!aiStarted) {
+      setAiStarted(true);
+      runDryRun();
+    }
+  }
 
   useEffect(() => {
     function onKeyDown(e) {
@@ -90,9 +99,9 @@ export default function PhotoColorAssignModal({ onClose, onApplied, currentUser 
         <div className="flex items-start justify-between gap-4 px-5 sm:px-6 py-4 border-b border-border">
           <div>
             <h3 id="photo-color-title" className="font-heading font-semibold text-foreground flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-primary" /> Gemini photo color & pattern matching
+              <Images className="w-5 h-5 text-primary" /> Photo color assignments
             </h3>
-            <p className="text-xs text-muted-foreground mt-1">AI matches every photo to the product’s exact colors and patterns. Review before saving.</p>
+            <p className="text-xs text-muted-foreground mt-1">Correct photo-to-color links manually, or review new Gemini suggestions.</p>
           </div>
           <button onClick={onClose} disabled={applying} aria-label="Close"
             className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground disabled:opacity-50">
@@ -100,7 +109,22 @@ export default function PhotoColorAssignModal({ onClose, onApplied, currentUser 
           </button>
         </div>
 
+        <div className="flex gap-1 px-4 pt-3 border-b border-border shrink-0 overflow-x-auto">
+          <button onClick={() => setMode('manual')} disabled={applying}
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-t-lg whitespace-nowrap border-b-2 -mb-px ${mode === 'manual' ? 'border-primary text-primary bg-primary/5' : 'border-transparent text-muted-foreground'}`}>
+            <Images className="w-4 h-4" /> Manual correction
+          </button>
+          <button onClick={openAi} disabled={applying}
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-t-lg whitespace-nowrap border-b-2 -mb-px ${mode === 'ai' ? 'border-primary text-primary bg-primary/5' : 'border-transparent text-muted-foreground'}`}>
+            <Sparkles className="w-4 h-4" /> Gemini suggestions
+          </button>
+        </div>
+
         <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-4">
+          {mode === 'manual' ? (
+            <ManualPhotoColorEditor currentUser={currentUser} onApplied={onApplied} onBusyChange={setApplying} />
+          ) : (
+          <>
           <div className="flex gap-2.5 rounded-xl bg-amber-50 border border-amber-200 px-3.5 py-3 text-xs text-amber-900">
             <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
             <p>Gemini can still misread backgrounds, packaging, or similar prints. Check every thumbnail. Existing photo assignments are never changed; suggestions below 80% confidence start unselected.</p>
@@ -181,8 +205,11 @@ export default function PhotoColorAssignModal({ onClose, onApplied, currentUser 
               )}
             </>
           )}
+          </>
+          )}
         </div>
 
+        {mode === 'ai' && (
         <div className="flex flex-wrap items-center justify-between gap-3 px-5 sm:px-6 py-4 border-t border-border">
           <p className="text-xs text-muted-foreground">Only empty color-photo fields will be updated. Linked colors preview on mini product cards.</p>
           <div className="flex items-center gap-2">
@@ -202,6 +229,7 @@ export default function PhotoColorAssignModal({ onClose, onApplied, currentUser 
             )}
           </div>
         </div>
+        )}
       </div>
     </div>
   );
