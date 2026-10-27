@@ -31,9 +31,15 @@ function contextFromCatalog({ products, variants }) {
 async function analyzeImage(image, swatches) {
   const url = image.variants?.thumb || image.variants?.card || image.url || image.image_url;
   if (!url) return { suggestion: null, failed: false };
+  // The image CDN intentionally has no CORS header. Read cross-origin photos
+  // through the storefront's same-origin Cloudflare resize route so canvas
+  // pixels stay readable; the original URL is still what gets assigned.
+  const fetchUrl = /^https?:\/\//i.test(url)
+    ? `/cdn-cgi/image/width=96,height=96,fit=cover,format=auto/${url}`
+    : url;
   let bitmap;
   try {
-    const res = await fetch(url, { credentials: 'same-origin' });
+    const res = await fetch(fetchUrl, { credentials: 'same-origin' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     bitmap = await createImageBitmap(await res.blob());
     const canvas = document.createElement('canvas');
