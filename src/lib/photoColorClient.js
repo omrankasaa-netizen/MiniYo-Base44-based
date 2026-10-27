@@ -45,7 +45,7 @@ export async function analyzePhotoColors(onProgress) {
     while (cursor < targets.length) {
       const product = targets[cursor++];
       try {
-        const { data } = await base44.functions.invoke('photoColorAssign', { productId: product.id });
+        const { data } = await base44.functions.invoke('aiProductDraft', { action: 'photoColorAssign', productId: product.id });
         if (data?.error) {
           productErrors.push({ productName: product.name, error: data.error });
         } else {
@@ -80,7 +80,7 @@ export async function analyzePhotoColors(onProgress) {
 
 export async function applyPhotoColors(assignments) {
   try {
-    const { data } = await base44.functions.invoke('photoColorAssign', { apply: true, assignments });
+    const { data } = await base44.functions.invoke('aiProductDraft', { action: 'photoColorAssign', apply: true, assignments });
     return data;
   } catch (error) {
     throw new Error(requestError(error));
