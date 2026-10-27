@@ -95,7 +95,7 @@ export function normalizeColorLabel(label) {
   let s = String(label || '').toLowerCase();
   s = s.replace(/\([^)]*\)/g, ' ');           // "(MND1842)" codes
   s = s.replace(/style\s*\d*\s*:?/g, ' ');    // "Style2:", "Style 1119"
-  s = s.replace(/[&/+\/,;_-]+/g, ' ');          // separators → spaces
+  s = s.replace(/[&/+,;_-]+/g, ' ');          // separators → spaces
   const words = s.split(/\s+/)
     .filter((w) => w && !FILLER_WORDS.has(w) && !/^\d+$/.test(w));
   return words.join(' ');

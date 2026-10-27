@@ -184,6 +184,7 @@ export default function ProductPage() {
     const options = variantColorOptions.length > 0 ? variantColorOptions : stringColorOptions;
     if (options.includes(want)) {
       setSelectedColor(want);
+      setImgIdx(0);
       deepColorRef.current = token;
     }
   }, [slug, searchParams, variants, product]);
@@ -206,8 +207,7 @@ export default function ProductPage() {
   const hasDiscount = hasCompareDiscount || !!autoDiscount;
   const displayPrice = discountedPrice ?? product.price_usd;
   const originalPrice = discountedPrice ? product.price_usd : (hasCompareDiscount ? product.compare_at_price_usd : null);
-  const displayImages = normalizeImages(images);
-  const imageCount = displayImages.length;
+  const catalogImages = normalizeImages(images);
   const waNumber = String(siteSettings.whatsappNumber || '').replace(/\D/g, '');
   const waHelpLink = waNumber ? `https://wa.me/${waNumber}?text=${encodeURIComponent(t('Need help with this item', 'أحتاج مساعدة في هذا المنتج'))}` : null;
 
@@ -224,6 +224,17 @@ export default function ProductPage() {
   const stringColors = product.colors ? product.colors.split('|').map((c) => c.trim()).filter(Boolean) : [];
   const sizes = variantSizes.length > 0 ? variantSizes : stringSizes;
   const colors = variantColors.length > 0 ? variantColors : stringColors;
+  // A color with an assigned variant photo becomes the first gallery slide.
+  // Selecting a color resets imgIdx to 0 (including card deep links), so the
+  // shopper immediately sees the exact color while remaining free to browse
+  // the rest of the product gallery.
+  const selectedColorImage = variants.find((v) =>
+    v.color === selectedColor && typeof v.image_url === 'string' && v.image_url.trim()
+  )?.image_url?.trim() || null;
+  const displayImages = selectedColorImage
+    ? normalizeImages([selectedColorImage, ...catalogImages.filter((im) => im.url !== selectedColorImage)])
+    : catalogImages;
+  const imageCount = displayImages.length;
   const usesVariants = product.has_variants && variants.length > 0;
   const needsSize = usesVariants && sizes.length > 0;
   const needsColor = usesVariants && colors.length > 0;
@@ -427,7 +438,11 @@ export default function ProductPage() {
                         <button
                           key={c}
                           type="button"
-                          onClick={() => !outOfStock && setSelectedColor(c)}
+                          onClick={() => {
+                            if (outOfStock) return;
+                            setSelectedColor(c);
+                            setImgIdx(0);
+                          }}
                           disabled={outOfStock}
                           className={`min-h-[44px] px-4 rounded-full border text-sm ${outOfStock ? 'border-border text-muted-foreground/40 line-through' : selectedColor === c ? 'border-primary ring-2 ring-primary/35' : 'border-border text-foreground'}`}
                         >
