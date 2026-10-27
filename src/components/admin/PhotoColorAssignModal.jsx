@@ -14,16 +14,20 @@ export default function PhotoColorAssignModal({ onClose, onApplied, currentUser 
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState('');
   const [result, setResult] = useState(null);
+  const [progress, setProgress] = useState({ completed: 0, total: 0 });
 
   const runDryRun = useCallback(async () => {
     setLoading(true);
     setError('');
     setResult(null);
     try {
-      const data = await analyzePhotoColors();
+      setProgress({ completed: 0, total: 0 });
+      const data = await analyzePhotoColors(setProgress);
       const assignments = Array.isArray(data?.assignments) ? data.assignments : [];
       setReport({ ...data, assignments });
-      setSelected(new Set(assignments.map(assignmentId)));
+      // High-confidence suggestions are convenient to apply; lower-confidence
+      // ones stay visible but require an explicit operator decision.
+      setSelected(new Set(assignments.filter((a) => (a.confidence || 0) >= 0.8).map(assignmentId)));
     } catch (e) {
       setReport(null);
       setSelected(new Set());
@@ -86,9 +90,9 @@ export default function PhotoColorAssignModal({ onClose, onApplied, currentUser 
         <div className="flex items-start justify-between gap-4 px-5 sm:px-6 py-4 border-b border-border">
           <div>
             <h3 id="photo-color-title" className="font-heading font-semibold text-foreground flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-primary" /> Auto-assign photo colors
+              <Sparkles className="w-5 h-5 text-primary" /> Gemini photo color & pattern matching
             </h3>
-            <p className="text-xs text-muted-foreground mt-1">Review each suggestion before linking it to a color.</p>
+            <p className="text-xs text-muted-foreground mt-1">AI matches every photo to the product’s exact colors and patterns. Review before saving.</p>
           </div>
           <button onClick={onClose} disabled={applying} aria-label="Close"
             className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground disabled:opacity-50">
@@ -99,7 +103,7 @@ export default function PhotoColorAssignModal({ onClose, onApplied, currentUser 
         <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-4">
           <div className="flex gap-2.5 rounded-xl bg-amber-50 border border-amber-200 px-3.5 py-3 text-xs text-amber-900">
             <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-            <p>Scene backgrounds and packaging can fool color matching. Check the thumbnails carefully. Existing photo assignments are never changed; patterned colors cannot be matched automatically.</p>
+            <p>Gemini can still misread backgrounds, packaging, or similar prints. Check every thumbnail. Existing photo assignments are never changed; suggestions below 80% confidence start unselected.</p>
           </div>
 
           {error && <p role="alert" className="text-sm px-3 py-2 rounded-lg bg-destructive/10 text-destructive">{error}</p>}
@@ -107,8 +111,10 @@ export default function PhotoColorAssignModal({ onClose, onApplied, currentUser 
           {loading ? (
             <div className="py-16 text-center space-y-3">
               <RefreshCw className="w-7 h-7 animate-spin text-primary mx-auto" />
-              <p className="font-medium text-foreground">Analyzing product photos…</p>
-              <p className="text-xs text-muted-foreground">This can take a minute for the full catalog.</p>
+              <p className="font-medium text-foreground">Gemini is analyzing colors and patterns…</p>
+              <p className="text-xs text-muted-foreground">
+                {progress.total ? `${progress.completed} of ${progress.total} products completed` : 'Preparing the catalog…'} · This can take a few minutes.
+              </p>
             </div>
           ) : result ? (
             <div className="py-12 text-center space-y-3">
@@ -125,8 +131,9 @@ export default function PhotoColorAssignModal({ onClose, onApplied, currentUser 
             <>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-sm text-muted-foreground">
-                  {assignments.length} suggestion{assignments.length === 1 ? '' : 's'} from {report.imagesAnalyzed || 0} photos across {report.productsAnalyzed || 0} products
+                  {assignments.length} AI suggestion{assignments.length === 1 ? '' : 's'} from {report.imagesAnalyzed || 0} photos across {report.productsAnalyzed || 0} products
                   {report.imagesFailed ? ` · ${report.imagesFailed} photo(s) could not be read` : ''}
+                  {report.productsFailed ? ` · ${report.productsFailed} product(s) failed` : ''}
                 </p>
                 {assignments.length > 0 && (
                   <button onClick={() => setSelected(allSelected ? new Set() : new Set(assignments.map(assignmentId)))}
@@ -135,6 +142,13 @@ export default function PhotoColorAssignModal({ onClose, onApplied, currentUser 
                   </button>
                 )}
               </div>
+
+              {report.productErrors?.length > 0 && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-3 text-xs text-amber-900">
+                  <p className="font-semibold">Some products need a retry</p>
+                  {report.productErrors.slice(0, 3).map((e) => <p key={e.productName} className="mt-1">{e.productName}: {e.error}</p>)}
+                </div>
+              )}
 
               {assignments.length === 0 ? (
                 <div className="py-12 text-center">
@@ -155,7 +169,10 @@ export default function PhotoColorAssignModal({ onClose, onApplied, currentUser 
                         <div className="min-w-0 flex-1">
                           <p className="text-sm font-medium text-foreground line-clamp-2">{a.productName}</p>
                           <p className="text-sm text-primary font-semibold mt-1">{a.label}</p>
-                          <p className="text-xs text-muted-foreground mt-1">{Math.round((a.confidence || 0) * 100)}% color coverage</p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {Math.round((a.confidence || 0) * 100)}% AI confidence · {a.pattern || 'color/pattern'}
+                          </p>
+                          {a.reason && <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{a.reason}</p>}
                         </div>
                       </label>
                     );
@@ -167,7 +184,7 @@ export default function PhotoColorAssignModal({ onClose, onApplied, currentUser 
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-3 px-5 sm:px-6 py-4 border-t border-border">
-          <p className="text-xs text-muted-foreground">Only empty color-photo fields will be updated.</p>
+          <p className="text-xs text-muted-foreground">Only empty color-photo fields will be updated. Linked colors preview on mini product cards.</p>
           <div className="flex items-center gap-2">
             {result ? (
               <button onClick={onClose} className="px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold">Done</button>
