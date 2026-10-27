@@ -7,7 +7,7 @@ import { logAction } from '@/lib/auditLog';
 import AccessDenied from './AccessDenied';
 import ProductForm from '@/components/admin/ProductForm';
 import PhotoColorAssignModal from '@/components/admin/PhotoColorAssignModal';
-import { Plus, Search, Pencil, Copy, Trash2, Eye, EyeOff, Star, Download, Printer, SlidersHorizontal, Sparkles } from 'lucide-react';
+import { Plus, Search, Pencil, Copy, Trash2, Eye, EyeOff, Star, Download, Printer, SlidersHorizontal, Images } from 'lucide-react';
 import { stockStatus } from '@/lib/inventory';
 import { downloadCsv, printTable } from '@/lib/adminExport';
 import { buildBulkUpdate } from '@/lib/bulkEdit';
@@ -257,9 +257,9 @@ export default function ProductsPage() {
               <Printer className="w-4 h-4" /> Print
             </button>
             {canAccess('edit_products') && (
-              <button onClick={() => setShowPhotoColor(true)} title="Auto-assign photo colors"
+              <button onClick={() => setShowPhotoColor(true)} title="Assign or correct photo colors"
                 className="flex items-center gap-2 border border-border text-foreground px-4 py-2.5 rounded-xl text-sm font-semibold hover:bg-muted transition-colors">
-                <Sparkles className="w-4 h-4" /> Auto colors
+                <Images className="w-4 h-4" /> Photo colors
               </button>
             )}
             {canAccess('edit_products') && (

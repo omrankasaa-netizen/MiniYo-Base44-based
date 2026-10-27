@@ -86,3 +86,47 @@ export async function applyPhotoColors(assignments) {
     throw new Error(requestError(error));
   }
 }
+
+// Manual correction needs the complete photo/color map, including colors that
+// already have an assignment. Gemini analysis intentionally uses a smaller set.
+export async function loadManualPhotoColorCatalog() {
+  const [products, variants, images] = await Promise.all([
+    base44.entities.Product.list('-created_date', 1000),
+    base44.entities.ProductVariant.list('-created_date', 10000),
+    base44.entities.ProductImage.list('-created_date', 20000),
+  ]);
+  const variantsByProduct = {};
+  const imagesByProduct = {};
+  for (const v of variants) (variantsByProduct[v.product_id] ||= []).push(v);
+  for (const image of images) (imagesByProduct[image.product_id] ||= []).push(image);
+
+  return products.map((product) => {
+    const colors = buildColorSwatches(product, variantsByProduct[product.id] || [])
+      .map(({ key, label, image }) => ({ key, label, image }));
+    const seen = new Set();
+    const productImages = (imagesByProduct[product.id] || [])
+      .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+      .map((image) => ({
+        url: String(image.url || image.image_url || '').trim(),
+        alt: image.alt || product.name,
+      }))
+      .filter((image) => {
+        if (!image.url || seen.has(image.url)) return false;
+        seen.add(image.url);
+        return true;
+      });
+    return { id: product.id, name: product.name, sku: product.sku, colors, images: productImages };
+  }).filter((product) => product.colors.length > 0 && product.images.length > 0)
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export async function applyManualPhotoColors(assignments) {
+  try {
+    const { data } = await base44.functions.invoke('aiProductDraft', {
+      action: 'photoColorAssign', apply: true, manual: true, assignments,
+    });
+    return data;
+  } catch (error) {
+    throw new Error(requestError(error));
+  }
+}

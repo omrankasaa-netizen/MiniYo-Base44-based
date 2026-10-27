@@ -153,7 +153,63 @@ async function analyzeProduct(product, swatches, images, apiKey) {
   }
 }
 
+function applyManualAssignments(assignments) {
+  const products = queryRecords('Product', { limit: 1000 });
+  const productIds = new Set(products.map((p) => p.id));
+  const variants = queryRecords('ProductVariant', { limit: 10000 });
+  const variantsByProduct = {};
+  for (const v of variants) (variantsByProduct[v.product_id] ||= []).push(v);
+  const images = queryRecords('ProductImage', { limit: 20000 });
+  const imageProducts = new Map();
+  for (const image of images) {
+    for (const url of [image.url, image.image_url]) {
+      if (typeof url === 'string' && url.trim()) imageProducts.set(url.trim(), image.product_id);
+    }
+  }
+
+  let colorsAssigned = 0, variantsUpdated = 0, variantsCleared = 0, skipped = 0;
+  for (const a of assignments) {
+    const productId = a?.productId;
+    const colorKey = typeof a?.colorKey === 'string' ? a.colorKey : '';
+    const imageUrl = typeof a?.imageUrl === 'string' ? a.imageUrl.trim() : '';
+    // Manual mode deliberately permits overwriting existing assignments, but
+    // still revalidates that the product, color, and photo belong together.
+    if (!productIds.has(productId) || !imageUrl || imageProducts.get(imageUrl) !== productId) {
+      skipped++;
+      continue;
+    }
+
+    const productVariants = variantsByProduct[productId] || [];
+    const targets = colorKey ? productVariants.filter((v) =>
+      String(v.color || '').trim()
+      && (normalizeColorLabel(v.color) || String(v.color).trim().toLowerCase()) === colorKey
+    ) : [];
+    if (colorKey && targets.length === 0) { skipped++; continue; }
+
+    const targetIds = new Set(targets.map((v) => v.id));
+    // A photo represents only one color. Moving it clears the previous color;
+    // choosing Unassigned clears it without assigning a replacement.
+    const affected = productVariants.filter((v) => targetIds.has(v.id) || v.image_url === imageUrl);
+    if (affected.length === 0) { skipped++; continue; }
+    for (const v of affected) {
+      const nextImage = targetIds.has(v.id) ? imageUrl : null;
+      if ((v.image_url || null) === nextImage) continue;
+      updateRecord('ProductVariant', v.id, { image_url: nextImage });
+      variantsUpdated++;
+      if (!nextImage) variantsCleared++;
+      v.image_url = nextImage;
+    }
+    if (colorKey) colorsAssigned++;
+  }
+  return { ok: true, colorsAssigned, variantsUpdated, variantsCleared, skipped };
+}
+
 export async function photoColorAssign(body = {}) {
+  if (body.apply === true && body.manual === true) {
+    const assignments = Array.isArray(body.assignments) ? body.assignments.slice(0, 500) : [];
+    return applyManualAssignments(assignments);
+  }
+
   const { targets, variantsByProduct, swatchesByProduct } = buildContext();
 
   if (body.apply === true) {
