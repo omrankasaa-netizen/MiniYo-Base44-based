@@ -20,6 +20,7 @@ import { ga4TrackViewItem } from '@/lib/ga4';
 import { availableQty } from '@/lib/inventory';
 import { useSiteSettings } from '@/hooks/useSiteSettings';
 import { useCmsSection } from '@/hooks/useCmsSection';
+import { deliveryFeeRange, formatDeliveryFeeRange } from '@/lib/deliveryFeeDisplay';
 
 function isValidPreloadedProduct(preloaded, slug) {
   if (!preloaded || typeof preloaded !== 'object') return false;
@@ -129,6 +130,11 @@ export default function ProductPage() {
     enabled: !!product?.id && product?.has_variants,
     initialData: preloaded?.variants,
     initialDataUpdatedAt: preloaded ? 0 : undefined,
+  });
+
+  const { data: shippingZones = [], isLoading: shippingZonesLoading } = useQuery({
+    queryKey: ['shipping-zones-checkout'],
+    queryFn: () => base44.entities.ShippingZone.filter({ is_active: true }, 'sort_order', 100),
   });
 
   const { data: reviews = [] } = useQuery({
@@ -328,14 +334,14 @@ export default function ProductPage() {
     p.has_variants ? Number(p.qty_on_hand || 0) > 0 : availableQty(p) > 0
   );
   const returnsBlurb = siteSettings.returnsBlurb || 'Easy exchange';
-  const deliveryFlat = Number.isFinite(Number(siteSettings.deliveryFeeInside)) ? Number(siteSettings.deliveryFeeInside) : 3;
-  // Show the outside-city fee too so the product page matches what checkout charges.
-  const deliveryOutside = Number.isFinite(Number(siteSettings.deliveryFeeOutside)) ? Number(siteSettings.deliveryFeeOutside) : 5;
   const freeThreshold = Number.isFinite(Number(siteSettings.freeShippingThreshold)) ? Number(siteSettings.freeShippingThreshold) : 50;
-  // If inside/outside differ, show a range so no user is surprised at checkout.
-  const deliveryDisplay = deliveryFlat === deliveryOutside
-    ? `$${deliveryFlat.toFixed(2)}`
-    : `$${deliveryFlat.toFixed(2)}–$${deliveryOutside.toFixed(2)}`;
+  // Use the exact active zones that checkout charges from. The legacy settings
+  // remain a fallback only when no zones exist, never as the primary source.
+  const deliveryRange = deliveryFeeRange(shippingZones, {
+    inside: Number.isFinite(Number(siteSettings.deliveryFeeInside)) ? Number(siteSettings.deliveryFeeInside) : 3,
+    outside: Number.isFinite(Number(siteSettings.deliveryFeeOutside)) ? Number(siteSettings.deliveryFeeOutside) : 5,
+  });
+  const deliveryDisplay = shippingZonesLoading ? '…' : formatDeliveryFeeRange(deliveryRange);
 
   return (
     <div className="min-h-screen bg-background pb-28 md:pb-0" dir={isRTL ? 'rtl' : 'ltr'}>
