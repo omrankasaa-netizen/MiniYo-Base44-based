@@ -135,7 +135,6 @@ export function mergeClientHashedUserData(userData, clientHashed) {
 // contentIds, skipped } where skipped counts dropped (sku-less) lines.
 export function buildContents(items = []) {
   const contents = [];
-  const contentIds = [];
   let skipped = 0;
   for (const it of items) {
     // Normalize the OrderItem sku at the Meta boundary so server Purchase
