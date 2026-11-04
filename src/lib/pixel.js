@@ -1,7 +1,8 @@
 import { useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
-import { safeLocalStorage } from '@/lib/safeStorage';
+import { getCookie, safeLocalStorage, setCookie } from '@/lib/safeStorage';
 import { CONSENT_KEY, hasMarketingConsentValue, parseStoredConsent } from '@/lib/metaConsent';
+import { firstValidMetaFbc, mergeMetaAdvancedMatching } from '@/lib/metaIdentity';
 
 // Meta + TikTok Pixel helpers. Pixels are bootstrapped only after marketing
 // consent is granted, so non-consenting users pay zero third-party tracking cost.
@@ -17,6 +18,8 @@ export const TIKTOK_PIXEL_ID =
 
 let metaInitialized = false;
 let tiktokInitialized = false;
+let metaIdentityPromise = null;
+let sessionFbc = null;
 
 // ── Advanced Matching helpers ────────────────────────────────────────────────
 
@@ -54,30 +57,35 @@ function getOrCreateVisitorId() {
   }
 }
 
-// Capture ?fbclid=... from the landing URL into a _fbc cookie so the Meta pixel
-// can read it when events fire (even if the pixel loads after SPA navigation
-// has stripped the query string). Called immediately on app mount — does not
-// require marketing consent since we're only persisting a URL parameter the
-// visitor arrived with.
+// Return a valid click ID from this session or the _fbc cookie. The in-memory
+// value keeps CAPI coverage intact in FB/IG WebViews that block cookie writes.
+export function getMetaFbc() {
+  const fromCookie = (() => {
+    try { return getCookie('_fbc'); } catch { return null; }
+  })();
+  sessionFbc = firstValidMetaFbc(sessionFbc, fromCookie) || null;
+  return sessionFbc || undefined;
+}
+
+// Capture ?fbclid=... before any Pixel/CAPI event. React child effects can run
+// before App's own capture effect, so event dispatch also calls this directly.
+// Persisting the arrival click parameter does not require marketing consent.
 export function captureFbclid() {
-  if (typeof window === 'undefined' || typeof document === 'undefined') return;
+  if (typeof window === 'undefined') return;
   try {
     const fbclid = new URLSearchParams(window.location.search).get('fbclid');
-    if (!fbclid) return;
-    // Don't clobber a valid _fbc the Meta pixel already set. Repair only a
-    // missing cookie or a legacy one whose creation time was written in
-    // SECONDS (our old bug): Meta's fbc spec requires MILLISECONDS
-    // (fb.1.{ms}.{fbclid}); a seconds value reads as ~1970, which is exactly
-    // the "creationTime dated before the click ID" Events Manager diagnostic.
-    const existing = document.cookie.split('; ').find((c) => c.startsWith('_fbc='));
-    if (existing) {
-      const val = decodeURIComponent(existing.split('=').slice(1).join('='));
-      const ts = Number(val.split('.')[2]);
-      if (val.startsWith('fb.1.') && ts > 1e12) return; // already valid (ms)
+    if (!fbclid) {
+      getMetaFbc();
+      return;
     }
-    const fbc = `fb.1.${Date.now()}.${fbclid}`;
-    // 90-day cookie — matches Meta's default retention window.
-    document.cookie = `_fbc=${encodeURIComponent(fbc)};path=/;max-age=${90 * 24 * 60 * 60};SameSite=Lax`;
+    // Keep a valid existing click ID. Repair missing or legacy seconds-era
+    // values: Meta requires fb.1.{milliseconds}.{fbclid}.
+    const existing = getMetaFbc();
+    if (existing) return;
+    sessionFbc = `fb.1.${Date.now()}.${fbclid}`;
+    // 90-day cookie — matches Meta's default retention window. The session
+    // fallback above remains available even when this write is blocked.
+    setCookie(`_fbc=${encodeURIComponent(sessionFbc)};path=/;max-age=${90 * 24 * 60 * 60};SameSite=Lax`);
   } catch { /* never throw */ }
 }
 
@@ -112,7 +120,7 @@ export function getStoredAdvancedMatching() {
 }
 
 export async function updateAdvancedMatching({ email, phone, firstName, lastName, city, state, zip, country } = {}) {
-  if (typeof window === 'undefined' || typeof window.fbq !== 'function') return;
+  if (!hasMarketingConsent() || typeof window === 'undefined' || typeof window.fbq !== 'function') return;
   try {
     const vid = getOrCreateVisitorId();
     const normPhone = phone ? String(phone).replace(/[\s\-()]/g, '') : undefined;
@@ -127,24 +135,24 @@ export async function updateAdvancedMatching({ email, phone, firstName, lastName
       sha256hex(country ? String(country).trim().toLowerCase() : undefined),
       sha256hex(vid),
     ]);
-    const userData = {};
-    if (em)    userData.em          = em;
-    if (ph)    userData.ph          = ph;
-    if (fn)    userData.fn          = fn;
-    if (ln)    userData.ln          = ln;
-    if (ct)    userData.ct          = ct;
-    if (st)    userData.st          = st;
-    if (zp)    userData.zp          = zp;
-    if (ctr)   userData.country     = ctr;
-    if (extId) userData.external_id = extId;
+    // Consent may have been withdrawn while WebCrypto was hashing.
+    if (!hasMarketingConsent()) return;
+    const fresh = {};
+    if (em)    fresh.em          = em;
+    if (ph)    fresh.ph          = ph;
+    if (fn)    fresh.fn          = fn;
+    if (ln)    fresh.ln          = ln;
+    if (ct)    fresh.ct          = ct;
+    if (st)    fresh.st          = st;
+    if (zp)    fresh.zp          = zp;
+    if (ctr)   fresh.country     = ctr;
+    if (extId) fresh.external_id = extId;
+    // Anonymous startup enrichment must not erase checkout email/phone/geo.
+    const userData = mergeMetaAdvancedMatching(getStoredAdvancedMatching(), fresh);
     if (Object.keys(userData).length === 0) return;
     window.fbq('init', META_PIXEL_ID, userData);
-    // Persist the hashed identity (INCLUDING external_id — it is the SHA-256 of
-    // the random anonymous visitor id, never raw PII) for future sessions'
-    // init + CAPI track twins.
-    if (Object.keys(userData).length) {
-      try { safeLocalStorage.setItem(AM_KEY, JSON.stringify(userData)); } catch { /* quota */ }
-    }
+    // Persist hashed-only identity for future sessions and CAPI event twins.
+    try { safeLocalStorage.setItem(AM_KEY, JSON.stringify(userData)); } catch { /* quota */ }
   } catch { /* tracking must never break the UX */ }
 }
 
@@ -208,22 +216,10 @@ function ensureMetaPixel() {
   script.src = 'https://connect.facebook.net/en_US/fbevents.js';
   document.head.appendChild(script);
   metaInitialized = true;
-  // Non-blocking: enrich with anonymous external_id immediately so every event
-  // after consent carries it. PII fields are added later from checkout data.
-  // Non-blocking: enrich with the anonymous external_id plus any hashed
-  // identity persisted from a previous checkout, so every event after consent
-  // (including this session's ViewContents) carries match parameters.
-  setTimeout(() => updateAdvancedMatching({}), 0);
-  // Note: updateAdvancedMatching hashes raw inputs; stored values are already
-  // hashed, so apply them via a direct re-init instead of re-hashing.
-  setTimeout(() => {
-    try {
-      const stored = getStoredAdvancedMatching();
-      if (stored && typeof window.fbq === 'function') {
-        window.fbq('init', META_PIXEL_ID, stored);
-      }
-    } catch { /* never throw */ }
-  }, 0);
+  // Start hashing the anonymous external_id plus any stored hashed identity.
+  // PageView and commerce events await this promise so their first Pixel+CAPI
+  // pair cannot race ahead without external_id.
+  metaIdentityPromise = updateAdvancedMatching({});
 }
 
 function ensureTikTokPixel() {
@@ -317,12 +313,24 @@ export function denyConsent() {
   }
 }
 
+// Resolve click capture and anonymous identity before the first event. This is
+// deliberately best-effort: WebCrypto/script/storage failures never block the
+// storefront or prevent the event from being dispatched.
+export async function prepareMetaTracking() {
+  if (!hasMarketingConsent()) return false;
+  captureFbclid();
+  ensureMarketingPixels();
+  try { await metaIdentityPromise; } catch { /* fail-safe */ }
+  return hasMarketingConsent();
+}
+
 // IMPLIED CONSENT: fires by default. No-ops only once the visitor has
 // EXPLICITLY declined via the cookie banner (see metaConsent.js). When an
 // `eventID` is passed it is forwarded to fbq so Meta can dedup this browser
 // event against the matching server-side (CAPI) event.
 export function track(event, params, eventID) {
   if (!hasMarketingConsent()) return;
+  captureFbclid();
   ensureMarketingPixels();
   if (typeof window === 'undefined' || typeof window.fbq !== 'function') return;
   const opts = eventID ? { eventID } : undefined;
@@ -388,6 +396,8 @@ function postPageViewCapi(eventId) {
         event_id: eventId,
         event_source_url: typeof window !== 'undefined' ? window.location?.href : undefined,
         user_data: getStoredAdvancedMatching() || undefined,
+        // Validated server-side; covers browsers that block cookie writes.
+        fbc: getMetaFbc(),
       }),
       keepalive: true,
     }).catch(() => { /* tracking must never break the UX */ });
@@ -397,10 +407,15 @@ function postPageViewCapi(eventId) {
 export function usePageViewTracking() {
   const { pathname } = useLocation();
   useEffect(() => {
-    const eventId = genEventId();
-    track('PageView', undefined, eventId);
-    trackTikTokPage();
-    postPageViewCapi(eventId);
+    let active = true;
+    prepareMetaTracking().then((allowed) => {
+      if (!active || !allowed) return;
+      const eventId = genEventId();
+      track('PageView', undefined, eventId);
+      trackTikTokPage();
+      postPageViewCapi(eventId);
+    }).catch(() => { /* tracking must never break navigation */ });
+    return () => { active = false; };
   }, [pathname]);
 }
 

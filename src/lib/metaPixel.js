@@ -9,7 +9,7 @@
 // shared event_id so Meta deduplicates the pair. Server-side CAPI still reads
 // trusted order totals/line-items from the database.
 
-import { track, genEventId, hasMarketingConsent, getStoredAdvancedMatching, getStoredExternalIdHash } from '@/lib/pixel';
+import { track, genEventId, hasMarketingConsent, getMetaFbc, getStoredAdvancedMatching, getStoredExternalIdHash, prepareMetaTracking } from '@/lib/pixel';
 import {
   contentId,
   buildAddToWishlistParams,
@@ -33,8 +33,9 @@ function toNumber(v) {
 
 // Hand a browser event off to the server-side CAPI twin (POST /api/meta/track)
 // using the SAME event_id passed to fbq so Meta dedups the pair. Only non-PII
-// custom_data is forwarded; the server derives ip/ua/fbp/fbc itself. Purchase
-// never flows through here — it fires from the trusted server order flow.
+// custom_data is forwarded; the server derives ip/ua/fbp and validates the
+// cookie-or-browser fbc signal. Purchase never flows through here — it fires
+// from the trusted server order flow.
 function postCapiTrack(eventName, eventId, params) {
   try {
     fetch('/api/meta/track', {
@@ -49,6 +50,8 @@ function postCapiTrack(eventName, eventId, params) {
         // earn EMQ credit. Raw PII never leaves the browser unhashed; the server
         // validates hex format before merging with request-derived ip/ua/fbp/fbc.
         user_data: getStoredAdvancedMatching() || undefined,
+        // fbc is not PII; the server validates this cookie-block fallback.
+        fbc: getMetaFbc(),
         content_ids: params.content_ids,
         contents: params.contents,
         content_type: params.content_type,
@@ -65,9 +68,12 @@ function postCapiTrack(eventName, eventId, params) {
 // consent is granted, matching the Pixel gate) hand the same id to the server
 // CAPI twin. Keeps existing Pixel params untouched — just adds dedup + CAPI.
 function trackDeduped(eventName, params) {
-  const eventId = genEventId();
-  track(eventName, params, eventId);
-  if (hasMarketingConsent()) postCapiTrack(eventName, eventId, params);
+  prepareMetaTracking().then((allowed) => {
+    if (!allowed) return;
+    const eventId = genEventId();
+    track(eventName, params, eventId);
+    postCapiTrack(eventName, eventId, params);
+  }).catch(() => { /* tracking must never break the storefront */ });
 }
 
 function trackWithEventId(eventName, eventId, params) {

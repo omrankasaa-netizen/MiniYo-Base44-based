@@ -2,8 +2,9 @@
 //
 // The browser Pixel fires these with a dedup `event_id`; the storefront then
 // hands the same id + NON-PII custom_data to POST /api/meta/track so the server
-// sends the deduplicated CAPI twin. user_data (ip/ua/fbp/fbc) is derived
-// server-side from the request — never trusted from the client. Purchase is
+// sends the deduplicated CAPI twin. ip/ua/fbp come from the request; fbc may
+// use a validated browser fallback when cookies are blocked. Raw PII is never
+// accepted from the client. Purchase is
 // deliberately NOT in this allowlist: it fires only from the trusted server
 // order flow (see server/metaPurchase.js).
 //
