@@ -26,8 +26,7 @@ import { getProductPagePayloadBySlug, injectProductMeta } from './productMeta.js
 import { buildFeedCsv } from './metaFeed.js';
 import { buildTiktokFeedCsv } from './tiktokFeed.js';
 import { aiProductDraft } from './aiDraft.js';
-import { returnOrder } from './orderReturns.js';
-import { sendCapiEvent, buildUserData, mergeClientHashedUserData } from './metaCapiClient.js';
+import { sendCapiEvent, buildUserData, mergeClientHashedUserData, firstValidMetaFbc } from './metaCapiClient.js';
 import {
   derivePurchaseEventId, buildPurchaseCustomData, buildPurchaseUserData,
   purchaseConsentAllowed, isSendableValue,
@@ -411,26 +410,6 @@ app.post('/api/functions/aiProductDraft', async (req, res) => {
   } catch (e) { handleError(res, e); }
 });
 
-// Dedicated route for the order-return endpoint, registered BEFORE the generic
-// dispatcher so it wins (same pattern as aiProductDraft above; the guard mirrors
-// inventoryEngine's internal admin check — admin/super_admin).
-app.post('/api/functions/returnOrder', async (req, res) => {
-  try {
-    const user = getUserFromRequest(req);
-    if (!user || !['admin', 'super_admin'].includes(user.role)) {
-      return res.status(user ? 403 : 401).json({
-        error: user ? 'Forbidden: admin access required' : 'Authentication required',
-      });
-    }
-    const result = await returnOrder(req.body || {}, user);
-    if (result && typeof result === 'object' && result._status) {
-      const { _status, ...rest } = result;
-      return res.status(_status).json({ data: rest });
-    }
-    res.json({ data: result });
-  } catch (e) { handleError(res, e); }
-});
-
 app.post('/api/functions/:name', async (req, res) => {
   try {
     const user = getUserFromRequest(req);
@@ -781,7 +760,6 @@ app.put('/api/entities/:entity/:id', ensureEntity, writeRateLimit, authorizeWrit
 app.delete('/api/entities/:entity/:id', ensureEntity, writeRateLimit, authorizeWrite('delete'), (req, res) => {
   try {
     const result = deleteRecord(req.params.entity, req.params.id);
-    maybeInvalidateDashboard(req.params.entity);
     res.json(result);
   } catch (e) { handleError(res, e); }
 });
@@ -961,7 +939,9 @@ function metaClientSignals(req) {
   const xff = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
   return {
     fbp: req.cookies?._fbp,
-    fbc: req.cookies?._fbc,
+    // Prefer the request cookie, but accept the browser's validated in-memory
+    // fallback for FB/IG WebViews that block cookie writes. fbc is not PII.
+    fbc: firstValidMetaFbc(req.cookies?._fbc, req.body?.fbc),
     clientIp: req.headers['cf-connecting-ip'] || xff || req.socket?.remoteAddress,
     userAgent: req.headers['user-agent'],
   };
@@ -1053,8 +1033,9 @@ app.post('/api/meta/purchase', trackRateLimit, async (req, res) => {
 // Server-side twin for the browser Pixel's ViewContent / AddToCart /
 // InitiateCheckout. The storefront posts the SAME event_id it passed to fbq so
 // Meta dedups the two. Only NON-PII custom_data is accepted from the client,
-// plus PRE-HASHED (SHA-256) identity fields for EMQ; raw PII is never accepted
-// and ip/ua/fbp/fbc are always derived server-side. Purchase is NOT accepted
+// plus PRE-HASHED (SHA-256) identity fields for EMQ; raw PII is never accepted.
+// ip/ua/fbp come from the request; fbc uses the cookie or a validated browser
+// fallback for cookie-blocked WebViews. Purchase is NOT accepted
 // here — it fires only from the trusted order flow above. Fire-and-forget: the
 // response never waits on Meta and tracking can never break a page load.
 app.post('/api/meta/track', trackRateLimit, (req, res) => {
