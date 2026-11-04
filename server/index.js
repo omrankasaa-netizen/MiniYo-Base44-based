@@ -760,6 +760,7 @@ app.put('/api/entities/:entity/:id', ensureEntity, writeRateLimit, authorizeWrit
 app.delete('/api/entities/:entity/:id', ensureEntity, writeRateLimit, authorizeWrite('delete'), (req, res) => {
   try {
     const result = deleteRecord(req.params.entity, req.params.id);
+    maybeInvalidateDashboard(req.params.entity);
     res.json(result);
   } catch (e) { handleError(res, e); }
 });
