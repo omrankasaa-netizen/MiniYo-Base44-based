@@ -429,7 +429,7 @@ export default function OrderDetailModal({ order, onClose, onUpdated, currentUse
                 <p className={`text-sm font-semibold ${whishStatus === 'paid' ? 'text-green-800' : 'text-red-800'}`}>
                   {whishStatus === 'paid' ? '✅ Paid by Whish — driver collects $0' : '⏳ Whish payment not received yet — do not dispatch'}
                 </p>
-                <p className="text-xs text-muted-foreground">Expected ${Number(order.grand_total_usd || 0).toFixed(2)} with note {order.order_number}</p>
+                <p className="text-xs text-muted-foreground">Expected ${Number(order.grand_total_usd || 0).toFixed(2)} — check the Whish proof on WhatsApp for {order.order_number}</p>
               </div>
               <button type="button" onClick={() => markWhishPaid(whishStatus !== 'paid')}
                 className={`shrink-0 px-3 py-1.5 rounded-xl text-xs font-semibold ${whishStatus === 'paid' ? 'bg-muted text-foreground' : 'bg-green-600 text-white'}`}>

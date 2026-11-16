@@ -806,15 +806,13 @@ export default function CheckoutPage() {
               <div className="text-sm space-y-1 text-center">
                 <p>{t('Amount', 'المبلغ')}: <strong dir="ltr">${Number(successInfo.total || 0).toFixed(2)}</strong></p>
                 <p>{t('Whish number', 'رقم Whish')}: <strong dir="ltr">{siteSettings.whishNumber}</strong></p>
-                <p className="text-xs text-muted-foreground">{t('Write your order number in the Whish note:', 'اكتبي رقم الطلب بملاحظة Whish:')} <strong dir="ltr">{success}</strong></p>
+                <p className="text-xs text-muted-foreground">{t('After paying, forward the Whish payment proof to this number on WhatsApp with your order number', 'بعد الدفع، ابعتي إثبات الدفع من Whish عالواتساب لنفس الرقم مع رقم الطلب')} <strong dir="ltr">{success}</strong></p>
               </div>
-              {siteSettings.whatsappNumber && (
-                <a href={waLink(siteSettings.whatsappNumber, whishWhatsappText({ orderNumber: success, total: successInfo.total, lang }))}
-                  target="_blank" rel="noopener noreferrer"
-                  className="w-full min-h-[44px] rounded-xl bg-[#25D366] text-white text-sm font-semibold inline-flex items-center justify-center">
-                  {t('I paid — send screenshot on WhatsApp', 'دفعت — ابعتي الصورة عالواتساب')}
-                </a>
-              )}
+              <a href={waLink(siteSettings.whishNumber, whishWhatsappText({ orderNumber: success, total: successInfo.total, lang }))}
+                target="_blank" rel="noopener noreferrer"
+                className="w-full min-h-[44px] rounded-xl bg-[#25D366] text-white text-sm font-semibold inline-flex items-center justify-center">
+                {t('I paid — send proof on WhatsApp', 'دفعت — ابعتي الإثبات عالواتساب')}
+              </a>
               <p className="text-xs text-muted-foreground text-center">{t('We prepare and send your order as soon as we receive the payment.', 'منحضّر ومنبعت الطلب أول ما توصلنا الدفعة.')}</p>
             </div>
           ) : (

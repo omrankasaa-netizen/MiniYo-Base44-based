@@ -36,8 +36,8 @@ export function collectionStatus(order) {
 export function whishWhatsappText({ orderNumber, total, lang = 'en' }) {
   const amount = `$${Number(total || 0).toFixed(2)}`;
   return lang === 'ar'
-    ? `مرحبا MiniYo، دفعت الطلب ${orderNumber} (${amount}) عبر Whish. مرفقة صورة الدفع.`
-    : `Hi MiniYo, I paid order ${orderNumber} (${amount}) by Whish. Payment screenshot attached.`;
+    ? `مرحبا MiniYo، دفعت الطلب ${orderNumber} (${amount}) عبر Whish. رح ابعتلك إثبات الدفع هون.`
+    : `Hi MiniYo, I paid order ${orderNumber} (${amount}) by Whish. Forwarding the payment proof here.`;
 }
 
 /** wa.me link for a phone number in any format. */

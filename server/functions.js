@@ -830,7 +830,7 @@ async function sendOrderNotification(body) {
        ${order.gift_message ? `<p>Gift message: "${escapeHtml(order.gift_message)}"</p>` : ''}`
     : '';
   const whishHtml = String(order.payment_method || '').toLowerCase() === 'whish'
-    ? `<p><strong>💳 WHISH</strong> — wait for $${Number(order.grand_total_usd || 0).toFixed(2)} (note ${order.order_number}) before dispatching, then mark it paid in the order.</p>`
+    ? `<p><strong>💳 WHISH</strong> — wait for $${Number(order.grand_total_usd || 0).toFixed(2)} (payment proof on WhatsApp, order ${order.order_number}) before dispatching, then mark it paid in the order.</p>`
     : '';
   const html = `<!DOCTYPE html><html><body><h2>New Order: ${order.order_number}</h2>
     ${whishHtml}
