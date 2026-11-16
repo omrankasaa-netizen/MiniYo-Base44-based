@@ -6,23 +6,23 @@ import { useLang } from '@/contexts/LanguageContext';
 import { cmsImageSrc, cmsImageSrcSet, handleImageError } from '@/lib/imageFraming';
 
 // Two large rounded promo cards directly under the hero/trust strip.
-// Left card → Summer Sale (-40%, tag-filtered shop view).
+// Left card → Baby gift boxes (/gifts: ready-made boxes + gift box builder).
 // Right card → New Season Collection (winter/autumn + non-discounted new items).
 const CARDS = [
   {
-    key: 'summer-sale',
-    to: '/shop?tag=summer&sale=1',
-    img: 'https://images.miniyokids.com/products/BNZ-BEACHHAT_1.webp',
-    eyebrowEn: 'Up to 40% off',
-    eyebrowAr: 'خصم حتى 40%',
-    titleEn: 'Summer Sale',
-    titleAr: 'تخفيضات الصيف',
-    subEn: 'Sunny-day favorites, marked down while stock lasts.',
-    subAr: 'قطع الصيف المفضلة بأسعار أقل، حتى نفاد الكمية.',
-    ctaEn: 'Shop the sale',
-    ctaAr: 'تسوّقي التخفيضات',
-    badge: '-40%',
-    badgeClass: 'bg-destructive text-destructive-foreground',
+    key: 'gift-boxes',
+    to: '/gifts',
+    img: 'https://images.miniyokids.com/products/1793910995717-3167a66f-1000104771/card.webp',
+    eyebrowEn: 'Gift-wrapped & ready',
+    eyebrowAr: 'مغلّفة وجاهزة',
+    titleEn: 'Baby Gift Boxes',
+    titleAr: 'علب هدايا للبيبي',
+    subEn: 'Ready-made boxes, or pick the baby’s age and build your own in 3 taps.',
+    subAr: 'علب جاهزة، أو اختاري عمر البيبي وحضّري علبتك بـ3 كبسات.',
+    ctaEn: 'Choose a gift box',
+    ctaAr: 'اختاري علبة هدية',
+    badge: '🎁',
+    badgeClass: 'bg-white text-foreground',
   },
   {
     key: 'new-season',

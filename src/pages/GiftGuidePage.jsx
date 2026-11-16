@@ -19,9 +19,9 @@ import {
 // "add all to cart" button. Gift wrapping / hidden prices are picked at checkout.
 
 const STEP_COPY = {
-  outfit: { icon: Shirt, en: '1. Pick an outfit', ar: '1. اختاري طقم', subEn: 'Rompers, sets and dresses in this size', subAr: 'رومبرات، أطقم وفساتين بهالمقاس' },
-  cozy: { icon: Package, en: '2. Add something cozy', ar: '2. زيدي شي دافي', subEn: 'Blankets, swaddles and jackets', subAr: 'حرامات، لفّات وجاكيتات' },
-  extras: { icon: Sparkles, en: '3. Finish with little extras', ar: '3. كمّلي بإضافات صغيرة', subEn: 'Socks, bonnets, tights and clips', subAr: 'كلسات، طواقي، كولونات وكليبات' },
+  outfit: { icon: Shirt, tabEn: '👕 Outfit', tabAr: '👕 طقم', en: '1. Pick an outfit', ar: '1. اختاري طقم', subEn: 'Rompers, sets and dresses in this size', subAr: 'رومبرات، أطقم وفساتين بهالمقاس' },
+  cozy: { icon: Package, tabEn: '🧸 Cozy', tabAr: '🧸 دافي', en: '2. Add something cozy', ar: '2. زيدي شي دافي', subEn: 'Blankets, swaddles and jackets', subAr: 'حرامات، لفّات وجاكيتات' },
+  extras: { icon: Sparkles, tabEn: '🧦 Extras', tabAr: '🧦 إضافات', en: '3. Finish with little extras', ar: '3. كمّلي بإضافات صغيرة', subEn: 'Socks, bonnets, tights and clips', subAr: 'كلسات، طواقي، كولونات وكليبات' },
 };
 
 const SEL_KEY = 'miniyo-gift-builder';
@@ -60,14 +60,11 @@ function BuilderItem({ entry, selectedVariantId, onToggle, onPickVariant, t, lan
           {sizeLabel && <span>{sizeLabel}</span>}
         </div>
         {colors.length > 1 && (
-          <div className="flex flex-wrap gap-1" role="group" aria-label={t('Colour', 'اللون')}>
-            {colors.map((v) => (
-              <button key={v.id} type="button" onClick={() => onPickVariant(v.id)}
-                className={`px-2 py-0.5 rounded-full text-[11px] border ${chosen?.id === v.id ? 'border-primary bg-primary/10 text-primary font-semibold' : 'border-border text-muted-foreground'}`}>
-                {v.color}
-              </button>
-            ))}
-          </div>
+          <select value={chosen?.id || ''} onChange={(e) => onPickVariant(e.target.value)}
+            aria-label={t('Colour', 'اللون')}
+            className="w-full min-h-[36px] rounded-lg border border-border bg-background px-2 text-xs">
+            {colors.map((v) => <option key={v.id} value={v.id}>{v.color}</option>)}
+          </select>
         )}
         <button type="button" onClick={() => onToggle(chosen?.id ?? null)}
           className={`mt-auto min-h-[40px] rounded-full text-sm font-semibold inline-flex items-center justify-center gap-1.5 transition-colors ${isSelected ? 'bg-primary/10 text-primary border border-primary' : 'bg-primary text-primary-foreground hover:bg-primary/90'}`}>
@@ -88,6 +85,11 @@ export default function GiftGuidePage() {
   // productId -> variantId (null for products without variants)
   const [selection, setSelection] = useState(loadSelection);
   const [added, setAdded] = useState(false);
+  // 'ready' (ready-made boxes) | 'build' (build your own); step within build.
+  const [mode, setMode] = useState(null);
+  const [step, setStep] = useState('outfit');
+  const [showAll, setShowAll] = useState(false);
+  const resultsRef = React.useRef(null);
 
   useEffect(() => { safeSessionStorage.setItem(SEL_KEY, JSON.stringify(selection)); }, [selection]);
 
@@ -96,6 +98,11 @@ export default function GiftGuidePage() {
     if (value) next.set(key, value); else next.delete(key);
     setParams(next, { replace: true });
     setSelection({}); // pieces picked for another age/gender wouldn't fit
+    setStep('outfit');
+    setShowAll(false);
+    if (key === 'age' && value) {
+      setTimeout(() => resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 150);
+    }
   }
 
   const { data: products = [], isLoading } = useQuery({
@@ -159,46 +166,68 @@ export default function GiftGuidePage() {
   }
 
   const hasAnyRec = recs.ready.length > 0 || STEPS.some((k) => recs.steps[k].length > 0);
+  const activeMode = mode || (recs.ready.length > 0 ? 'ready' : 'build');
+  const nextStep = STEPS.slice(STEPS.indexOf(step) + 1).find((k) => recs.steps[k].length > 0) || null;
 
   return (
     <div className="min-h-screen bg-background pb-32" dir={lang === 'ar' ? 'rtl' : 'ltr'}>
-      <div className="bg-gradient-to-b from-primary/10 to-transparent px-4 pt-10 pb-6 text-center">
+      <div className="bg-gradient-to-b from-primary/10 to-transparent px-4 pt-6 pb-4 sm:pt-10 sm:pb-6 text-center">
         <div className="inline-flex items-center gap-2 bg-primary/10 text-primary rounded-full px-3 py-1 text-xs font-semibold mb-3">
           <Gift className="w-3.5 h-3.5" /> {t('Gift box builder', 'حضّري علبة هدية')}
         </div>
-        <h1 className="text-3xl sm:text-4xl font-heading font-bold text-foreground mb-2">
+        <h1 className="text-2xl sm:text-4xl font-heading font-bold text-foreground mb-2">
           {t('Build the perfect baby gift', 'حضّري أحلى هدية للبيبي')}
         </h1>
         <p className="text-muted-foreground max-w-xl mx-auto text-sm sm:text-base">
-          {t('Tell us the baby’s age and we’ll suggest pieces that are in stock in that size. Gift wrapping and hidden prices are free to choose at checkout.',
-            'قوليلنا عمر البيبي ومنقترحلك قطع متوفرة بمقاسه. فيكي تختاري تغليف الهدية وتخبية الأسعار عند الدفع.')}
+          {t('3 quick taps: age, girl or boy, then a ready-made box or your own picks. We gift-wrap it and hide the prices.',
+            '3 كبسات: العمر، بنت أو صبي، وبعدين علبة جاهزة أو اختياراتك. منغلّفها ومنخبّي الأسعار.')}
         </p>
       </div>
 
       <div className="max-w-6xl mx-auto px-4">
-        <div className="rounded-3xl border border-border bg-card p-4 sm:p-6 mb-8 shadow-sm">
-          <p className="text-sm font-semibold text-foreground mb-2">{t('How old is the baby?', 'قدّيش عمر البيبي؟')}</p>
-          <div className="flex flex-wrap gap-2 mb-4">
+        {/* Choose age + gender: big, obvious buttons */}
+        <div className="rounded-3xl border border-border bg-card p-4 sm:p-6 mb-6 shadow-sm">
+          <p className="text-base font-bold text-foreground mb-3">
+            <span className="inline-flex w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs items-center justify-center me-2">1</span>
+            {t('How old is the baby?', 'قدّيش عمر البيبي؟')}
+          </p>
+          <div className="grid grid-cols-3 gap-2 mb-5">
             {AGE_OPTIONS.map((a) => (
               <button key={a.key} type="button" onClick={() => setFilter('age', a.key)}
-                className={`min-h-[40px] px-4 rounded-full text-sm font-medium transition-colors ${age === a.key ? 'bg-primary text-primary-foreground' : 'bg-muted text-foreground hover:bg-muted/80'}`}>
+                className={`min-h-[48px] px-2 rounded-2xl text-sm font-semibold transition-colors border ${age === a.key ? 'bg-primary text-primary-foreground border-primary' : 'bg-background text-foreground border-border hover:border-primary/50'}`}>
                 {lang === 'ar' ? a.ar : a.en}
               </button>
             ))}
           </div>
-          <p className="text-sm font-semibold text-foreground mb-2">{t('For a…', 'الهدية لـ…')}</p>
-          <div className="flex flex-wrap gap-2">
+          <p className="text-base font-bold text-foreground mb-3">
+            <span className="inline-flex w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs items-center justify-center me-2">2</span>
+            {t('Is it for a girl or a boy?', 'لبنت ولا لصبي؟')}
+          </p>
+          <div className="grid grid-cols-3 gap-2">
             {GENDER_OPTIONS.map((g) => (
               <button key={g.key} type="button" onClick={() => setFilter('for', g.key === 'any' ? '' : g.key)}
-                className={`min-h-[40px] px-4 rounded-full text-sm font-medium transition-colors ${gender === g.key ? 'bg-primary text-primary-foreground' : 'bg-muted text-foreground hover:bg-muted/80'}`}>
-                {lang === 'ar' ? g.ar : g.en}
+                className={`min-h-[48px] px-2 rounded-2xl text-sm font-semibold transition-colors border ${gender === g.key ? 'bg-primary text-primary-foreground border-primary' : 'bg-background text-foreground border-border hover:border-primary/50'}`}>
+                {g.key === 'girl' ? '👧 ' : g.key === 'boy' ? '👦 ' : '🤍 '}{lang === 'ar' ? g.ar : g.en}
               </button>
             ))}
           </div>
         </div>
 
+        <div ref={resultsRef} className="scroll-mt-20" />
+
         {!age && (
-          <p className="text-center text-muted-foreground py-10">{t('Pick an age above to see suggestions.', 'اختاري العمر لتشوفي الاقتراحات.')}</p>
+          <div className="grid grid-cols-3 gap-3 text-center py-6">
+            {[
+              ['👶', t('Pick the age', 'اختاري العمر')],
+              ['🧸', t('We show what’s in stock in that size', 'منورجيكي الموجود بمقاسه')],
+              ['🎁', t('We gift-wrap & deliver', 'منغلّف ومنوصّل')],
+            ].map(([icon, label]) => (
+              <div key={icon} className="rounded-2xl bg-muted/50 p-3">
+                <div className="text-2xl mb-1">{icon}</div>
+                <p className="text-xs text-muted-foreground leading-snug">{label}</p>
+              </div>
+            ))}
+          </div>
         )}
         {age && isLoading && (
           <p className="text-center text-muted-foreground py-10">{t('Finding pieces in this size…', 'عم نفتّش على قطع بهالمقاس…')}</p>
@@ -210,46 +239,95 @@ export default function GiftGuidePage() {
           </p>
         )}
 
-        {age && recs.ready.length > 0 && (
-          <section className="mb-10">
-            <h2 className="text-xl sm:text-2xl font-heading font-bold text-foreground mb-1">{t('Ready-made gift boxes', 'علب هدايا جاهزة')}</h2>
-            <p className="text-sm text-muted-foreground mb-4">{t('Already put together for you — tap to see what’s inside.', 'محضّرة إلك — كبسي لتشوفي شو في جوّا.')}</p>
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-              {recs.ready.slice(0, 8).map((p) => <ProductCard key={p.id} product={p} />)}
+        {age && !isLoading && hasAnyRec && (
+          <>
+            <p className="text-base font-bold text-foreground mb-3">
+              <span className="inline-flex w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs items-center justify-center me-2">3</span>
+              {t('Choose your gift', 'اختاري هديتك')}
+            </p>
+            {/* Two clear paths */}
+            <div className="grid grid-cols-2 gap-2 mb-5">
+              {[
+                { key: 'ready', icon: '🎁', en: 'Ready-made box', ar: 'علبة جاهزة', subEn: 'Already put together', subAr: 'محضّرة إلك', disabled: recs.ready.length === 0 },
+                { key: 'build', icon: '✨', en: 'Build my own', ar: 'حضّريها بنفسك', subEn: 'Pick piece by piece', subAr: 'قطعة قطعة', disabled: false },
+              ].map((o) => (
+                <button key={o.key} type="button" disabled={o.disabled} onClick={() => setMode(o.key)}
+                  className={`rounded-2xl border p-3 text-start transition-colors disabled:opacity-40 ${activeMode === o.key ? 'border-primary bg-primary/10 ring-2 ring-primary/20' : 'border-border bg-card'}`}>
+                  <span className="text-xl">{o.icon}</span>
+                  <p className="text-sm font-bold text-foreground mt-1">{lang === 'ar' ? o.ar : o.en}</p>
+                  <p className="text-xs text-muted-foreground">{o.disabled ? t('None for this age yet', 'ما في لهالعمر هلّق') : (lang === 'ar' ? o.subAr : o.subEn)}</p>
+                </button>
+              ))}
             </div>
-          </section>
-        )}
 
-        {age && STEPS.map((k) => {
-          const list = recs.steps[k];
-          if (list.length === 0) return null;
-          const copy = STEP_COPY[k];
-          const Icon = copy.icon;
-          return (
-            <section key={k} className="mb-10">
-              <div className="flex items-center gap-2 mb-1">
-                <Icon className="w-5 h-5 text-primary" />
-                <h2 className="text-xl sm:text-2xl font-heading font-bold text-foreground">
-                  {recs.ready.length > 0 && k === 'outfit' ? t('Or build your own — ', 'أو حضّريها بنفسك — ') : ''}{lang === 'ar' ? copy.ar : copy.en}
-                </h2>
-              </div>
-              <p className="text-sm text-muted-foreground mb-4">{lang === 'ar' ? copy.subAr : copy.subEn}</p>
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
-                {list.map((e) => (
-                  <BuilderItem key={e.product.id} entry={e} t={t} lang={lang}
-                    selectedVariantId={e.product.id in selection ? selection[e.product.id] : undefined}
-                    onToggle={(vid) => toggle(e.product.id, vid)}
-                    onPickVariant={(vid) => pickVariant(e.product.id, vid)} />
-                ))}
-              </div>
-            </section>
-          );
-        })}
+            {activeMode === 'ready' && (
+              <section className="mb-10">
+                <p className="text-sm text-muted-foreground mb-3">{t('Tap a box to see exactly what’s inside.', 'كبسي على العلبة لتشوفي شو في جوّا.')}</p>
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                  {recs.ready.slice(0, 8).map((p) => <ProductCard key={p.id} product={p} />)}
+                </div>
+              </section>
+            )}
+
+            {activeMode === 'build' && (
+              <section className="mb-10">
+                {/* Step tabs */}
+                <div className="mb-3">
+                  <div className="grid grid-cols-3 gap-1.5 rounded-2xl bg-muted p-1">
+                    {STEPS.map((k) => {
+                      const copy = STEP_COPY[k];
+                      const count = recs.steps[k].filter((e) => e.product.id in selection).length;
+                      const empty = recs.steps[k].length === 0;
+                      return (
+                        <button key={k} type="button" disabled={empty} onClick={() => { setStep(k); setShowAll(false); }}
+                          className={`relative min-h-[44px] rounded-xl text-xs sm:text-sm font-semibold transition-colors disabled:opacity-40 ${step === k ? 'bg-card text-primary shadow-sm' : 'text-muted-foreground'}`}>
+                          {lang === 'ar' ? copy.tabAr : copy.tabEn}
+                          {count > 0 && (
+                            <span className="absolute -top-1 -end-1 min-w-[18px] h-[18px] px-1 rounded-full bg-primary text-primary-foreground text-[10px] leading-[18px]">{count}</span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <p className="text-sm text-muted-foreground mb-3">{lang === 'ar' ? STEP_COPY[step].subAr : STEP_COPY[step].subEn}</p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
+                  {(showAll ? recs.steps[step] : recs.steps[step].slice(0, 6)).map((e) => (
+                    <BuilderItem key={e.product.id} entry={e} t={t} lang={lang}
+                      selectedVariantId={e.product.id in selection ? selection[e.product.id] : undefined}
+                      onToggle={(vid) => toggle(e.product.id, vid)}
+                      onPickVariant={(vid) => pickVariant(e.product.id, vid)} />
+                  ))}
+                </div>
+                <div className="flex flex-col sm:flex-row gap-2 mt-4">
+                  {!showAll && recs.steps[step].length > 6 && (
+                    <button type="button" onClick={() => setShowAll(true)}
+                      className="flex-1 min-h-[44px] rounded-xl border border-border text-sm font-semibold text-foreground">
+                      {t('Show more', 'شوفي أكتر')} ({recs.steps[step].length - 6})
+                    </button>
+                  )}
+                  {nextStep && (
+                    <button type="button" onClick={() => { setStep(nextStep); setShowAll(false); resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}
+                      className="flex-1 min-h-[44px] rounded-xl bg-primary/10 text-primary text-sm font-semibold">
+                      {t('Next:', 'التالي:')} {lang === 'ar' ? STEP_COPY[nextStep].tabAr : STEP_COPY[nextStep].tabEn} →
+                    </button>
+                  )}
+                </div>
+              </section>
+            )}
+          </>
+        )}
       </div>
 
       {picked.length > 0 && (
         <div className="fixed inset-x-0 bottom-3 z-40 px-3 sm:px-4">
           <div className="max-w-3xl mx-auto rounded-2xl bg-card/95 backdrop-blur border border-border shadow-lg p-3 flex items-center gap-3">
+            <div className="hidden min-[380px]:flex -space-x-2 rtl:space-x-reverse shrink-0">
+              {picked.slice(0, 3).map(({ product }) => {
+                const im = normalizeImages([product.image_url])[0];
+                return im ? <img key={product.id} src={imageSrc(im, 'thumb')} alt="" className="w-9 h-9 rounded-full border-2 border-card object-cover" /> : null;
+              })}
+            </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-foreground">
                 🎁 {picked.length} {picked.length === 1 ? t('piece', 'قطعة') : t('pieces', 'قطع')} · <span dir="ltr">${total.toFixed(2)}</span>
@@ -262,7 +340,7 @@ export default function GiftGuidePage() {
             </div>
             <button type="button" onClick={addBoxToCart}
               className={`shrink-0 min-h-[44px] px-5 rounded-xl text-sm font-semibold transition-colors ${added ? 'bg-green-600 text-white' : 'bg-primary text-primary-foreground hover:bg-primary/90'}`}>
-              {added ? t('Added ✓', 'انضافت ✓') : t('Add box to cart', 'زيدي العلبة عالسلة')}
+              {added ? t('Added ✓', 'انضافت ✓') : t('Add to cart', 'زيدي عالسلة')}
             </button>
           </div>
         </div>
