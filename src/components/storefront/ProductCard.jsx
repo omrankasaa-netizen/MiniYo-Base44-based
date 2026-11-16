@@ -131,6 +131,13 @@ export default function ProductCard({ product, rating }) {
   const displayPrice = discountedPrice ?? product.price_usd;
   const originalPrice = discountedPrice ? product.price_usd : (hasCompareDiscount ? product.compare_at_price_usd : null);
   const badgeLabel = autoDiscount ? (lang === 'ar' ? (autoDiscount.badge_label_ar || autoDiscount.badge_label) : autoDiscount.badge_label) : null;
+  const cardBadges = [
+    bundleCount > 0 && { key: 'bundle', cls: 'bg-accent text-accent-foreground', label: `🎁 ${bundleCount} ${t('pieces', 'قطع')}` },
+    badgeLabel && { key: 'disc', cls: 'bg-destructive text-destructive-foreground', label: badgeLabel },
+    !badgeLabel && hasDiscount && { key: 'sale', cls: 'bg-destructive text-destructive-foreground', label: t('Sale', 'تخفيض') },
+    product.is_new && bundleCount === 0 && { key: 'new', cls: 'bg-primary text-primary-foreground', label: t('New', 'جديد') },
+    product.is_featured && { key: 'feat', cls: 'bg-accent text-accent-foreground', label: `★ ${t('Featured', 'مميز')}` },
+  ].filter(Boolean);
 
   // Build the carousel image list. Prefer the full images array (with per-image
   // focal/crop metadata) when a consumer provides it; otherwise fall back to the
@@ -180,17 +187,18 @@ export default function ProductCard({ product, rating }) {
             {displayImages.length > 0
               ? <ProductCardImage key={activeSwatch?.image ? activeSwatch.key : 'gallery'} images={displayImages} name={name} isRTL={isRTL} />
               : <div className="w-full h-full flex items-center justify-center bg-accent/20"><ShoppingBag className="w-12 h-12 text-accent" /></div>}
-            {/* Badges */}
-            <div className="absolute top-2.5 left-2.5 flex flex-col gap-1.5">
-              {bundleCount > 0 && <span className="bg-accent text-accent-foreground text-xs font-semibold px-2.5 py-1 rounded-full shadow-sm">🎁 {t('Gift box', 'علبة هدية')} · {bundleCount} {t('pieces', 'قطع')}</span>}
-              {product.is_new && bundleCount === 0 && <span className="bg-primary text-primary-foreground text-xs font-semibold px-2.5 py-1 rounded-full">{t('New', 'جديد')}</span>}
-              {product.is_featured && <span className="bg-accent text-accent-foreground text-xs font-semibold px-2.5 py-1 rounded-full flex items-center gap-1"><Star className="w-2.5 h-2.5 fill-current" /> {t('Featured', 'مميز')}</span>}
-              {badgeLabel && <span className="bg-destructive text-destructive-foreground text-xs font-semibold px-2.5 py-1 rounded-full">{badgeLabel}</span>}
-              {!badgeLabel && hasDiscount && <span className="bg-destructive text-destructive-foreground text-xs font-semibold px-2.5 py-1 rounded-full">{t('Sale', 'تخفيض')}</span>}
-              {isLowStock && <span className="bg-amber-500 text-white text-xs font-semibold px-2.5 py-1 rounded-full">{t('Only', 'فقط')} {available} {t('left', 'متبقي')}</span>}
+            {/* Badges — at most two small tags so they never hide the photo on
+                a phone (2-column grid ≈ 170px wide). Priority: gift box,
+                sale/discount, new, featured. Low stock moved under the price. */}
+            <div className="absolute top-2 left-2 right-11 flex flex-wrap gap-1 pointer-events-none">
+              {cardBadges.slice(0, 2).map((b) => (
+                <span key={b.key} className={`${b.cls} text-[10px] sm:text-xs font-semibold leading-none px-2 py-1 sm:px-2.5 rounded-full shadow-sm whitespace-nowrap`}>
+                  {b.label}
+                </span>
+              ))}
             </div>
             {/* Wishlist */}
-            <WishlistHeart productId={product.id} product={product} className="absolute top-2.5 right-2.5 w-8 h-8 rounded-full bg-white/80 backdrop-blur shadow-sm" />
+            <WishlistHeart productId={product.id} product={product} className="absolute top-2 right-2 w-8 h-8 rounded-full bg-white/80 backdrop-blur shadow-sm" />
             {/* Sold out overlay */}
             {isOutOfStock && (
               <div className="absolute inset-0 bg-background/60 flex items-center justify-center backdrop-blur-[1px]">
@@ -203,7 +211,7 @@ export default function ProductCard({ product, rating }) {
             {/* Gift bundles: say up front that the price covers several pieces. */}
             {bundleCount > 0 && (
               <p className="text-[11px] leading-snug text-muted-foreground line-clamp-2 mb-1.5">
-                {t('Includes', 'فيها')} {bundleNames}
+                🎁 {t('Gift box', 'علبة هدية')}: {bundleNames}
               </p>
             )}
             {rating?.count > 0 && <RatingStars avg={rating.avg} count={rating.count} className="mb-1" />}
@@ -252,6 +260,9 @@ export default function ProductCard({ product, rating }) {
                 inline "Select Options" pill took most of the card width) prices
                 wrapped per-character and stacked vertically. dir="ltr" keeps
                 "$8.99" reading left-to-right inside RTL layouts. */}
+            {isLowStock && (
+              <p className="text-[11px] font-semibold text-amber-700 mb-1">{t('Only', 'فقط')} {available} {t('left', 'متبقي')}</p>
+            )}
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-baseline gap-1.5 whitespace-nowrap" dir="ltr">
                 <span className={`font-bold whitespace-nowrap ${autoDiscount ? 'text-destructive' : 'text-foreground'}`}>${displayPrice?.toFixed(2)}</span>

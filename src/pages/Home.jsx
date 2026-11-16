@@ -267,7 +267,7 @@ export default function Home() {
       <HomeFaq />
       <InstagramStrip />
       <NewsletterStrip />
-      <FloatingWhatsApp />
+      <FloatingWhatsApp aboveStickyBar />
       <MobileStickyShopCta />
     </div>
   );

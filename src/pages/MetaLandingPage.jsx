@@ -99,7 +99,7 @@ export default function MetaLandingPage() {
         excludeBundles
       />
       <ReviewsCarousel />
-      <FloatingWhatsApp />
+      <FloatingWhatsApp aboveStickyBar />
 
       <div className="sm:hidden fixed inset-x-0 bottom-3 z-40 px-4">
         <Link
