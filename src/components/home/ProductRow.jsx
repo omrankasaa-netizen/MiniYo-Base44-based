@@ -10,14 +10,26 @@ import { productAvailableQty } from '@/lib/inventory';
 import { buildColorSwatches } from '@/lib/colorSwatches';
 import { ChevronRight, ChevronLeft } from 'lucide-react';
 
-export default function ProductRow({ title, titleAr, filter, viewAllLink, productIds = [] }) {
+/**
+ * Merchandising rules for a rail (all optional):
+ *   minPriceUsd     – hide low-price accessories (socks, tights, headbands…)
+ *   hideOutOfStock  – hide products with nothing left to order
+ *   featuredFirst   – products marked Featured in the admin lead the rail
+ *   topUpFilter     – when fewer than 4 products pass, fill up from this
+ *                     broader filter (same rules apply)
+ */
+export default function ProductRow({
+  title, titleAr, filter, viewAllLink, productIds = [],
+  minPriceUsd = 0, hideOutOfStock = false, featuredFirst = false, topUpFilter = null,
+}) {
   const { t, lang } = useLang();
   const scrollRef = useRef(null);
   const pinnedIds = Array.isArray(productIds) ? productIds.map(String).filter(Boolean) : [];
   const hasPinned = pinnedIds.length > 0;
 
+  const merchandised = minPriceUsd > 0 || hideOutOfStock || featuredFirst || !!topUpFilter;
   const { data: rawProducts = [] } = useQuery({
-    queryKey: ['home-products', JSON.stringify(filter), pinnedIds.join(',')],
+    queryKey: ['home-products', JSON.stringify(filter), pinnedIds.join(','), minPriceUsd, featuredFirst, JSON.stringify(topUpFilter)],
     queryFn: async () => {
       if (hasPinned) {
         try {
@@ -30,19 +42,37 @@ export default function ProductRow({ title, titleAr, filter, viewAllLink, produc
       }
       // Live API rejects boolean bindings in `q` filters on some deployments.
       // Query with server-safe fields, then apply boolean predicates client-side.
-      const apiFilter = { ...filter };
-      const boolPredicates = [];
-      for (const [k, v] of Object.entries(filter || {})) {
-        if (typeof v === 'boolean') {
-          delete apiFilter[k];
-          boolPredicates.push([k, v]);
+      const fetchMatching = async (f) => {
+        const apiFilter = { ...f };
+        const boolPredicates = [];
+        for (const [k, v] of Object.entries(f || {})) {
+          if (typeof v === 'boolean') {
+            delete apiFilter[k];
+            boolPredicates.push([k, v]);
+          }
         }
+        const base = await base44.entities.Product.filter(apiFilter, '-created_date', merchandised ? 200 : 48);
+        return boolPredicates.length
+          ? base.filter((p) => boolPredicates.every(([k, v]) => Boolean(p?.[k]) === v))
+          : base;
+      };
+      if (!merchandised) return (await fetchMatching(filter)).slice(0, 12);
+
+      // Merchandised rail: drop cheap accessories, then (optionally) put
+      // Featured products first. Newest-first order is kept within each group.
+      const passesPrice = (p) => Number(p?.price_usd || 0) >= minPriceUsd;
+      let picked = (await fetchMatching(filter)).filter(passesPrice);
+      if (picked.length < 4 && topUpFilter) {
+        const seen = new Set(picked.map((p) => p.id));
+        const extra = (await fetchMatching(topUpFilter)).filter((p) => passesPrice(p) && !seen.has(p.id));
+        picked = picked.concat(extra);
       }
-      const base = await base44.entities.Product.filter(apiFilter, '-created_date', 48);
-      const filtered = boolPredicates.length
-        ? base.filter((p) => boolPredicates.every(([k, v]) => Boolean(p?.[k]) === v))
-        : base;
-      return filtered.slice(0, 12);
+      if (featuredFirst) {
+        picked = [...picked.filter((p) => p.is_featured), ...picked.filter((p) => !p.is_featured)];
+      }
+      // Keep extra candidates so out-of-stock items can be dropped later
+      // without leaving the rail short.
+      return picked.slice(0, 24);
     },
     staleTime: 60_000,
   });
@@ -61,7 +91,7 @@ export default function ProductRow({ title, titleAr, filter, viewAllLink, produc
 
   // Variant stock enrichment (mirrors ShopPage): without availableStock,
   // ProductCard can't flag out-of-stock variant products on the rails.
-  const { data: variants = [] } = useQuery({
+  const { data: variants = [], isFetched: variantsFetched } = useQuery({
     queryKey: ['rail-variants'],
     queryFn: () => base44.entities.ProductVariant.list('-created_date', 3000),
     enabled: productEntityIds.length > 0,
@@ -78,7 +108,7 @@ export default function ProductRow({ title, titleAr, filter, viewAllLink, produc
   }, [variants]);
 
   const imagesByProduct = buildImagesByProduct(allImages);
-  const products = rawProducts.map(p => {
+  const enriched = rawProducts.map(p => {
     const imgs = imagesByProduct[p.id] || [];
     const pvs = variantsByProduct[p.id] || [];
     return {
@@ -89,6 +119,11 @@ export default function ProductRow({ title, titleAr, filter, viewAllLink, produc
       colorSwatches: buildColorSwatches(p, pvs),
     };
   });
+  // Stock is only known for variant products once their variants loaded.
+  const products = (hideOutOfStock
+    ? enriched.filter((p) => (p.has_variants && !variantsFetched) || p.availableStock > 0)
+    : enriched
+  ).slice(0, 12);
 
   if (products.length === 0) return null;
 

@@ -89,6 +89,10 @@ export default function MetaLandingPage() {
         titleAr="وصولات هذا الأسبوع"
         filter={{ is_new: true, status: 'Active' }}
         viewAllLink="/shop?sort=new"
+        minPriceUsd={12}
+        hideOutOfStock
+        featuredFirst
+        topUpFilter={{ status: 'Active' }}
       />
       <ReviewsCarousel />
       <FloatingWhatsApp />
