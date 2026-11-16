@@ -256,6 +256,10 @@ export default function Home() {
         titleAr="الوصولات الجديدة"
         filter={{ is_new: true, status: 'Active' }}
         viewAllLink="/shop?sort=new"
+        minPriceUsd={12}
+        hideOutOfStock
+        featuredFirst
+        topUpFilter={{ status: 'Active' }}
       />
       <ReviewsCarousel />
       <HomeFaq />
