@@ -829,7 +829,9 @@ async function sendOrderNotification(body) {
        ${order.recipient_name ? `<p>Deliver to recipient: ${escapeHtml(order.recipient_name)} · ${escapeHtml(order.recipient_phone || '')}</p>` : ''}
        ${order.gift_message ? `<p>Gift message: "${escapeHtml(order.gift_message)}"</p>` : ''}`
     : '';
-  const whishHtml = String(order.payment_method || '').toLowerCase() === 'whish'
+  const whishHtml = String(order.payment_method || '') === 'Card payment link'
+    ? `<p><strong>💳 CARD PAYMENT LINK</strong> — send the customer a $${Number(order.grand_total_usd || 0).toFixed(2)} payment link on WhatsApp; dispatch only after it's paid, then mark it paid in the order.</p>`
+    : String(order.payment_method || '').toLowerCase() === 'whish'
     ? `<p><strong>💳 WHISH</strong> — wait for $${Number(order.grand_total_usd || 0).toFixed(2)} (payment proof on WhatsApp, order ${order.order_number}) before dispatching, then mark it paid in the order.</p>`
     : '';
   const html = `<!DOCTYPE html><html><body><h2>New Order: ${order.order_number}</h2>

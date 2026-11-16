@@ -3,7 +3,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { giftBoxFee, collectionStatus, whishWhatsappText, waLink, isWhish } from '../src/lib/giftOptions.js';
+import { giftBoxFee, collectionStatus, whishWhatsappText, waLink, isWhish, isPrepaid, cardLinkWhatsappText, CARD_LINK_METHOD } from '../src/lib/giftOptions.js';
 
 test('giftBoxFee: $1 when selected, free from $60, 0 when not selected', () => {
   assert.equal(giftBoxFee({ selected: false, subtotal: 20 }), 0);
@@ -34,4 +34,12 @@ test('whishWhatsappText + waLink', () => {
   assert.match(whishWhatsappText({ orderNumber: 'MNY-1', total: 5, lang: 'ar' }), /Whish/);
   assert.equal(waLink('+961 71 787 205', 'hi there'), 'https://wa.me/96171787205?text=hi%20there');
   assert.equal(waLink('', 'x'), '');
+});
+
+test('card payment link is prepaid like Whish', () => {
+  assert.equal(isPrepaid({ payment_method: CARD_LINK_METHOD }), true);
+  assert.equal(isPrepaid({ payment_method: 'Cash on Delivery' }), false);
+  assert.deepEqual(collectionStatus({ payment_method: CARD_LINK_METHOD, grand_total_usd: 60 }), { kind: 'awaiting', amount: 0 });
+  assert.deepEqual(collectionStatus({ payment_method: CARD_LINK_METHOD, payment_status: 'paid', grand_total_usd: 60 }), { kind: 'paid', amount: 0 });
+  assert.match(cardLinkWhatsappText({ orderNumber: 'MNY-9', total: 60 }), /MNY-9.*\$60\.00.*payment link/);
 });

@@ -18,7 +18,7 @@ import { ga4TrackBeginCheckout, ga4TrackPurchase } from '@/lib/ga4';
 import { readStoredUtmAttribution } from '@/lib/utmAttribution';
 import { DEFAULT_COUNTRY, findCountry, validateNationalNumber, validateLebaneseMobile, toE164, stripTrunkZero } from '@/lib/countryCodes';
 import CountryCodeSelect from '@/components/checkout/CountryCodeSelect';
-import { giftBoxFee as calcGiftBoxFee, whishWhatsappText, waLink } from '@/lib/giftOptions';
+import { giftBoxFee as calcGiftBoxFee, whishWhatsappText, cardLinkWhatsappText, waLink, CARD_LINK_METHOD } from '@/lib/giftOptions';
 
 const ScrollToTop = ({ trigger }) => {
   useEffect(() => {
@@ -81,6 +81,7 @@ export default function CheckoutPage() {
     siteSettings.paymentCodEnabled && { key: 'Cash on Delivery', label: t('Cash on Delivery', 'الدفع عند الاستلام') },
     siteSettings.paymentWhishEnabled && { key: 'Whish', label: 'Whish' },
     siteSettings.paymentCardEnabled && { key: 'Card', label: t('Credit/Debit Card', 'بطاقة ائتمان') },
+    siteSettings.paymentCardLinkEnabled && { key: CARD_LINK_METHOD, label: t('Card (we send a link)', 'بطاقة (منبعتلك رابط)') },
   ].filter(Boolean);
 
   // ── Checkout draft persistence ──────────────────────────────────────────
@@ -645,7 +646,7 @@ export default function CheckoutPage() {
         gift_box_fee_usd: giftBoxAmount,
         recipient_name: gift.is_gift && gift.send_to_someone ? gift.recipient_name.trim().slice(0, 80) : '',
         recipient_phone: gift.is_gift && gift.send_to_someone ? gift.recipient_phone.trim().slice(0, 30) : '',
-        payment_status: form.payment_method === 'Whish' ? 'pending' : '',
+        payment_status: form.payment_method === 'Whish' || form.payment_method === CARD_LINK_METHOD ? 'pending' : '',
         hide_invoice_price: gift.is_gift ? gift.hide_invoice_price : false,
         gift_message: gift.is_gift ? gift.gift_message.slice(0, GIFT_MSG_MAX) : '',
       });
@@ -814,6 +815,20 @@ export default function CheckoutPage() {
                 {t('I paid — send proof on WhatsApp', 'دفعت — ابعتي الإثبات عالواتساب')}
               </a>
               <p className="text-xs text-muted-foreground text-center">{t('We prepare and send your order as soon as we receive the payment.', 'منحضّر ومنبعت الطلب أول ما توصلنا الدفعة.')}</p>
+            </div>
+          ) : successInfo?.payment_method === CARD_LINK_METHOD ? (
+            <div className="w-full max-w-sm rounded-2xl border border-primary/30 bg-card p-5 text-center space-y-3 shadow-sm" dir={lang === 'ar' ? 'rtl' : 'ltr'}>
+              <p className="font-semibold text-foreground">💳 {t('Pay by card — we’ll send you a secure link', 'الدفع بالبطاقة — منبعتلك رابط آمن')}</p>
+              <p className="text-sm text-muted-foreground">
+                {t('Message us on WhatsApp and we’ll send a card payment link for', 'ابعتيلنا عالواتساب ومنبعتلك رابط دفع بالبطاقة بقيمة')} <strong dir="ltr">${Number(successInfo.total || 0).toFixed(2)}</strong>.
+                {' '}{t('Works with any Visa or Mastercard, from anywhere in the world.', 'بيمشي مع أي Visa أو Mastercard ومن أي بلد.')}
+              </p>
+              <a href={waLink(siteSettings.whishNumber, cardLinkWhatsappText({ orderNumber: success, total: successInfo.total, lang }))}
+                target="_blank" rel="noopener noreferrer"
+                className="w-full min-h-[44px] rounded-xl bg-[#25D366] text-white text-sm font-semibold inline-flex items-center justify-center">
+                {t('Get my payment link on WhatsApp', 'بدي رابط الدفع عالواتساب')}
+              </a>
+              <p className="text-xs text-muted-foreground">{t('We prepare and send your order as soon as the payment goes through.', 'منحضّر ومنبعت الطلب أول ما تمر الدفعة.')}</p>
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">{t('We\'ll deliver Cash on Delivery. Track your order below.', 'سيتم التوصيل بالدفع عند الاستلام.')}</p>
@@ -1100,6 +1115,12 @@ export default function CheckoutPage() {
                   ))}
                 </div>
               )}
+              {form.payment_method === CARD_LINK_METHOD && (
+                <p className="text-xs text-muted-foreground bg-muted/50 rounded-xl px-3 py-2">
+                  {t('Paying from abroad or prefer a card? Place your order and message us on WhatsApp — we’ll send you a secure Visa/Mastercard payment link. We send the order once it’s paid.',
+                    'عم تدفعي من برّا أو بتفضّلي البطاقة؟ اطلبي وابعتيلنا عالواتساب — منبعتلك رابط دفع آمن بالـVisa/Mastercard، ومنبعت الطلب بعد الدفع.')}
+                </p>
+              )}
               {form.payment_method === 'Whish' && (
                 <p className="text-xs text-muted-foreground bg-muted/50 rounded-xl px-3 py-2">
                   {t('Perfect for sending a gift straight to someone: after you place the order we show our Whish QR code and number. We send the order once the payment arrives — nothing to pay on delivery.',
@@ -1179,7 +1200,20 @@ export default function CheckoutPage() {
                     </label>
                     {gift.send_to_someone && (
                       <div className="space-y-2">
-                        <p className="text-xs text-muted-foreground">{t('Use the recipient’s address above. Tip: pay by Whish so they have nothing to pay on delivery.', 'استعملي عنوان المستلم فوق. نصيحة: ادفعي عبر Whish حتى ما يدفع المستلم شي عند التسليم.')}</p>
+                        <div className="rounded-xl bg-primary/5 border border-primary/20 px-3 py-3 space-y-2 text-sm">
+                          <p className="font-semibold text-foreground">💌 {t('We’ll deliver it to your loved one for you', 'منوصّلها لحبايبك عنك')}</p>
+                          <p className="text-xs text-muted-foreground">{t('Gift-wrapped, with your message, and no prices anywhere in the package. Use their address above.', 'مغلّفة، مع رسالتك، وبدون أي سعر بالطرد. حطّي عنوانهم فوق.')}</p>
+                          <p className="text-xs font-semibold text-foreground">{t('So they have nothing to pay at the door, pay ahead:', 'حتى ما يدفعوا شي عند الباب، ادفعي مسبقاً:')}</p>
+                          <ul className="text-xs text-muted-foreground space-y-1">
+                            {siteSettings.paymentWhishEnabled && (
+                              <li>📱 <button type="button" className="underline text-primary" onClick={() => setF('payment_method', 'Whish')}>{t('Whish Money', 'Whish Money')}</button> — {t('scan our QR code right after ordering', 'امسحي رمز QR بعد الطلب مباشرة')}</li>
+                            )}
+                            {siteSettings.paymentCardLinkEnabled && (
+                              <li>💳 <button type="button" className="underline text-primary" onClick={() => setF('payment_method', CARD_LINK_METHOD)}>{t('Visa / Mastercard', 'Visa / Mastercard')}</button> — {t('we send you a secure payment link on WhatsApp (great from abroad 🌍)', 'منبعتلك رابط دفع آمن عالواتساب (ممتاز إذا برّا لبنان 🌍)')}</li>
+                            )}
+                            <li>💵 {t('Or cash on delivery, paid by the recipient', 'أو الدفع عند الاستلام من المستلم')}</li>
+                          </ul>
+                        </div>
                         <input value={gift.recipient_name} onChange={e => setGiftField('recipient_name', e.target.value.slice(0, 80))}
                           placeholder={t('Recipient’s name', 'اسم المستلم')}
                           className="w-full px-3 py-2.5 rounded-xl border border-input bg-background text-sm" />

@@ -37,5 +37,7 @@ export function useSiteSettings() {
     giftBoxFee: parseNumber(map.gift_box_fee, GIFT_BOX_DEFAULT_FEE),
     giftBoxFreeOver: parseNumber(map.gift_box_free_over, GIFT_BOX_DEFAULT_FREE_OVER),
     whishNumber: map.whish_number || WHISH_DEFAULT_NUMBER,
+    // Card payment link sent manually on WhatsApp (on unless set to 'false').
+    paymentCardLinkEnabled: map.payment_card_link_enabled !== 'false',
   };
 }
