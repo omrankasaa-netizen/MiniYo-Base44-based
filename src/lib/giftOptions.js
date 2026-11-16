@@ -16,8 +16,15 @@ export function giftBoxFee({ selected, subtotal, fee = GIFT_BOX_DEFAULT_FEE, fre
   return Number(subtotal || 0) >= over ? 0 : f;
 }
 
+export const CARD_LINK_METHOD = 'Card payment link';
+
 export function isWhish(order) {
   return String(order?.payment_method || '').toLowerCase() === 'whish';
+}
+
+/** Paid before delivery (Whish QR or a card payment link we send). */
+export function isPrepaid(order) {
+  return isWhish(order) || String(order?.payment_method || '') === CARD_LINK_METHOD;
 }
 
 /**
@@ -28,7 +35,7 @@ export function isWhish(order) {
 export function collectionStatus(order) {
   const total = Number(order?.grand_total_usd || 0);
   if (String(order?.payment_method || '') === 'Cash on Delivery') return { kind: 'cod', amount: total };
-  if (isWhish(order)) return order?.payment_status === 'paid' ? { kind: 'paid', amount: 0 } : { kind: 'awaiting', amount: 0 };
+  if (isPrepaid(order)) return order?.payment_status === 'paid' ? { kind: 'paid', amount: 0 } : { kind: 'awaiting', amount: 0 };
   return { kind: 'other', amount: 0 };
 }
 
@@ -38,6 +45,14 @@ export function whishWhatsappText({ orderNumber, total, lang = 'en' }) {
   return lang === 'ar'
     ? `مرحبا MiniYo، دفعت الطلب ${orderNumber} (${amount}) عبر Whish. رح ابعتلك إثبات الدفع هون.`
     : `Hi MiniYo, I paid order ${orderNumber} (${amount}) by Whish. Forwarding the payment proof here.`;
+}
+
+/** Pre-filled WhatsApp message asking us for a card payment link. */
+export function cardLinkWhatsappText({ orderNumber, total, lang = 'en' }) {
+  const amount = `$${Number(total || 0).toFixed(2)}`;
+  return lang === 'ar'
+    ? `مرحبا MiniYo، طلبت ${orderNumber} (${amount}) وبدي إدفع بالبطاقة. فيكن تبعتولي رابط الدفع؟`
+    : `Hi MiniYo, I placed order ${orderNumber} (${amount}) and would like to pay by card. Could you send me the payment link?`;
 }
 
 /** wa.me link for a phone number in any format. */

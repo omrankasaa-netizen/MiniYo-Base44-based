@@ -760,7 +760,8 @@ app.post('/api/entities/:entity', ensureEntity, writeRateLimit, authorizeWrite('
     if (req.params.entity === 'Order' && !isAdmin(getUserFromRequest(req))) {
       // Only staff can confirm a prepaid (Whish) payment: a shopper must never
       // be able to create an order already marked paid ("collect $0").
-      body.payment_status = String(body.payment_method || '').toLowerCase() === 'whish' ? 'pending' : '';
+      const prepaid = ['whish', 'card payment link'].includes(String(body.payment_method || '').toLowerCase());
+      body.payment_status = prepaid ? 'pending' : '';
       delete body.payment_confirmed_at;
     }
     const record = createRecord(req.params.entity, body);
