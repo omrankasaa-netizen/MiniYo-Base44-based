@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { X, Printer, MessageCircle, ChevronRight, Gift, Star, TicketPercent, Copy, Pencil, Plus, Minus, Trash2 } from 'lucide-react';
+import { collectionStatus, isWhish } from '@/lib/giftOptions';
 import { logAction } from '@/lib/auditLog';
 import { commitStock, releaseStock, editOrderItems, reserveOrderStock } from '@/lib/inventory';
 import { whatsappLink } from '@/lib/adminExport';
@@ -164,7 +165,7 @@ export default function OrderDetailModal({ order, onClose, onUpdated, currentUse
   }
 
   const editSubtotal = editItems.reduce((s, it) => s + it.unit_price_usd * it.quantity, 0);
-  const editAutoGrand = Math.max(0, editSubtotal - Number(order.discount_usd || 0)) + (parseFloat(editDelivery) || 0);
+  const editAutoGrand = Math.max(0, editSubtotal - Number(order.discount_usd || 0)) + (parseFloat(editDelivery) || 0) + Number(order.gift_box_fee_usd || 0);
   const editGrand = editTotalOverridden ? (parseFloat(editTotalInput) || 0) : editAutoGrand;
 
   async function saveEdit() {
@@ -375,6 +376,15 @@ export default function OrderDetailModal({ order, onClose, onUpdated, currentUse
   }
 
   const codAmount = order.payment_method === 'Cash on Delivery' ? order.grand_total_usd : null;
+  const whishStatus = isWhish(order) ? collectionStatus(order).kind : null;
+
+  async function markWhishPaid(paid) {
+    const patch = paid
+      ? { payment_status: 'paid', payment_confirmed_at: new Date().toISOString() }
+      : { payment_status: 'pending', payment_confirmed_at: null };
+    await base44.entities.Order.update(order.id, patch);
+    onUpdated?.({ ...order, ...patch });
+  }
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
@@ -413,6 +423,20 @@ export default function OrderDetailModal({ order, onClose, onUpdated, currentUse
           )}
 
           {/* COD highlight */}
+          {whishStatus && (
+            <div className={`mx-6 mt-4 rounded-xl border px-4 py-3 flex items-center justify-between gap-3 ${whishStatus === 'paid' ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+              <div>
+                <p className={`text-sm font-semibold ${whishStatus === 'paid' ? 'text-green-800' : 'text-red-800'}`}>
+                  {whishStatus === 'paid' ? '✅ Paid by Whish — driver collects $0' : '⏳ Whish payment not received yet — do not dispatch'}
+                </p>
+                <p className="text-xs text-muted-foreground">Expected ${Number(order.grand_total_usd || 0).toFixed(2)} with note {order.order_number}</p>
+              </div>
+              <button type="button" onClick={() => markWhishPaid(whishStatus !== 'paid')}
+                className={`shrink-0 px-3 py-1.5 rounded-xl text-xs font-semibold ${whishStatus === 'paid' ? 'bg-muted text-foreground' : 'bg-green-600 text-white'}`}>
+                {whishStatus === 'paid' ? 'Undo' : 'Mark as paid'}
+              </button>
+            </div>
+          )}
           {codAmount && (
             <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-center justify-between">
               <span className="text-sm font-semibold text-amber-800">💵 Cash to Collect (COD)</span>
@@ -690,6 +714,7 @@ export default function OrderDetailModal({ order, onClose, onUpdated, currentUse
           <div className="bg-muted/40 rounded-xl p-4 space-y-1.5">
             <div className="flex justify-between text-sm"><span className="text-muted-foreground">Subtotal</span><span>${(order.subtotal_usd || 0).toFixed(2)}</span></div>
             {order.discount_usd > 0 && <div className="flex justify-between text-sm text-green-700"><span>Discount</span><span>-${order.discount_usd.toFixed(2)}</span></div>}
+            {order.gift_box && <div className="flex justify-between text-sm"><span className="text-muted-foreground">Premium gift box</span><span>{Number(order.gift_box_fee_usd || 0) > 0 ? `$${Number(order.gift_box_fee_usd).toFixed(2)}` : 'Free'}</span></div>}
             <div className="flex justify-between text-sm"><span className="text-muted-foreground">Delivery ({order.delivery_zone})</span><span>${(order.delivery_fee_usd || 0).toFixed(2)}</span></div>
             <div className="flex justify-between font-bold border-t border-border pt-2 mt-2"><span>Total</span><span className="text-primary">${(order.grand_total_usd || 0).toFixed(2)}</span></div>
           </div>
@@ -702,6 +727,13 @@ export default function OrderDetailModal({ order, onClose, onUpdated, currentUse
                 <p className="text-sm font-medium text-foreground">{order.customer_name}</p>
                 <p className="text-sm text-muted-foreground">{order.customer_phone}</p>
                 <p className="text-xs text-muted-foreground">{order.payment_method}</p>
+                {order.recipient_name && (
+                  <div className="mt-2 pt-2 border-t border-border">
+                    <p className="text-xs font-semibold text-amber-800">🎁 Deliver to (recipient)</p>
+                    <p className="text-sm font-medium text-foreground">{order.recipient_name}</p>
+                    <p className="text-sm text-muted-foreground">{order.recipient_phone}</p>
+                  </div>
+                )}
               </div>
             </div>
             <div>
@@ -725,8 +757,8 @@ export default function OrderDetailModal({ order, onClose, onUpdated, currentUse
               <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 space-y-1.5 text-sm">
                 <p className="font-semibold text-amber-800">🎁 This order is a gift</p>
                 <div className="flex flex-wrap gap-2">
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${order.gift_wrapping ? 'bg-amber-200 text-amber-900' : 'bg-muted text-muted-foreground'}`}>
-                    {order.gift_wrapping ? '✓ Gift wrapping' : 'No wrapping'}
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${order.gift_box || order.gift_wrapping ? 'bg-amber-200 text-amber-900' : 'bg-muted text-muted-foreground'}`}>
+                    {order.gift_box ? '✓ Premium gift box' : order.gift_wrapping ? '✓ Gift wrapping' : 'No wrapping'}
                   </span>
                   <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${order.hide_invoice_price ? 'bg-amber-200 text-amber-900' : 'bg-muted text-muted-foreground'}`}>
                     {order.hide_invoice_price ? '✓ Hide prices on slip' : 'Prices shown'}
@@ -768,6 +800,10 @@ export default function OrderDetailModal({ order, onClose, onUpdated, currentUse
   );
 }
 
+function esc(v) {
+  return String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
 function buildPrintHTML(order, items) {
   // When a gift order requests price masking, omit all prices/totals (and the
   // COD amount) from the printed packing slip so the recipient never sees them.
@@ -779,19 +815,30 @@ function buildPrintHTML(order, items) {
   }).join('');
   const priceHeader = hidePrice ? '' : '<th style="text-align:right">Total</th>';
   const totalsRows = hidePrice ? '' :
-    `<tr class="total-row"><td colspan="2">Delivery</td><td style="text-align:right">$${(order.delivery_fee_usd || 0).toFixed(2)}</td></tr>
+    `${order.gift_box ? `<tr class="total-row"><td colspan="2">Premium gift box</td><td style="text-align:right">$${Number(order.gift_box_fee_usd || 0).toFixed(2)}</td></tr>` : ''}
+     <tr class="total-row"><td colspan="2">Delivery</td><td style="text-align:right">$${(order.delivery_fee_usd || 0).toFixed(2)}</td></tr>
      <tr class="total-row"><td colspan="2">GRAND TOTAL</td><td style="text-align:right">$${(order.grand_total_usd || 0).toFixed(2)}</td></tr>`;
-  const codBlock = (!hidePrice && order.payment_method === 'Cash on Delivery')
-    ? `<div class="cod">💵 COD Amount to Collect: $${(order.grand_total_usd || 0).toFixed(2)}</div>` : '';
+  // What the driver collects. Whish orders are prepaid: show PAID / collect $0
+  // (even on price-masked gift slips, so the driver doesn't ask the recipient).
+  const coll = collectionStatus(order);
+  const codBlock = coll.kind === 'paid'
+    ? `<div class="cod">✅ PAID (Whish) — collect $0</div>`
+    : coll.kind === 'awaiting'
+      ? `<div class="cod">⚠️ Whish payment NOT confirmed — do not dispatch</div>`
+      : (!hidePrice && coll.kind === 'cod')
+        ? `<div class="cod">💵 COD Amount to Collect: $${(order.grand_total_usd || 0).toFixed(2)}</div>` : '';
   const giftBlock = order.is_gift
-    ? `<div class="gift">🎁 Gift${order.gift_wrapping ? ' · please gift-wrap' : ''}${order.gift_message ? `<br/><em>"${order.gift_message}"</em>` : ''}</div>` : '';
+    ? `<div class="gift">🎁 Gift${order.gift_box ? ' · PREMIUM GIFT BOX' : order.gift_wrapping ? ' · please gift-wrap' : ''}${order.gift_message ? `<br/><em>"${esc(order.gift_message)}"</em>` : ''}</div>` : '';
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Order ${order.order_number}</title>
   <style>body{font-family:Arial,sans-serif;font-size:13px;padding:20px;color:#222}h1{font-size:20px;margin-bottom:4px}.label{color:#888;font-size:11px}table{width:100%;border-collapse:collapse;margin:12px 0}th{background:#f0f0f0;padding:6px 8px;text-align:left;font-size:11px}td{padding:6px 8px;border-bottom:1px solid #eee}.total-row td{font-weight:bold;border-top:2px solid #222}.cod{background:#fffbe6;border:1px solid #f6c90e;padding:8px 12px;border-radius:6px;font-size:15px;font-weight:bold;margin-top:12px}.gift{background:#fff7ed;border:1px dashed #d97706;padding:8px 12px;border-radius:6px;margin-top:12px}</style>
   </head><body>
   <h1>MiniYo — ${hidePrice ? 'Packing Slip' : 'Order Slip'}</h1>
   <p class="label">Order #</p><p><strong>${order.order_number}</strong></p>
   <p class="label">Date</p><p>${order.order_date ? new Date(order.order_date).toLocaleDateString('en-GB') : ''}</p>
-  <p class="label">Customer</p><p>${order.customer_name} · ${order.customer_phone}</p>
+  ${order.recipient_name
+    ? `<p class="label">Deliver to (recipient)</p><p><strong>${esc(order.recipient_name)} · ${esc(order.recipient_phone)}</strong></p>
+       <p class="label">Sent by</p><p>${esc(order.customer_name)} · ${esc(order.customer_phone)}</p>`
+    : `<p class="label">Customer</p><p>${esc(order.customer_name)} · ${esc(order.customer_phone)}</p>`}
   <p class="label">Address</p><p>${[order.building, order.street, order.district, order.city].filter(Boolean).join(', ')}</p>
   <p class="label">Zone</p><p>${order.delivery_zone || ''}</p>
   <table><thead><tr><th>Item</th><th style="text-align:center">Qty</th>${priceHeader}</tr></thead>

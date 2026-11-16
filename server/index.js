@@ -756,7 +756,14 @@ app.post('/api/entities/:entity', ensureEntity, writeRateLimit, authorizeWrite('
     if (req.params.entity === 'Order' && blockedCustomerFor(req.body || {})) {
       return res.status(403).json({ error: 'This account is blocked from placing orders. Please contact support.' });
     }
-    const record = createRecord(req.params.entity, req.body || {});
+    const body = { ...(req.body || {}) };
+    if (req.params.entity === 'Order' && !isAdmin(getUserFromRequest(req))) {
+      // Only staff can confirm a prepaid (Whish) payment: a shopper must never
+      // be able to create an order already marked paid ("collect $0").
+      body.payment_status = String(body.payment_method || '').toLowerCase() === 'whish' ? 'pending' : '';
+      delete body.payment_confirmed_at;
+    }
+    const record = createRecord(req.params.entity, body);
     maybeInvalidateDashboard(req.params.entity);
     res.json(sanitize(req.params.entity, record));
   } catch (e) { handleError(res, e); }

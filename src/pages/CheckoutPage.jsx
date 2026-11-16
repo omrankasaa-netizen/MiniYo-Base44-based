@@ -18,6 +18,7 @@ import { ga4TrackBeginCheckout, ga4TrackPurchase } from '@/lib/ga4';
 import { readStoredUtmAttribution } from '@/lib/utmAttribution';
 import { DEFAULT_COUNTRY, findCountry, validateNationalNumber, validateLebaneseMobile, toE164, stripTrunkZero } from '@/lib/countryCodes';
 import CountryCodeSelect from '@/components/checkout/CountryCodeSelect';
+import { giftBoxFee as calcGiftBoxFee, whishWhatsappText, waLink } from '@/lib/giftOptions';
 
 const ScrollToTop = ({ trigger }) => {
   useEffect(() => {
@@ -118,10 +119,19 @@ export default function CheckoutPage() {
   const [gift, setGift] = useState({
     is_gift: false,
     gift_wrapping: false,
+    gift_box: false,
     hide_invoice_price: false,
     gift_message: '',
+    send_to_someone: false,
+    recipient_name: '',
+    recipient_phone: '',
     ...(savedDraft.gift || {}),
   });
+  // Packaging choice: 'wrap' (free kraft wrap) | 'box' (premium gift box) | 'none'
+  const packaging = gift.gift_box ? 'box' : gift.gift_wrapping ? 'wrap' : 'none';
+  function setPackaging(v) {
+    setGift(g => ({ ...g, gift_box: v === 'box', gift_wrapping: v === 'wrap' }));
+  }
   const GIFT_MSG_MAX = 150;
   function setGiftField(k, v) {
     setGift(g => ({ ...g, [k]: v }));
@@ -130,6 +140,8 @@ export default function CheckoutPage() {
   // All remaining state — declared here so nothing is referenced before init.
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(null);
+  // Payment details for the confirmation screen (Whish QR + amount).
+  const [successInfo, setSuccessInfo] = useState(null);
   const [promoInput, setPromoInput] = useState('');
   const [promoCode, setPromoCode] = useState(null);
   const [promoError, setPromoError] = useState('');
@@ -258,7 +270,11 @@ export default function CheckoutPage() {
   const hasDeliveryCredit = !!(customer && (customer.free_delivery_credits_remaining || 0) > 0);
   const creditApplied = hasDeliveryCredit && !isFreeShipping && !qualifiesForThreshold && deliveryFee > 0;
   const effectiveDelivery = isFreeShipping || qualifiesForThreshold || creditApplied ? 0 : deliveryFee;
-  const grandTotal = Number((subtotal - totalDiscount + effectiveDelivery).toFixed(2));
+  // Premium gift box: small fee, free once the order (after discounts) is big enough.
+  const giftBoxAmount = gift.is_gift
+    ? calcGiftBoxFee({ selected: gift.gift_box, subtotal: postDiscountSubtotal, fee: siteSettings.giftBoxFee, freeOver: siteSettings.giftBoxFreeOver })
+    : 0;
+  const grandTotal = Number((subtotal - totalDiscount + effectiveDelivery + giftBoxAmount).toFixed(2));
 
   // Meta Advanced Matching: enrich pixel with hashed PII as soon as user data
   // is available (pre-filled from auth session) so all checkout events carry it.
@@ -394,6 +410,12 @@ export default function CheckoutPage() {
     // well-formed (order confirmation emails depend on it).
     if (form.customer_email && form.customer_email.trim() && !validateEmail(form.customer_email)) {
       setEmailError(t('Please enter a valid email address', 'يرجى إدخال عنوان بريد إلكتروني صحيح'));
+      setSubmitting(false);
+      return;
+    }
+
+    if (gift.is_gift && gift.send_to_someone && (!gift.recipient_name.trim() || !gift.recipient_phone.trim())) {
+      alert(t('Please add the recipient’s name and phone so the driver can reach them.', 'يرجى إدخال اسم ورقم المستلم ليتمكن السائق من التواصل معه.'));
       setSubmitting(false);
       return;
     }
@@ -619,6 +641,11 @@ export default function CheckoutPage() {
         stock_committed: false,
         is_gift: gift.is_gift,
         gift_wrapping: gift.is_gift ? gift.gift_wrapping : false,
+        gift_box: gift.is_gift ? gift.gift_box : false,
+        gift_box_fee_usd: giftBoxAmount,
+        recipient_name: gift.is_gift && gift.send_to_someone ? gift.recipient_name.trim().slice(0, 80) : '',
+        recipient_phone: gift.is_gift && gift.send_to_someone ? gift.recipient_phone.trim().slice(0, 30) : '',
+        payment_status: form.payment_method === 'Whish' ? 'pending' : '',
         hide_invoice_price: gift.is_gift ? gift.hide_invoice_price : false,
         gift_message: gift.is_gift ? gift.gift_message.slice(0, GIFT_MSG_MAX) : '',
       });
@@ -755,6 +782,7 @@ export default function CheckoutPage() {
 
       sessionStorage.removeItem(DRAFT_KEY);
       clearCart();
+      setSuccessInfo({ payment_method: form.payment_method, total: grandTotal });
       setSuccess(order.order_number);
     } catch (err) {
       alert(err.message);
@@ -771,7 +799,27 @@ export default function CheckoutPage() {
           <CheckCircle2 className="w-14 h-14 text-green-500 animate-in zoom-in duration-500" />
           <h2 className="text-2xl font-heading font-bold text-foreground">{t('Order Placed!', 'تم تقديم طلبك!')}</h2>
           <p className="text-muted-foreground">{t('Your order number is', 'رقم طلبك هو')} <strong className="text-primary text-lg">{success}</strong></p>
-          <p className="text-sm text-muted-foreground">{t('We\'ll deliver Cash on Delivery. Track your order below.', 'سيتم التوصيل بالدفع عند الاستلام.')}</p>
+          {successInfo?.payment_method === 'Whish' ? (
+            <div className="w-full max-w-sm rounded-2xl border border-primary/30 bg-card p-5 text-start space-y-3 shadow-sm" dir={lang === 'ar' ? 'rtl' : 'ltr'}>
+              <p className="font-semibold text-foreground text-center">{t('Pay by Whish to confirm your order', 'ادفعي عبر Whish لتأكيد الطلب')}</p>
+              <img src="/whish-qr.jpg" alt="Whish QR code" className="w-48 h-48 mx-auto rounded-xl border border-border bg-white p-2" />
+              <div className="text-sm space-y-1 text-center">
+                <p>{t('Amount', 'المبلغ')}: <strong dir="ltr">${Number(successInfo.total || 0).toFixed(2)}</strong></p>
+                <p>{t('Whish number', 'رقم Whish')}: <strong dir="ltr">{siteSettings.whishNumber}</strong></p>
+                <p className="text-xs text-muted-foreground">{t('Write your order number in the Whish note:', 'اكتبي رقم الطلب بملاحظة Whish:')} <strong dir="ltr">{success}</strong></p>
+              </div>
+              {siteSettings.whatsappNumber && (
+                <a href={waLink(siteSettings.whatsappNumber, whishWhatsappText({ orderNumber: success, total: successInfo.total, lang }))}
+                  target="_blank" rel="noopener noreferrer"
+                  className="w-full min-h-[44px] rounded-xl bg-[#25D366] text-white text-sm font-semibold inline-flex items-center justify-center">
+                  {t('I paid — send screenshot on WhatsApp', 'دفعت — ابعتي الصورة عالواتساب')}
+                </a>
+              )}
+              <p className="text-xs text-muted-foreground text-center">{t('We prepare and send your order as soon as we receive the payment.', 'منحضّر ومنبعت الطلب أول ما توصلنا الدفعة.')}</p>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">{t('We\'ll deliver Cash on Delivery. Track your order below.', 'سيتم التوصيل بالدفع عند الاستلام.')}</p>
+          )}
           {accountStatus === 'created' && (
             <p className="text-sm text-primary bg-primary/10 rounded-xl px-4 py-2 max-w-md">
               {t('Your account was created! We emailed you a verification code — use it the first time you log in to track all your orders.', 'تم إنشاء حسابك! أرسلنا رمز تحقق إلى بريدك الإلكتروني — استخدميه عند تسجيل الدخول لأول مرة لتتبع جميع طلباتك.')}
@@ -1049,10 +1097,16 @@ export default function CheckoutPage() {
                     <button type="button" key={m.key} onClick={() => setF('payment_method', m.key)}
                       className={`flex-1 py-2.5 rounded-xl border text-sm font-medium transition-colors min-w-[120px]
                         ${form.payment_method === m.key ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:bg-muted'}`}>
-                      {m.label}
+                      {m.key === 'Whish' ? t('Whish (pay now)', 'Whish (ادفعي هلّق)') : m.label}
                     </button>
                   ))}
                 </div>
+              )}
+              {form.payment_method === 'Whish' && (
+                <p className="text-xs text-muted-foreground bg-muted/50 rounded-xl px-3 py-2">
+                  {t('Perfect for sending a gift straight to someone: after you place the order we show our Whish QR code and number. We send the order once the payment arrives — nothing to pay on delivery.',
+                    'مناسب إذا بدّك تبعتي الهدية مباشرة لحدا: بعد الطلب منورجيكي رمز Whish والرقم، ومنبعت الطلب أول ما توصل الدفعة — ما في شي تدفعيه عند التسليم.')}
+                </p>
               )}
             </div>
 
@@ -1073,15 +1127,22 @@ export default function CheckoutPage() {
               {gift.is_gift && (
                 <div className="space-y-3 pl-1 border-l-2 border-primary/20 ml-1">
                   <div className="pl-3 space-y-3">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={gift.gift_wrapping}
-                        onChange={e => setGiftField('gift_wrapping', e.target.checked)}
-                        className="rounded"
-                      />
-                      <span className="text-sm text-foreground">{t('Add gift wrapping', 'أضف تغليف الهدية')}</span>
-                    </label>
+                    <div className="space-y-2" role="radiogroup" aria-label={t('Packaging', 'التغليف')}>
+                      {[
+                        { key: 'wrap', en: 'Gift wrapping — kraft paper, ribbon & gift sticker', ar: 'تغليف هدية — ورق كرافت، شريطة وستيكر', price: t('Free', 'مجاناً') },
+                        { key: 'box', en: 'Premium gift box — kraft box, tissue & satin ribbon', ar: 'علبة هدية مميزة — علبة كرافت، ورق حرير وشريطة ساتان',
+                          price: postDiscountSubtotal >= Number(siteSettings.giftBoxFreeOver || 60)
+                            ? t('Free', 'مجاناً')
+                            : `+$${Number(siteSettings.giftBoxFee ?? 1).toFixed(2)} · ${t('free over', 'مجاناً فوق')} $${Number(siteSettings.giftBoxFreeOver || 60)}` },
+                        { key: 'none', en: 'No wrapping', ar: 'بدون تغليف', price: '' },
+                      ].map(o => (
+                        <label key={o.key} className={`flex items-start gap-2 cursor-pointer rounded-xl border px-3 py-2 ${packaging === o.key ? 'border-primary bg-primary/5' : 'border-border'}`}>
+                          <input type="radio" name="gift-packaging" checked={packaging === o.key} onChange={() => setPackaging(o.key)} className="mt-0.5" />
+                          <span className="flex-1 text-sm text-foreground">{lang === 'ar' ? o.ar : o.en}</span>
+                          {o.price && <span className="text-xs font-semibold text-primary whitespace-nowrap">{o.price}</span>}
+                        </label>
+                      ))}
+                    </div>
 
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input
@@ -1106,7 +1167,29 @@ export default function CheckoutPage() {
                       <p className="text-xs text-muted-foreground mt-1 text-right">
                         {gift.gift_message.length}/{GIFT_MSG_MAX}
                       </p>
+                      <p className="text-xs text-muted-foreground">{t('We hand-write it on a gift card — free.', 'منكتبها بخط اليد على كرت هدية — مجاناً.')}</p>
                     </div>
+
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={gift.send_to_someone}
+                        onChange={e => setGiftField('send_to_someone', e.target.checked)}
+                        className="rounded"
+                      />
+                      <span className="text-sm text-foreground">{t('Send it directly to someone else', 'ابعتيها مباشرة لشخص تاني')}</span>
+                    </label>
+                    {gift.send_to_someone && (
+                      <div className="space-y-2">
+                        <p className="text-xs text-muted-foreground">{t('Use the recipient’s address above. Tip: pay by Whish so they have nothing to pay on delivery.', 'استعملي عنوان المستلم فوق. نصيحة: ادفعي عبر Whish حتى ما يدفع المستلم شي عند التسليم.')}</p>
+                        <input value={gift.recipient_name} onChange={e => setGiftField('recipient_name', e.target.value.slice(0, 80))}
+                          placeholder={t('Recipient’s name', 'اسم المستلم')}
+                          className="w-full px-3 py-2.5 rounded-xl border border-input bg-background text-sm" />
+                        <input value={gift.recipient_phone} onChange={e => setGiftField('recipient_phone', e.target.value.slice(0, 30))}
+                          inputMode="tel" placeholder={t('Recipient’s phone (for the driver)', 'رقم المستلم (للسائق)')}
+                          className="w-full px-3 py-2.5 rounded-xl border border-input bg-background text-sm" dir="ltr" />
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -1207,6 +1290,13 @@ export default function CheckoutPage() {
                   <div className="flex justify-between text-green-700 font-medium">
                     <span>{t('Promo Code', 'رمز ترويجي')} ({promoCode?.code})</span>
                     <span>-${effectivePromoDiscount.toFixed(2)}</span>
+                  </div>
+                )}
+
+                {gift.is_gift && gift.gift_box && (
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>{t('Premium gift box', 'علبة هدية مميزة')}</span>
+                    <span>{giftBoxAmount > 0 ? `$${giftBoxAmount.toFixed(2)}` : <span className="text-green-700 font-medium">{t('Free', 'مجاني')}</span>}</span>
                   </div>
                 )}
 
