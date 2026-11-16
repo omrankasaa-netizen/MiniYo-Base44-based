@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 import { pickLatestByKey } from '@/lib/entityRecords';
+import { GIFT_BOX_DEFAULT_FEE, GIFT_BOX_DEFAULT_FREE_OVER, WHISH_DEFAULT_NUMBER } from '@/lib/giftOptions';
 
 function parseNumber(value, fallback) {
   const parsed = Number.parseFloat(String(value ?? ''));
@@ -32,5 +33,9 @@ export function useSiteSettings() {
     paymentCodEnabled: map.payment_cod_enabled !== 'false',
     paymentWhishEnabled: map.payment_whish_enabled !== 'false',
     paymentCardEnabled: map.payment_card_enabled === 'true',
+    // Premium gift box at checkout (site settings gift_box_fee / gift_box_free_over).
+    giftBoxFee: parseNumber(map.gift_box_fee, GIFT_BOX_DEFAULT_FEE),
+    giftBoxFreeOver: parseNumber(map.gift_box_free_over, GIFT_BOX_DEFAULT_FREE_OVER),
+    whishNumber: map.whish_number || WHISH_DEFAULT_NUMBER,
   };
 }

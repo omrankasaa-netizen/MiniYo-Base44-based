@@ -501,7 +501,8 @@ function editOrderItems({ order_id, items: newItems, note, delivery_fee_usd, dis
     const discount = validMoney(discount_usd) ? Number(discount_usd) : Number(o.discount_usd || 0);
     const delivery = validMoney(delivery_fee_usd) ? Number(delivery_fee_usd) : Number(o.delivery_fee_usd || 0);
     const overridden = !!total_overridden && validMoney(grand_total_usd);
-    const grand = overridden ? Number(grand_total_usd) : Math.max(0, subtotal - discount) + delivery;
+    const giftBox = Number(o.gift_box_fee_usd || 0);
+    const grand = overridden ? Number(grand_total_usd) : Math.max(0, subtotal - discount) + delivery + giftBox;
     updateRecord('Order', order_id, {
       subtotal_usd: subtotal,
       discount_usd: discount,
@@ -824,10 +825,15 @@ async function sendOrderNotification(body) {
     `<tr><td>${it.product_name} ${[it.size, it.color].filter(Boolean).join(' / ')}</td><td>×${it.quantity}</td><td>$${Number(it.line_total_usd || 0).toFixed(2)}</td></tr>`
   ).join('');
   const giftHtml = order.is_gift
-    ? `<p><strong>🎁 GIFT ORDER</strong>${order.gift_wrapping ? ' · wrapping requested' : ''}${order.hide_invoice_price ? ' · hide prices on slip' : ''}</p>
+    ? `<p><strong>🎁 GIFT ORDER</strong>${order.gift_box ? ' · PREMIUM GIFT BOX' : order.gift_wrapping ? ' · wrapping requested' : ''}${order.hide_invoice_price ? ' · hide prices on slip' : ''}</p>
+       ${order.recipient_name ? `<p>Deliver to recipient: ${escapeHtml(order.recipient_name)} · ${escapeHtml(order.recipient_phone || '')}</p>` : ''}
        ${order.gift_message ? `<p>Gift message: "${escapeHtml(order.gift_message)}"</p>` : ''}`
     : '';
+  const whishHtml = String(order.payment_method || '').toLowerCase() === 'whish'
+    ? `<p><strong>💳 WHISH</strong> — wait for $${Number(order.grand_total_usd || 0).toFixed(2)} (payment proof on WhatsApp, order ${order.order_number}) before dispatching, then mark it paid in the order.</p>`
+    : '';
   const html = `<!DOCTYPE html><html><body><h2>New Order: ${order.order_number}</h2>
+    ${whishHtml}
     ${giftHtml}
     <p>Customer: ${escapeHtml(order.customer_name || '')} · ${escapeHtml(order.customer_phone || '')}<br/>
     Email: ${escapeHtml(order.customer_email || '')}<br/>
