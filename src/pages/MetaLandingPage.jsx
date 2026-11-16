@@ -77,12 +77,15 @@ export default function MetaLandingPage() {
         titleAr="أفضل الاختيارات الآن"
         filter={{ status: 'Active' }}
         viewAllLink="/shop"
+        excludeBundles
+        giftBuilderCard
       />
       <ProductRow
         title="Bestsellers from our ads"
         titleAr="الأكثر مبيعاً من الإعلانات"
         filter={{ is_featured: true, status: 'Active' }}
         viewAllLink="/shop?featured=true"
+        excludeBundles
       />
       <ProductRow
         title="New arrivals this week"
@@ -93,6 +96,7 @@ export default function MetaLandingPage() {
         hideOutOfStock
         featuredFirst
         topUpFilter={{ status: 'Active' }}
+        excludeBundles
       />
       <ReviewsCarousel />
       <FloatingWhatsApp />

@@ -111,6 +111,13 @@ export default function ProductCard({ product, rating }) {
   // `availableStock` = sum of per-variant availability. When that enrichment is
   // absent (unknown), variant products keep their prior "browse-through"
   // behavior and are not treated as sold out at the card level.
+  const bundleItems = product.is_bundle && Array.isArray(product.bundle_items) ? product.bundle_items : [];
+  const bundleCount = bundleItems.reduce((n, it) => n + (Number(it.quantity) || 1), 0);
+  // Short item names: drop the " — colour" suffix and size notes.
+  const bundleNames = bundleItems
+    .map((it) => String(it.product_name || '').split(/ [—–-] |\(/)[0].trim())
+    .filter(Boolean)
+    .join(' · ');
   const isInactive = !!product.status && product.status !== 'Active';
   const available = product.has_variants
     ? (product.availableStock ?? null)
@@ -175,7 +182,8 @@ export default function ProductCard({ product, rating }) {
               : <div className="w-full h-full flex items-center justify-center bg-accent/20"><ShoppingBag className="w-12 h-12 text-accent" /></div>}
             {/* Badges */}
             <div className="absolute top-2.5 left-2.5 flex flex-col gap-1.5">
-              {product.is_new && <span className="bg-primary text-primary-foreground text-xs font-semibold px-2.5 py-1 rounded-full">{t('New', 'جديد')}</span>}
+              {bundleCount > 0 && <span className="bg-accent text-accent-foreground text-xs font-semibold px-2.5 py-1 rounded-full shadow-sm">🎁 {t('Gift box', 'علبة هدية')} · {bundleCount} {t('pieces', 'قطع')}</span>}
+              {product.is_new && bundleCount === 0 && <span className="bg-primary text-primary-foreground text-xs font-semibold px-2.5 py-1 rounded-full">{t('New', 'جديد')}</span>}
               {product.is_featured && <span className="bg-accent text-accent-foreground text-xs font-semibold px-2.5 py-1 rounded-full flex items-center gap-1"><Star className="w-2.5 h-2.5 fill-current" /> {t('Featured', 'مميز')}</span>}
               {badgeLabel && <span className="bg-destructive text-destructive-foreground text-xs font-semibold px-2.5 py-1 rounded-full">{badgeLabel}</span>}
               {!badgeLabel && hasDiscount && <span className="bg-destructive text-destructive-foreground text-xs font-semibold px-2.5 py-1 rounded-full">{t('Sale', 'تخفيض')}</span>}
@@ -192,6 +200,12 @@ export default function ProductCard({ product, rating }) {
           </div>
           <div className="p-3.5">
             <p className="font-heading font-semibold text-foreground text-sm leading-tight line-clamp-2 mb-1.5">{name}</p>
+            {/* Gift bundles: say up front that the price covers several pieces. */}
+            {bundleCount > 0 && (
+              <p className="text-[11px] leading-snug text-muted-foreground line-clamp-2 mb-1.5">
+                {t('Includes', 'فيها')} {bundleNames}
+              </p>
+            )}
             {rating?.count > 0 && <RatingStars avg={rating.avg} count={rating.count} className="mb-1" />}
             {/* Color swatches — shoppers see the available colorways before
                 opening the product. Parents enrich `product.colorSwatches`

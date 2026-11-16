@@ -10,6 +10,29 @@ import { productAvailableQty } from '@/lib/inventory';
 import { buildColorSwatches } from '@/lib/colorSwatches';
 import { ChevronRight, ChevronLeft } from 'lucide-react';
 
+// First card of a rail: invites shoppers to build their own gift box (/gifts)
+// instead of mixing $40–60 bundles in with single pieces.
+function GiftBuilderCard() {
+  const { t } = useLang();
+  return (
+    <Link to="/gifts" className="group block h-full">
+      <div className="h-full min-h-[300px] rounded-3xl border border-primary/30 bg-gradient-to-br from-primary/15 via-accent/20 to-secondary/10 p-5 flex flex-col justify-between shadow-sm hover:shadow-md transition-shadow">
+        <div>
+          <span className="inline-flex w-11 h-11 rounded-2xl bg-primary text-primary-foreground items-center justify-center text-xl mb-4">🎁</span>
+          <p className="font-heading font-bold text-lg text-foreground leading-tight mb-2">{t('Build a gift box', 'حضّري علبة هدية')}</p>
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            {t('Pick the baby’s age — we suggest an outfit, something cozy and little extras in that size. Gift wrapped at checkout.',
+              'اختاري عمر البيبي ومنقترحلك طقم، شي دافي وإضافات صغيرة بمقاسه. منغلّفها عند الدفع.')}
+          </p>
+        </div>
+        <span className="mt-4 inline-flex items-center justify-center min-h-[40px] rounded-full bg-primary text-primary-foreground text-sm font-semibold group-hover:bg-primary/90">
+          {t('Start →', 'يلّا نبلّش ←')}
+        </span>
+      </div>
+    </Link>
+  );
+}
+
 /**
  * Merchandising rules for a rail (all optional):
  *   minPriceUsd     – hide low-price accessories (socks, tights, headbands…)
@@ -17,19 +40,23 @@ import { ChevronRight, ChevronLeft } from 'lucide-react';
  *   featuredFirst   – products marked Featured in the admin lead the rail
  *   topUpFilter     – when fewer than 4 products pass, fill up from this
  *                     broader filter (same rules apply)
+ *   excludeBundles  – leave gift bundles out (they read as "expensive" next
+ *                     to single pieces; they live on /gifts instead)
+ *   giftBuilderCard – show the "Build a gift box" card first
  */
 export default function ProductRow({
   title, titleAr, filter, viewAllLink, productIds = [],
   minPriceUsd = 0, hideOutOfStock = false, featuredFirst = false, topUpFilter = null,
+  excludeBundles = false, giftBuilderCard = false,
 }) {
   const { t, lang } = useLang();
   const scrollRef = useRef(null);
   const pinnedIds = Array.isArray(productIds) ? productIds.map(String).filter(Boolean) : [];
   const hasPinned = pinnedIds.length > 0;
 
-  const merchandised = minPriceUsd > 0 || hideOutOfStock || featuredFirst || !!topUpFilter;
+  const merchandised = minPriceUsd > 0 || hideOutOfStock || featuredFirst || !!topUpFilter || excludeBundles;
   const { data: rawProducts = [] } = useQuery({
-    queryKey: ['home-products', JSON.stringify(filter), pinnedIds.join(','), minPriceUsd, featuredFirst, JSON.stringify(topUpFilter)],
+    queryKey: ['home-products', JSON.stringify(filter), pinnedIds.join(','), minPriceUsd, featuredFirst, JSON.stringify(topUpFilter), excludeBundles],
     queryFn: async () => {
       if (hasPinned) {
         try {
@@ -60,7 +87,7 @@ export default function ProductRow({
 
       // Merchandised rail: drop cheap accessories, then (optionally) put
       // Featured products first. Newest-first order is kept within each group.
-      const passesPrice = (p) => Number(p?.price_usd || 0) >= minPriceUsd;
+      const passesPrice = (p) => Number(p?.price_usd || 0) >= minPriceUsd && !(excludeBundles && p?.is_bundle);
       let picked = (await fetchMatching(filter)).filter(passesPrice);
       if (picked.length < 4 && topUpFilter) {
         const seen = new Set(picked.map((p) => p.id));
@@ -161,7 +188,8 @@ export default function ProductRow({
 
         {/* Mobile: horizontal scroll | Desktop: 4-up grid */}
         <div className="hidden lg:grid grid-cols-4 gap-5">
-          {products.slice(0, 8).map((p, i) => (
+          {giftBuilderCard && <GiftBuilderCard />}
+          {products.slice(0, giftBuilderCard ? 7 : 8).map((p, i) => (
             <motion.div key={p.id} initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.4, delay: i * 0.06 }}>
               <ProductCard product={p} />
             </motion.div>
@@ -172,6 +200,9 @@ export default function ProductRow({
           className="lg:hidden flex gap-3 overflow-x-auto pb-2 mobile-rail"
           style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
         >
+          {giftBuilderCard && (
+            <div className="snap-start shrink-0 w-[46vw] min-w-[170px] max-w-[205px]"><GiftBuilderCard /></div>
+          )}
           {products.map(p => (
             <div key={p.id} className="snap-start shrink-0 w-[46vw] min-w-[170px] max-w-[205px]">
               <ProductCard product={p} />
