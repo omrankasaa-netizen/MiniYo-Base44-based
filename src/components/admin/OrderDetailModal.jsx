@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { X, Printer, MessageCircle, ChevronRight, Gift, Star, TicketPercent, Copy, Pencil, Plus, Minus, Trash2 } from 'lucide-react';
-import { collectionStatus, isWhish } from '@/lib/giftOptions';
+import { collectionStatus, isPrepaid, isWhish } from '@/lib/giftOptions';
 import { logAction } from '@/lib/auditLog';
 import { commitStock, releaseStock, editOrderItems, reserveOrderStock } from '@/lib/inventory';
 import { whatsappLink } from '@/lib/adminExport';
@@ -376,7 +376,8 @@ export default function OrderDetailModal({ order, onClose, onUpdated, currentUse
   }
 
   const codAmount = order.payment_method === 'Cash on Delivery' ? order.grand_total_usd : null;
-  const whishStatus = isWhish(order) ? collectionStatus(order).kind : null;
+  const whishStatus = isPrepaid(order) ? collectionStatus(order).kind : null;
+  const prepaidLabel = isWhish(order) ? 'Whish' : 'card link';
 
   async function markWhishPaid(paid) {
     const patch = paid
@@ -427,9 +428,9 @@ export default function OrderDetailModal({ order, onClose, onUpdated, currentUse
             <div className={`mx-6 mt-4 rounded-xl border px-4 py-3 flex items-center justify-between gap-3 ${whishStatus === 'paid' ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
               <div>
                 <p className={`text-sm font-semibold ${whishStatus === 'paid' ? 'text-green-800' : 'text-red-800'}`}>
-                  {whishStatus === 'paid' ? '✅ Paid by Whish — driver collects $0' : '⏳ Whish payment not received yet — do not dispatch'}
+                  {whishStatus === 'paid' ? `✅ Paid by ${prepaidLabel} — driver collects $0` : `⏳ ${isWhish(order) ? 'Whish payment' : 'Card payment (send the link on WhatsApp)'} not received yet — do not dispatch`}
                 </p>
-                <p className="text-xs text-muted-foreground">Expected ${Number(order.grand_total_usd || 0).toFixed(2)} — check the Whish proof on WhatsApp for {order.order_number}</p>
+                <p className="text-xs text-muted-foreground">Expected ${Number(order.grand_total_usd || 0).toFixed(2)} — check the payment proof on WhatsApp for {order.order_number}</p>
               </div>
               <button type="button" onClick={() => markWhishPaid(whishStatus !== 'paid')}
                 className={`shrink-0 px-3 py-1.5 rounded-xl text-xs font-semibold ${whishStatus === 'paid' ? 'bg-muted text-foreground' : 'bg-green-600 text-white'}`}>
@@ -822,9 +823,9 @@ function buildPrintHTML(order, items) {
   // (even on price-masked gift slips, so the driver doesn't ask the recipient).
   const coll = collectionStatus(order);
   const codBlock = coll.kind === 'paid'
-    ? `<div class="cod">✅ PAID (Whish) — collect $0</div>`
+    ? `<div class="cod">✅ PAID (${esc(order.payment_method)}) — collect $0</div>`
     : coll.kind === 'awaiting'
-      ? `<div class="cod">⚠️ Whish payment NOT confirmed — do not dispatch</div>`
+      ? `<div class="cod">⚠️ ${esc(order.payment_method)} NOT confirmed — do not dispatch</div>`
       : (!hidePrice && coll.kind === 'cod')
         ? `<div class="cod">💵 COD Amount to Collect: $${(order.grand_total_usd || 0).toFixed(2)}</div>` : '';
   const giftBlock = order.is_gift

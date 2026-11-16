@@ -30,6 +30,14 @@ const PAYMENT_METHODS = [
     icon: CreditCard,
     default: false,
   },
+  {
+    key: 'payment_card_link_enabled',
+    label: 'Card payment link (via WhatsApp)',
+    labelAr: 'رابط دفع بالبطاقة (واتساب)',
+    description: 'Customer orders, then you send them a card payment link on WhatsApp. Order waits until you mark it paid.',
+    icon: CreditCard,
+    default: true,
+  },
 ];
 
 function Toggle({ value, onChange }) {
