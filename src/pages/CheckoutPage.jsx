@@ -823,7 +823,7 @@ export default function CheckoutPage() {
                 {t('Message us on WhatsApp and we’ll send a card payment link for', 'ابعتيلنا عالواتساب ومنبعتلك رابط دفع بالبطاقة بقيمة')} <strong dir="ltr">${Number(successInfo.total || 0).toFixed(2)}</strong>.
                 {' '}{t('Works with any Visa or Mastercard, from anywhere in the world.', 'بيمشي مع أي Visa أو Mastercard ومن أي بلد.')}
               </p>
-              <a href={waLink(siteSettings.whatsappNumber || siteSettings.whishNumber, cardLinkWhatsappText({ orderNumber: success, total: successInfo.total, lang }))}
+              <a href={waLink(siteSettings.whishNumber, cardLinkWhatsappText({ orderNumber: success, total: successInfo.total, lang }))}
                 target="_blank" rel="noopener noreferrer"
                 className="w-full min-h-[44px] rounded-xl bg-[#25D366] text-white text-sm font-semibold inline-flex items-center justify-center">
                 {t('Get my payment link on WhatsApp', 'بدي رابط الدفع عالواتساب')}
