@@ -260,6 +260,8 @@ export default function Home() {
         hideOutOfStock
         featuredFirst
         topUpFilter={{ status: 'Active' }}
+        excludeBundles
+        giftBuilderCard
       />
       <ReviewsCarousel />
       <HomeFaq />
