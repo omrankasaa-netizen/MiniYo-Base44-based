@@ -69,6 +69,17 @@ function pickPublicProductFields(product) {
     subcategory_id: product.subcategory_id || null,
     gender: product.gender || null,
     age_group: product.age_group || null,
+    // Gift bundles: the product page lists "What's inside" from these.
+    is_bundle: !!product.is_bundle,
+    bundle_items: Array.isArray(product.bundle_items)
+      ? product.bundle_items.map((it) => ({
+        product_id: it.product_id,
+        product_name: it.product_name || '',
+        quantity: it.quantity || 1,
+        size: it.size || '',
+        color: it.color || '',
+      }))
+      : [],
   };
 }
 
