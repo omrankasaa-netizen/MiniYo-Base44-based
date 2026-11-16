@@ -26,6 +26,7 @@ import { getProductPagePayloadBySlug, injectProductMeta } from './productMeta.js
 import { buildFeedCsv } from './metaFeed.js';
 import { buildTiktokFeedCsv } from './tiktokFeed.js';
 import { aiProductDraft } from './aiDraft.js';
+import { decorateBundle } from './bundles.js';
 import { sendCapiEvent, buildUserData, mergeClientHashedUserData, firstValidMetaFbc } from './metaCapiClient.js';
 import {
   derivePurchaseEventId, buildPurchaseCustomData, buildPurchaseUserData,
@@ -572,7 +573,19 @@ function maybeInvalidateDashboard(entity) {
 }
 
 // Never expose User credential-bearing fields through generic CRUD.
+// Gift bundles have no stock of their own: expose how many complete bundles
+// the component stock can still make, so the storefront, cart and catalog
+// feeds treat a bundle like any simple product.
+function bundleFindVariant(productId, size, color) {
+  return queryRecords('ProductVariant', { query: { product_id: productId } })
+    .find((v) => (size ? v.size === size : true) && (color ? v.color === color : true)) || null;
+}
+function withBundleStock(product) {
+  return decorateBundle(product, (id) => getRecord('Product', id), bundleFindVariant);
+}
+
 function sanitize(entity, record) {
+  if (entity === 'Product' && record) return withBundleStock(record);
   if (entity === 'User' && record) {
     const { password_hash, otp_hash, otp_expires_at, otp_attempts, ...rest } = record;
     return rest;
@@ -784,7 +797,7 @@ function variantsByProductId() {
 // previously kept sold-out products "in stock" in the catalog).
 app.get('/meta-feed.csv', (req, res) => {
   try {
-    const products = queryRecords('Product', { limit: 100000 });
+    const products = queryRecords('Product', { limit: 100000 }).map(withBundleStock);
     const csv = buildFeedCsv(products, variantsByProductId());
     res.set('Content-Type', 'text/csv; charset=utf-8');
     res.set('Content-Disposition', 'inline; filename="meta-feed.csv"');
@@ -805,7 +818,7 @@ app.get('/meta-feed.csv', (req, res) => {
 // everywhere else. Generated fresh per request; no-store (see Meta feed above).
 app.get('/tiktok-feed.csv', (req, res) => {
   try {
-    const products = queryRecords('Product', { limit: 100000 });
+    const products = queryRecords('Product', { limit: 100000 }).map(withBundleStock);
     const categoriesById = new Map(
       queryRecords('Category', { limit: 100000 }).map((c) => [c.id, c]),
     );

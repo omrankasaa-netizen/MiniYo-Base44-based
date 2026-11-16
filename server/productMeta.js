@@ -12,6 +12,7 @@
 // og:type or canonical is left behind.
 
 import { queryRecords } from './db.js';
+import { decorateBundle } from './bundles.js';
 import { normalizeSku } from './metaFeed.js';
 
 const SITE_BASE = process.env.MINIYO_SITE_BASE || 'https://miniyokids.com';
@@ -33,7 +34,14 @@ function escapeAttr(value) {
 export function getProductBySlug(slug) {
   if (!slug || typeof slug !== 'string') return null;
   const rows = queryRecords('Product', { query: { slug }, limit: 1 });
-  return rows[0] || null;
+  if (!rows[0]) return null;
+  // Gift bundles: report how many complete bundles the components can make.
+  return decorateBundle(
+    rows[0],
+    (id) => queryRecords('Product', { query: { id }, limit: 1 })[0] || null,
+    (productId, size, color) => queryRecords('ProductVariant', { query: { product_id: productId } })
+      .find((v) => (size ? v.size === size : true) && (color ? v.color === color : true)) || null,
+  );
 }
 
 function pickPublicProductFields(product) {

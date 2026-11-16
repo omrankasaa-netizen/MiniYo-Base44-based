@@ -1,5 +1,6 @@
 import { db, createRecord, getRecord, updateRecord, deleteRecord, queryRecords, bulkCreate, nowIso, kvGet, kvSet } from './db.js';
 import { sendEmail } from './email.js';
+import { expandBundleLines } from './bundles.js';
 import { bulkImportProducts as runBulkImport, cleanupSeedProducts as runSeedCleanup } from './bulkImport.js';
 import { getDashboardMetrics as computeDashboardMetrics, buildOrdersCsv, invalidateDashboardCache } from './dashboard.js';
 import {
@@ -94,11 +95,21 @@ function findVariant(product_id, size, color) {
     .find((v) => (size ? v.size === size : true) && (color ? v.color === color : true)) || null;
 }
 
+function productById(id) {
+  return queryRecords('Product', { query: { id }, limit: 1 })[0] || null;
+}
+
+// Stock lines for a set of order items: gift bundles are expanded into their
+// component products so stock is reserved / sold / released per component.
+function stockLines(items) {
+  return expandBundleLines(items, productById);
+}
+
 // Available = on-hand − reserved, for BOTH variant and simple products. The
 // reserved counter (ProductVariant.qty_reserved / Product.qty_reserved) is what
 // makes a placed-but-unconfirmed order's stock unavailable to everyone else.
 function checkStock({ order_id }) {
-  const items = queryRecords('OrderItem', { query: { order_id } });
+  const items = stockLines(queryRecords('OrderItem', { query: { order_id } }));
   const shortages = [];
   for (const item of items) {
     const product = queryRecords('Product', { query: { id: item.product_id }, limit: 1 })[0];
@@ -140,7 +151,7 @@ function reserveStock({ order_id }, user) {
   if (o.stock_committed) return { ok: true, message: 'Stock already committed' };
   if (o.stock_reserved) return { ok: true, message: 'Stock already reserved' };
 
-  const items = queryRecords('OrderItem', { query: { order_id } });
+  const items = stockLines(queryRecords('OrderItem', { query: { order_id } }));
   const reason = `Order ${o.order_number || order_id} placed`;
   const by = user?.email || 'system';
 
@@ -249,7 +260,7 @@ function commitStock({ order_id }, user) {
     if (!check.ok) return { _status: 409, ok: false, shortages: check.shortages };
   }
 
-  const items = queryRecords('OrderItem', { query: { order_id } });
+  const items = stockLines(queryRecords('OrderItem', { query: { order_id } }));
   const reason = `Order ${o.order_number || order_id} confirmed`;
   const by = user?.email || 'system';
 
@@ -299,7 +310,7 @@ function releaseStock({ order_id }, user) {
   }
 
   const committed = !!o.stock_committed;
-  const items = queryRecords('OrderItem', { query: { order_id } });
+  const items = stockLines(queryRecords('OrderItem', { query: { order_id } }));
   const reason = `Order ${o.order_number || order_id} cancelled`;
   const by = user?.email || 'system';
 
@@ -378,7 +389,7 @@ function editOrderItems({ order_id, items: newItems, note, delivery_fee_usd, dis
     const movements = [];
 
     // Pass 1 — release every current line (undo its stock effect).
-    for (const item of currentItems) {
+    for (const item of stockLines(currentItems)) {
       const product = queryRecords('Product', { query: { id: item.product_id }, limit: 1 })[0];
       if (!product) continue;
       const isVariant = isVariantLine(product, item);
@@ -404,7 +415,7 @@ function editOrderItems({ order_id, items: newItems, note, delivery_fee_usd, dis
     const plan = [];
     const shortages = [];
     const claimed = new Map();
-    for (const it of newItems) {
+    for (const it of stockLines(newItems)) {
       const qty = Number(it.quantity);
       const product = queryRecords('Product', { query: { id: it.product_id }, limit: 1 })[0];
       if (!product) {
@@ -462,17 +473,18 @@ function editOrderItems({ order_id, items: newItems, note, delivery_fee_usd, dis
     // Replace the OrderItem docs (snapshot fields, same shape as checkout).
     for (const old of currentItems) deleteRecord('OrderItem', old.id);
     const itemDocs = newItems.map((it) => {
-      const p = plan.find((x) => x.product.id === it.product_id
-        && (x.line.size || '') === (it.size || '') && (x.line.color || '') === (it.color || ''));
+      // Look the product up directly: for a gift bundle the stock plan only
+      // holds its components, but the order line keeps the bundle itself.
+      const p = { product: productById(it.product_id) || {} };
       const unit = Number.isFinite(Number(it.unit_price_usd)) && Number(it.unit_price_usd) >= 0
         ? Number(it.unit_price_usd)
-        : Number(p?.product.price_usd || 0);
+        : Number(p.product.price_usd || 0);
       const qty = Number(it.quantity);
       return {
         order_id,
         product_id: it.product_id,
-        product_name: p?.product.name || it.product_name || '',
-        sku: p?.product.sku || it.sku || '',
+        product_name: p.product.name || it.product_name || '',
+        sku: p.product.sku || it.sku || '',
         size: it.size || '',
         color: it.color || '',
         quantity: qty,

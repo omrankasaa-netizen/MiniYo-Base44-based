@@ -94,6 +94,111 @@ function Toggle({ label, checked, onChange }) {
   );
 }
 
+// Gift bundle editor: the items inside a bundle. Stock is taken from each item
+// when a bundle sells (server/bundles.js); the bundle itself has no stock.
+// Components with variants must pin the size (and colour when there are
+// several), so make one bundle per size range.
+function BundleEditor({ items, setItems, products, selfId, allVariants }) {
+  const options = products
+    .filter(p => p.id !== selfId && !p.is_bundle)
+    .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  const byId = Object.fromEntries(products.map(p => [p.id, p]));
+  const variantsFor = (id) => allVariants.filter(v => v.product_id === id);
+  const uniq = (arr) => [...new Set(arr.filter(Boolean))];
+  const update = (i, patch) => setItems(items.map((it, j) => (j === i ? { ...it, ...patch } : it)));
+  const separateTotal = items.reduce(
+    (sum, it) => sum + Number(byId[it.product_id]?.price_usd || 0) * (Number(it.quantity) || 1), 0,
+  );
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-muted-foreground">
+        Pick the items inside this bundle. When a bundle is ordered, stock is taken from each item,
+        and the bundle shows as out of stock as soon as one item runs out. For items with sizes, choose the size
+        (make one bundle per size range, e.g. &quot;Hospital Visit Box 0-3M&quot;).
+      </p>
+      {items.map((it, i) => {
+        const comp = byId[it.product_id];
+        const vs = comp?.has_variants ? variantsFor(it.product_id) : [];
+        const sizes = uniq(vs.map(v => v.size));
+        const colors = uniq(vs.filter(v => !it.size || v.size === it.size).map(v => v.color));
+        return (
+          <div key={i} className="grid grid-cols-12 gap-2 items-end border border-border rounded-xl p-3">
+            <div className="col-span-12 sm:col-span-5">
+              <Field label={`Item ${i + 1}`}>
+                <Select value={it.product_id || ''} onChange={e => update(i, { product_id: e.target.value, size: '', color: '' })}>
+                  <option value="">Choose a product…</option>
+                  {options.map(p => (
+                    <option key={p.id} value={p.id}>{p.name} — ${Number(p.price_usd || 0).toFixed(2)}</option>
+                  ))}
+                </Select>
+              </Field>
+            </div>
+            <div className="col-span-3 sm:col-span-2">
+              <Field label="Qty">
+                <Input type="number" min="1" max="20" value={it.quantity || 1} onChange={e => update(i, { quantity: e.target.value })} />
+              </Field>
+            </div>
+            <div className="col-span-4 sm:col-span-2">
+              <Field label="Size">
+                <Select value={it.size || ''} onChange={e => update(i, { size: e.target.value, color: '' })} disabled={sizes.length === 0}>
+                  <option value="">{sizes.length ? 'Choose…' : '—'}</option>
+                  {sizes.map(sz => <option key={sz} value={sz}>{sz}</option>)}
+                </Select>
+              </Field>
+            </div>
+            <div className="col-span-4 sm:col-span-2">
+              <Field label="Colour">
+                <Select value={it.color || ''} onChange={e => update(i, { color: e.target.value })} disabled={colors.length === 0}>
+                  <option value="">{colors.length ? 'Choose…' : '—'}</option>
+                  {colors.map(c => <option key={c} value={c}>{c}</option>)}
+                </Select>
+              </Field>
+            </div>
+            <div className="col-span-1 flex justify-end">
+              <button type="button" aria-label={`Remove item ${i + 1}`} onClick={() => setItems(items.filter((_, j) => j !== i))}
+                className="p-2 rounded-xl hover:bg-destructive/10 text-muted-foreground hover:text-destructive">
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        );
+      })}
+      <button type="button" onClick={() => setItems([...items, { product_id: '', quantity: 1, size: '', color: '' }])}
+        className="text-sm font-medium text-primary hover:underline">
+        + Add item
+      </button>
+      {items.length > 0 && (
+        <p className="text-xs text-muted-foreground">
+          Bought separately these items cost <span className="font-semibold text-foreground">${separateTotal.toFixed(2)}</span>.
+          Set the bundle&apos;s own price in Basic Info.
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Returns an error message when a bundle definition is incomplete, else ''.
+ * Exported for unit tests.
+ */
+export function bundleDefinitionError(items, products, allVariants) {
+  const filled = (items || []).filter(it => it.product_id);
+  if (filled.length < 2) return 'A gift bundle needs at least 2 items.';
+  for (const it of filled) {
+    const comp = products.find(p => p.id === it.product_id);
+    if (!comp) return 'One of the bundle items no longer exists.';
+    if (comp.has_variants) {
+      const vs = allVariants.filter(v => v.product_id === comp.id);
+      const sizes = new Set(vs.map(v => v.size).filter(Boolean));
+      const colors = new Set(vs.filter(v => !it.size || v.size === it.size).map(v => v.color).filter(Boolean));
+      if (sizes.size > 0 && !it.size) return `Choose a size for "${comp.name}" in the bundle.`;
+      if (colors.size > 1 && !it.color) return `Choose a colour for "${comp.name}" in the bundle.`;
+    }
+  }
+  return '';
+}
+
 export default function ProductForm({ product, categories, onClose, onSaved, cloneSourceId = null, products = [] }) {
   const { currentUser } = useAuthUser();
   const isNew = !product?.id;
@@ -124,6 +229,7 @@ export default function ProductForm({ product, categories, onClose, onSaved, clo
     price_usd: '', compare_at_price_usd: '', cost_usd: '',
     tags: '', is_new: false, is_featured: false, status: 'Active',
     has_variants: false, stock_quantity: 0, reorder_level: 3,
+    is_bundle: false, bundle_items: [],
     ...product,
   });
 
@@ -154,6 +260,14 @@ export default function ProductForm({ product, categories, onClose, onSaved, clo
   const { data: collections = [] } = useQuery({
     queryKey: ['admin-collections'],
     queryFn: () => base44.entities.Collection.list('name', 50),
+  });
+
+  // Every variant row, only loaded for gift bundles (size/colour pickers).
+  const { data: allVariants = [] } = useQuery({
+    queryKey: ['bundle-editor-variants'],
+    queryFn: () => base44.entities.ProductVariant.list('-created_date', 5000),
+    enabled: !!form.is_bundle,
+    staleTime: 60_000,
   });
 
   // Subcategories for selected parent category
@@ -306,6 +420,10 @@ export default function ProductForm({ product, categories, onClose, onSaved, clo
     const sku = (form.sku || '').trim();
     if (isClone && !sku) { setError('A unique SKU is required before saving the duplicate.'); return; }
     if (sku && skuExists(sku)) { setError('That SKU is already used by another product — choose a unique SKU.'); return; }
+    if (form.is_bundle) {
+      const bundleErr = bundleDefinitionError(form.bundle_items, products, allVariants);
+      if (bundleErr) { setError(bundleErr); return; }
+    }
     setSaving(true);
     setError('');
     try {
@@ -324,7 +442,20 @@ export default function ProductForm({ product, categories, onClose, onSaved, clo
         price_usd: Number(form.price_usd),
         compare_at_price_usd: form.compare_at_price_usd ? Number(form.compare_at_price_usd) : null,
         cost_usd: form.cost_usd ? Number(form.cost_usd) : null,
-        stock_quantity: form.has_variants ? 0 : Number(form.stock_quantity || 0),
+        stock_quantity: (form.has_variants || form.is_bundle) ? 0 : Number(form.stock_quantity || 0),
+        is_bundle: !!form.is_bundle,
+        has_variants: form.is_bundle ? false : !!form.has_variants,
+        bundle_items: form.is_bundle
+          ? (form.bundle_items || [])
+            .filter(it => it.product_id)
+            .map(it => ({
+              product_id: it.product_id,
+              product_name: products.find(p => p.id === it.product_id)?.name || '',
+              quantity: Math.max(1, parseInt(it.quantity, 10) || 1),
+              size: it.size || '',
+              color: it.color || '',
+            }))
+          : [],
         image_url: primaryForSave?.url || '',
       };
 
@@ -585,15 +716,29 @@ export default function ProductForm({ product, categories, onClose, onSaved, clo
           {/* ── VARIANTS & STOCK ── */}
           {tab === 'variants' && (
             <div className="space-y-5">
-              <Toggle label="This product has variants (sizes / variants)" checked={!!form.has_variants} onChange={() => set('has_variants', !form.has_variants)} />
+              <Toggle label="This is a gift bundle (made of other products)" checked={!!form.is_bundle} onChange={() => set('is_bundle', !form.is_bundle)} />
 
-              {!form.has_variants && (
+              {form.is_bundle && (
+                <BundleEditor
+                  items={form.bundle_items || []}
+                  setItems={(next) => set('bundle_items', next)}
+                  products={products}
+                  selfId={product?.id}
+                  allVariants={allVariants}
+                />
+              )}
+
+              {!form.is_bundle && (
+                <Toggle label="This product has variants (sizes / variants)" checked={!!form.has_variants} onChange={() => set('has_variants', !form.has_variants)} />
+              )}
+
+              {!form.is_bundle && !form.has_variants && (
                 <Field label="Stock Quantity">
                   <Input type="number" min="0" value={form.stock_quantity || 0} onChange={e => set('stock_quantity', e.target.value)} />
                 </Field>
               )}
 
-              {form.has_variants && (
+              {!form.is_bundle && form.has_variants && (
                 <div className="space-y-5">
                   <ChipInput label="Sizes" chips={sizes} setChips={setSizes} suggestions={SIZES} />
                   <ChipInput label="Variants" chips={variants} setChips={setVariants} suggestions={VARIANTS_DEFAULT} />
