@@ -154,6 +154,18 @@ export default function ProductPage() {
     staleTime: 60_000,
   });
 
+  // Gift bundles: load the products inside so the page can list them.
+  const bundleItemIds = useMemo(
+    () => (product?.is_bundle && Array.isArray(product.bundle_items) ? product.bundle_items.map((it) => it.product_id).filter(Boolean) : []),
+    [product],
+  );
+  const { data: bundleProducts = [] } = useQuery({
+    queryKey: ['bundle-items', product?.id, bundleItemIds.join(',')],
+    queryFn: () => base44.entities.Product.filter({ id: bundleItemIds }),
+    enabled: bundleItemIds.length > 0,
+    staleTime: 60_000,
+  });
+
   const completeLookIds = useMemo(() => completeLook.map((p) => p.id), [completeLook]);
   const { data: completeLookImages = [] } = useQuery({
     queryKey: ['complete-look-images', completeLookIds.join(',')],
@@ -576,6 +588,36 @@ export default function ProductPage() {
                 );
               })}
             </div>
+          </section>
+        )}
+
+        {product.is_bundle && bundleItemIds.length > 0 && (
+          <section className="mt-8 rounded-2xl border border-border p-5" aria-labelledby="bundle-contents">
+            <h2 id="bundle-contents" className="text-lg font-heading font-bold text-foreground">
+              {t("What's inside", 'شو في جوّا')}
+            </h2>
+            <ul className="mt-3 divide-y divide-border">
+              {product.bundle_items.map((it, i) => {
+                const p = bundleProducts.find((bp) => bp.id === it.product_id);
+                const itemName = p ? (lang === 'ar' ? (p.name_ar || p.name) : p.name) : (it.product_name || '');
+                const detail = [it.size, it.color].filter(Boolean).join(' · ');
+                return (
+                  <li key={`${it.product_id}-${i}`} className="flex items-center justify-between gap-3 py-2.5 text-sm">
+                    <span className="text-foreground">
+                      {Number(it.quantity) > 1 ? `${it.quantity} × ` : ''}
+                      {p?.slug ? <Link to={`/product/${p.slug}`} className="underline-offset-2 hover:underline">{itemName}</Link> : itemName}
+                      {detail && <span className="text-muted-foreground"> ({detail})</span>}
+                    </span>
+                    {p?.price_usd != null && (
+                      <span className="text-muted-foreground whitespace-nowrap">${Number(p.price_usd).toFixed(2)}</span>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+            <p className="mt-3 text-xs text-muted-foreground">
+              {t('Gift-ready: choose gift wrapping at checkout.', 'جاهزة للهدية: اختاري التغليف عند الدفع.')}
+            </p>
           </section>
         )}
 
